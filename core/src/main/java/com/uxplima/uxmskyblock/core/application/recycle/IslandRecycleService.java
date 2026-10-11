@@ -79,6 +79,14 @@ public final class IslandRecycleService {
     /** The islands being erased right now, so a second erasure of one island is refused. */
     private final java.util.Set<IslandId> resetsInFlight = ConcurrentHashMap.newKeySet();
 
+    /** Every square an island is cleared over: its border, and wherever its game mode wrote past it. */
+    private volatile IslandWipeAreas wipeAreas = IslandWipeAreas.bordersOnly();
+
+    /** Clears an island over every square it wrote in, not only its border. */
+    public void useWipeAreas(IslandWipeAreas areas) {
+        this.wipeAreas = java.util.Objects.requireNonNull(areas, "areas must not be null");
+    }
+
     public IslandRecycleService(
             IslandStoragePort islandStoragePort,
             WorldGridAllocationPort worldGridAllocationPort,
@@ -399,8 +407,11 @@ public final class IslandRecycleService {
             recycleOperationPort.updateState(operationId, IslandRecycleState.VOIDING, null, null, clock.instant());
         }
 
+        IslandWipeAreas areas = this.wipeAreas;
         CompletableFuture<Void> voidFuture = (voidingPort != null)
-                ? voidingPort.voidIslandChunks(islandId, finalWorldName, island.bounds())
+                ? CompletableFuture.allOf(areas.of(islandId, finalWorldName, island.bounds()).stream()
+                        .map(area -> voidingPort.voidIslandChunks(islandId, area.world(), area.bounds()))
+                        .toArray(CompletableFuture[]::new))
                 : CompletableFuture.completedFuture(null);
 
         // 4. Defer canonical delete, slot release and completion until voiding completes
@@ -417,6 +428,7 @@ public final class IslandRecycleService {
                 recycleOperationPort.updateState(
                         operationId, IslandRecycleState.VOID_COMPLETE, null, null, clock.instant());
             }
+            areas.cleared(islandId);
 
             // 5. Transaction State: CANONICAL_DELETE (Must succeed before releasing slot)
             if (recycleOperationPort != null) {

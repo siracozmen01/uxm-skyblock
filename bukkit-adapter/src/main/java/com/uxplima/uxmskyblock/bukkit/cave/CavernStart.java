@@ -49,6 +49,13 @@ public final class CavernStart implements CreationActionProvider<IslandStart> {
         return ACTION;
     }
 
+    /** The cave reaches as far as caveblock.conf says. */
+    @Override
+    public java.util.List<com.uxplima.uxmskyblock.core.application.gamemode.CreationReach> reach(IslandStart start) {
+        return java.util.List.of(new com.uxplima.uxmskyblock.core.application.gamemode.CreationReach(
+                start.world().getName(), config.shape().radius()));
+    }
+
     @Override
     public void apply(IslandStart start) {
         World world = start.world();

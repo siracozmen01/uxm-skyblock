@@ -64,6 +64,22 @@ public final class WreckStart implements CreationActionProvider<IslandStart> {
         return actionId;
     }
 
+    /** Each wreck lies as far out as poseidon.conf says, and reaches as wide as its widest template past that. */
+    @Override
+    public java.util.List<com.uxplima.uxmskyblock.core.application.gamemode.CreationReach> reach(IslandStart start) {
+        int widest = 0;
+        for (String key : wreck.templates()) {
+            widest = Math.max(
+                    widest,
+                    templates
+                            .load(key)
+                            .map(template -> Math.max(template.sizeX(), template.sizeZ()))
+                            .orElse(0));
+        }
+        return java.util.List.of(new com.uxplima.uxmskyblock.core.application.gamemode.CreationReach(
+                start.world().getName(), wreck.distance() + widest));
+    }
+
     @Override
     public void apply(IslandStart start) {
         if (wreck.templates().isEmpty() || wreck.count() < 1) {

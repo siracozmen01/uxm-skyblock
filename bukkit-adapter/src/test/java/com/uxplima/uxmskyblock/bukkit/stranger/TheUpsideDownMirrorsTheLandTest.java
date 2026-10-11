@@ -182,6 +182,18 @@ class TheUpsideDownMirrorsTheLandTest extends MockBukkitHarness {
     }
 
     @Test
+    @DisplayName("The Upside Down says it writes in the Nether, to the edge of the last chunk it mirrors")
+    void itSaysWhereItWrites() throws Exception {
+        IslandId island = IslandId.of(UUID.randomUUID());
+
+        assertThat(start(16, List.of()).reach(new IslandStart(land, island, CENTER, 64, CENTER, preset())))
+                .containsExactly(new com.uxplima.uxmskyblock.core.application.gamemode.CreationReach(UPSIDE_DOWN, 31));
+        assertThat(start(16, List.of()).reach(new IslandStart(upsideDown, island, CENTER, 64, CENTER, preset())))
+                .describedAs("laid in the Upside Down itself, it writes nothing past what the Nether lays")
+                .isEmpty();
+    }
+
+    @Test
     @DisplayName("A palette rule that names no block leaves the block as it was")
     void anUnknownBlockIsKept() throws Exception {
         land.getBlockAt(CENTER, 64, CENTER).setType(Material.GRASS_BLOCK);

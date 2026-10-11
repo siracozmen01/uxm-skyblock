@@ -73,6 +73,18 @@ public final class UpsideDownStart implements CreationActionProvider<IslandStart
         return ACTION;
     }
 
+    /** The Upside Down is laid in the Nether, whole chunks as far as strangerrealms.conf says. */
+    @Override
+    public java.util.List<com.uxplima.uxmskyblock.core.application.gamemode.CreationReach> reach(IslandStart start) {
+        String target = upsideDownWorld.get();
+        if (start.world().getName().equals(target)) {
+            return java.util.List.of();
+        }
+        // Whole chunks are mirrored, so the copy reaches to the edge of the last chunk the radius touches.
+        return java.util.List.of(
+                new com.uxplima.uxmskyblock.core.application.gamemode.CreationReach(target, upsideDown.radius() + 15));
+    }
+
     @Override
     public void apply(IslandStart start) {
         String targetName = upsideDownWorld.get();

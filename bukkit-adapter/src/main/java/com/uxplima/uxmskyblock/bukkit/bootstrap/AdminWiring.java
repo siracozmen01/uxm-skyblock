@@ -68,7 +68,7 @@ public final class AdminWiring {
 
         BukkitIslandArchivalAdapter archivalAdapter =
                 new BukkitIslandArchivalAdapter(protectionListener, visitorEvictionAdapter);
-        BukkitIslandRecycleAdapter recycleAdapter = new BukkitIslandRecycleAdapter(
+        this.recycleAdapter = new BukkitIslandRecycleAdapter(
                 persistence.islandStoragePort(),
                 persistence.worldGridAllocationPort(),
                 persistence.spiralSlotPoolPort(),
@@ -195,6 +195,14 @@ public final class AdminWiring {
 
     public NbtIslandBackupAdapter islandBackupAdapter() {
         return islandBackupAdapter;
+    }
+
+    private final BukkitIslandRecycleAdapter recycleAdapter;
+
+    /** Clears an island, on every path that removes one, over every square it wrote in. */
+    public void useWipeAreas(com.uxplima.uxmskyblock.core.application.recycle.IslandWipeAreas areas) {
+        recycleService.useWipeAreas(areas);
+        recycleAdapter.useWipeAreas(areas);
     }
 
     public IslandRecycleService recycleService() {

@@ -27,4 +27,13 @@ public interface CreationActionProvider<C> {
         apply(context);
         return CompletableFuture.completedFuture(null);
     }
+
+    /**
+     * Where the action writes blocks past the place it is handed, once it is done: how far from the island's
+     * centre and in which world. An action that writes only around the centre, inside the island the player
+     * starts with, answers nothing, which is what this does.
+     */
+    default java.util.List<CreationReach> reach(C context) {
+        return java.util.List.of();
+    }
 }

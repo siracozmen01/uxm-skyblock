@@ -50,6 +50,13 @@ public final class AcidSeaStart implements CreationActionProvider<IslandStart> {
         return ACTION;
     }
 
+    /** The sea reaches as far as acidisland.conf says. */
+    @Override
+    public java.util.List<com.uxplima.uxmskyblock.core.application.gamemode.CreationReach> reach(IslandStart start) {
+        return java.util.List.of(new com.uxplima.uxmskyblock.core.application.gamemode.CreationReach(
+                start.world().getName(), sea.radius()));
+    }
+
     @Override
     public void apply(IslandStart start) {
         int surface = start.y() - sea.belowIsland();

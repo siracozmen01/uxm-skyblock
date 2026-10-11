@@ -57,6 +57,13 @@ public final class SkyGridStart implements CreationActionProvider<IslandStart> {
         return ACTION;
     }
 
+    /** The grid reaches as far as skygrid.conf says, past the border of the island a player starts with. */
+    @Override
+    public java.util.List<com.uxplima.uxmskyblock.core.application.gamemode.CreationReach> reach(IslandStart start) {
+        return java.util.List.of(new com.uxplima.uxmskyblock.core.application.gamemode.CreationReach(
+                start.world().getName(), config.layout().radius()));
+    }
+
     @Override
     public void apply(IslandStart start) {
         World world = start.world();

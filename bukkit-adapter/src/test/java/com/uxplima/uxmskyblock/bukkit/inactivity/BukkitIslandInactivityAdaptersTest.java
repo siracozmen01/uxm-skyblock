@@ -48,6 +48,8 @@ class BukkitIslandInactivityAdaptersTest {
         worldGridAllocationPort = mock(WorldGridAllocationPort.class);
         spiralSlotPoolPort = mock(SpiralSlotPoolPort.class);
         voidingAdapter = mock(FoliaIslandVoidingAdapter.class);
+        when(voidingAdapter.voidIslandChunks(any(), any(), any()))
+                .thenReturn(java.util.concurrent.CompletableFuture.completedFuture(null));
 
         islandId = IslandId.of(UUID.randomUUID());
     }
@@ -102,6 +104,66 @@ class BukkitIslandInactivityAdaptersTest {
         verify(spatialIndex).removeIsland(islandId);
         verify(voidingAdapter).voidIslandChunks(islandId, "skyblock_world", bounds);
         verify(spiralSlotPoolPort).releaseSlot(42L, "skyblock_world", 100, 200);
+    }
+
+    @Test
+    @DisplayName("recycle adapter hands the slot on only once the island is cleared, and keeps it when clearing fails")
+    void theSlotWaitsForTheClearing() {
+        BukkitIslandRecycleAdapter adapter = new BukkitIslandRecycleAdapter(
+                islandStoragePort, worldGridAllocationPort, spiralSlotPoolPort, voidingAdapter, null, null);
+        IslandBounds bounds = IslandBounds.fromCenterAndRadius(100, 200, 25);
+        when(islandStoragePort.findLocationByIslandId(islandId))
+                .thenReturn(Optional.of(new IslandLocation(islandId, "skyblock_world", bounds, 100, 100, 200, 0, 0)));
+        when(worldGridAllocationPort.findByIslandId(islandId))
+                .thenReturn(Optional.of(new WorldGridAllocation(
+                        42L,
+                        "skyblock_world",
+                        100,
+                        200,
+                        Optional.of(islandId),
+                        com.uxplima.uxmskyblock.core.domain.session.ServerNodeId.of("node-1"),
+                        java.time.Instant.now())));
+        java.util.concurrent.CompletableFuture<Void> clearing = new java.util.concurrent.CompletableFuture<>();
+        when(voidingAdapter.voidIslandChunks(any(), any(), any())).thenReturn(clearing);
+
+        adapter.recycleIsland(islandId);
+
+        verify(spiralSlotPoolPort, never()).releaseSlot(any(Long.class), any(), any(Integer.class), any(Integer.class));
+        clearing.complete(null);
+        verify(spiralSlotPoolPort).releaseSlot(42L, "skyblock_world", 100, 200);
+
+        java.util.concurrent.CompletableFuture<Void> failed = new java.util.concurrent.CompletableFuture<>();
+        when(voidingAdapter.voidIslandChunks(any(), any(), any())).thenReturn(failed);
+        adapter.recycleIsland(islandId);
+        failed.completeExceptionally(new IllegalStateException("region gone"));
+        verify(spiralSlotPoolPort, org.mockito.Mockito.times(1))
+                .releaseSlot(any(Long.class), any(), any(Integer.class), any(Integer.class));
+    }
+
+    @Test
+    @DisplayName("recycle adapter clears everywhere the island wrote, and forgets it once cleared")
+    void everywhereTheIslandWrote() {
+        BukkitIslandRecycleAdapter adapter = new BukkitIslandRecycleAdapter(
+                islandStoragePort, worldGridAllocationPort, spiralSlotPoolPort, voidingAdapter, null, null);
+        IslandBounds bounds = IslandBounds.fromCenterAndRadius(100, 200, 25);
+        when(islandStoragePort.findLocationByIslandId(islandId))
+                .thenReturn(Optional.of(new IslandLocation(islandId, "skyblock_world", bounds, 100, 100, 200, 0, 0)));
+        com.uxplima.uxmskyblock.core.application.recycle.IslandFootprintPort footprints =
+                mock(com.uxplima.uxmskyblock.core.application.recycle.IslandFootprintPort.class);
+        when(footprints.of(islandId))
+                .thenReturn(java.util.List.of(
+                        new com.uxplima.uxmskyblock.core.domain.recycle.IslandFootprint("skyblock_world", 100, 200, 48),
+                        new com.uxplima.uxmskyblock.core.domain.recycle.IslandFootprint(
+                                "skyblock_nether", 100, 200, 0)));
+        adapter.useWipeAreas(new com.uxplima.uxmskyblock.core.application.recycle.IslandWipeAreas(
+                footprints, island -> java.util.OptionalInt.empty(), 0));
+
+        adapter.recycleIsland(islandId);
+
+        verify(voidingAdapter)
+                .voidIslandChunks(islandId, "skyblock_world", IslandBounds.fromCenterAndRadius(100, 200, 48));
+        verify(voidingAdapter).voidIslandChunks(islandId, "skyblock_nether", bounds);
+        verify(footprints).forget(islandId);
     }
 
     @Test

@@ -90,6 +90,11 @@ public final class StarterSchematicEngine {
             public CompletableFuture<Void> applyThen(IslandStart start) {
                 return fromFile(start, Optional.of(start.preset().schematicPath()), () -> apply(start));
             }
+
+            @Override
+            public List<com.uxplima.uxmskyblock.core.application.gamemode.CreationReach> reach(IslandStart start) {
+                return pasted(start);
+            }
         });
         actions.register(new CreationActionProvider<>() {
             @Override
@@ -112,6 +117,11 @@ public final class StarterSchematicEngine {
                         .map(IslandSchematics::pathOf);
                 return fromFile(start, path, () -> apply(start));
             }
+
+            @Override
+            public List<com.uxplima.uxmskyblock.core.application.gamemode.CreationReach> reach(IslandStart start) {
+                return pasted(start);
+            }
         });
     }
 
@@ -124,7 +134,7 @@ public final class StarterSchematicEngine {
      * Answers once the last of them stands.
      */
     public CompletableFuture<Void> build(IslandStart start, List<String> actions) {
-        return this.actions.runThen(actions, start, resume(start));
+        return noted(start, actions, this.actions.runThen(actions, start, resume(start)));
     }
 
     /** The creation actions this server provides; a game mode adds its own while the server starts. */
@@ -137,7 +147,74 @@ public final class StarterSchematicEngine {
      * Answers once the last of them stands, which for a pasted schematic is some ticks later.
      */
     public CompletableFuture<Void> start(IslandStart start) {
-        return actions.runThen(start.preset().start(), start, resume(start));
+        List<String> names = start.preset().start();
+        return noted(start, names, actions.runThen(names, start, resume(start)));
+    }
+
+    /** Where each island wrote blocks, kept so the island is cleared over all of it when it goes. */
+    private volatile com.uxplima.uxmskyblock.core.application.recycle.@Nullable IslandFootprintPort footprints;
+
+    /** How far each pasted file reached from its island's centre, by island and world, until it is noted. */
+    private final Map<String, Integer> pastedReach = new java.util.concurrent.ConcurrentHashMap<>();
+
+    /** Hands the engine where to keep what each island's start wrote. */
+    public void useFootprints(com.uxplima.uxmskyblock.core.application.recycle.@Nullable IslandFootprintPort port) {
+        this.footprints = port;
+    }
+
+    /**
+     * Notes where the start writes before it runs, and again once it is done, when a pasted file has said how far
+     * it reached. A start that fails halfway has still written, so it is noted either way. The world it is laid in
+     * is noted too, for an island's Nether or End, which is cleared as far as its border.
+     */
+    private CompletableFuture<Void> noted(IslandStart start, List<String> names, CompletableFuture<Void> built) {
+        note(start, names);
+        var unused = built.whenComplete((done, failure) -> note(start, names));
+        return built;
+    }
+
+    private void note(IslandStart start, List<String> names) {
+        com.uxplima.uxmskyblock.core.application.recycle.IslandFootprintPort port = this.footprints;
+        if (port == null) {
+            return;
+        }
+        List<com.uxplima.uxmskyblock.core.application.gamemode.CreationReach> reach = new ArrayList<>();
+        reach.add(new com.uxplima.uxmskyblock.core.application.gamemode.CreationReach(
+                start.world().getName(), 0));
+        reach.addAll(actions.reachOf(names, start));
+        Runnable write = () -> {
+            for (var square : reach) {
+                port.record(
+                        start.islandId(),
+                        new com.uxplima.uxmskyblock.core.domain.recycle.IslandFootprint(
+                                square.world(), start.centerX(), start.centerZ(), square.radius()));
+            }
+        };
+        SchedulerPort async = this.scheduler;
+        if (async == null) {
+            write.run();
+        } else {
+            async.async(write);
+        }
+    }
+
+    /** How far a pasted file reached from the island's centre in the start's world, or nothing. */
+    private List<com.uxplima.uxmskyblock.core.application.gamemode.CreationReach> pasted(IslandStart start) {
+        Integer radius =
+                pastedReach.get(start.islandId().value() + "@" + start.world().getName());
+        return radius == null
+                ? List.of()
+                : List.of(new com.uxplima.uxmskyblock.core.application.gamemode.CreationReach(
+                        start.world().getName(), radius));
+    }
+
+    /** How far a file pasted at its origin reaches sideways: the furthest of its four sides. */
+    static int reachOf(com.uxplima.uxmlib.schematic.Schematic schematic) {
+        int fromX = schematic.offset().x();
+        int fromZ = schematic.offset().z();
+        int toX = fromX + schematic.width() - 1;
+        int toZ = fromZ + schematic.length() - 1;
+        return Math.max(Math.max(Math.abs(fromX), Math.abs(toX)), Math.max(Math.abs(fromZ), Math.abs(toZ)));
     }
 
     public com.uxplima.uxmskyblock.core.application.performance.@Nullable AdaptiveBackpressureController
@@ -240,9 +317,14 @@ public final class StarterSchematicEngine {
         Executor region = resume(start);
         Location at = new Location(start.world(), start.centerX(), start.y(), start.centerZ());
         return files.read(file)
-                .thenCompose(found -> found.isPresent()
-                        ? files.paste(found.get(), at, Rotation.NONE).thenAccept(report -> noteChanges(file, report))
-                        : CompletableFuture.runAsync(laid, region))
+                .thenCompose(found -> {
+                    if (found.isEmpty()) {
+                        return CompletableFuture.runAsync(laid, region);
+                    }
+                    pastedReach.merge(
+                            start.islandId().value() + "@" + start.world().getName(), reachOf(found.get()), Math::max);
+                    return files.paste(found.get(), at, Rotation.NONE).thenAccept(report -> noteChanges(file, report));
+                })
                 .exceptionallyCompose(failure -> {
                     if (warned.add("failed:" + file)) {
                         LOGGER.log(

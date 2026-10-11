@@ -65,6 +65,13 @@ public final class VesselStart implements CreationActionProvider<IslandStart> {
         return ACTION;
     }
 
+    /** The sea the vessel sails on reaches as far as tradewinds.conf says. */
+    @Override
+    public java.util.List<com.uxplima.uxmskyblock.core.application.gamemode.CreationReach> reach(IslandStart start) {
+        return java.util.List.of(new com.uxplima.uxmskyblock.core.application.gamemode.CreationReach(
+                start.world().getName(), sea.radius()));
+    }
+
     @Override
     public void apply(IslandStart start) {
         IslandId islandId = start.islandId();

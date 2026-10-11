@@ -152,6 +152,7 @@ public final class PersistenceBootstrap implements AutoCloseable {
             profileCosmeticStorageAdapter;
     private final com.uxplima.uxmskyblock.persistence.recycle.SqlIslandRecycleStorageAdapter
             islandRecycleStorageAdapter;
+    private final com.uxplima.uxmskyblock.persistence.recycle.SqlIslandFootprintAdapter islandFootprintAdapter;
 
     public PersistenceBootstrap(Database database) {
         this.database = Objects.requireNonNull(database, "database");
@@ -233,6 +234,8 @@ public final class PersistenceBootstrap implements AutoCloseable {
                 new com.uxplima.uxmskyblock.persistence.cosmetic.SqlProfileCosmeticStorageAdapter(database);
         this.islandRecycleStorageAdapter =
                 new com.uxplima.uxmskyblock.persistence.recycle.SqlIslandRecycleStorageAdapter(database);
+        this.islandFootprintAdapter =
+                new com.uxplima.uxmskyblock.persistence.recycle.SqlIslandFootprintAdapter(database);
     }
 
     /**
@@ -558,6 +561,11 @@ public final class PersistenceBootstrap implements AutoCloseable {
 
     public com.uxplima.uxmskyblock.core.application.recycle.IslandRecycleOperationPort islandRecycleOperationPort() {
         return islandRecycleStorageAdapter;
+    }
+
+    /** Where each island wrote blocks past its border, kept until it is cleared. */
+    public com.uxplima.uxmskyblock.core.application.recycle.IslandFootprintPort islandFootprintPort() {
+        return islandFootprintAdapter;
     }
 
     public void registerProfile(PlayerUuid playerUuid, ProfileId profileId) {

@@ -104,6 +104,23 @@ public final class CreationActions<C> {
         }
     }
 
+    /**
+     * Where the named actions write blocks past the place they are handed, as each says. An action nobody
+     * provides reaches nowhere, so a start that cannot run still answers.
+     */
+    public List<CreationReach> reachOf(List<String> actionIds, C context) {
+        Objects.requireNonNull(actionIds, "actionIds must not be null");
+        Objects.requireNonNull(context, "context must not be null");
+        List<CreationReach> reach = new ArrayList<>();
+        for (String actionId : actionIds) {
+            CreationActionProvider<C> provider = providers.get(key(actionId));
+            if (provider != null) {
+                reach.addAll(provider.reach(context));
+            }
+        }
+        return List.copyOf(reach);
+    }
+
     private List<CreationActionProvider<C>> resolve(List<String> actionIds) {
         Objects.requireNonNull(actionIds, "actionIds must not be null");
         List<CreationActionProvider<C>> resolved = new ArrayList<>(actionIds.size());

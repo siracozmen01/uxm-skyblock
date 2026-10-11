@@ -190,6 +190,38 @@ class ANewSkyGridIslandIsAGridTest extends MockBukkitHarness {
         assertThat(odd.palette(SkyGridConfiguration.END)).isEqualTo(shipped.palette(SkyGridConfiguration.END));
     }
 
+    @Test
+    @DisplayName("A SkyGrid island notes that it wrote as far as its grid, past the island it starts with")
+    void theGridIsNoted() throws Exception {
+        World world = server.addSimpleWorld("skyblock");
+        StarterSchematicEngine engine = engine(config("STONE:1", List.of()));
+        List<com.uxplima.uxmskyblock.core.domain.recycle.IslandFootprint> noted = new ArrayList<>();
+        engine.useFootprints(new com.uxplima.uxmskyblock.core.application.recycle.IslandFootprintPort() {
+            @Override
+            public void record(
+                    IslandId islandId, com.uxplima.uxmskyblock.core.domain.recycle.IslandFootprint footprint) {
+                noted.add(footprint);
+            }
+
+            @Override
+            public List<com.uxplima.uxmskyblock.core.domain.recycle.IslandFootprint> of(IslandId islandId) {
+                return List.of();
+            }
+
+            @Override
+            public void forget(IslandId islandId) {}
+        });
+
+        engine.start(new IslandStart(world, IslandId.of(UUID.randomUUID()), CENTER, Y, CENTER, preset()))
+                .join();
+
+        assertThat(noted)
+                .contains(
+                        new com.uxplima.uxmskyblock.core.domain.recycle.IslandFootprint("skyblock", CENTER, CENTER, 0),
+                        new com.uxplima.uxmskyblock.core.domain.recycle.IslandFootprint(
+                                "skyblock", CENTER, CENTER, LAYOUT.radius()));
+    }
+
     private StarterSchematicEngine engine(SkyGridConfiguration config) {
         StarterSchematicEngine engine = new StarterSchematicEngine();
         engine.actions().register(new SkyGridStart(scheduler, config));

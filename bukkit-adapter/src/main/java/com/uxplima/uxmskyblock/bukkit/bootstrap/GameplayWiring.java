@@ -381,6 +381,11 @@ public final class GameplayWiring {
         this.cacheEviction.whenForgotten(this.chunkBlockWiring.service()::forget);
         this.cacheEviction.whenForgotten(this.acidIslandWiring.service()::forget);
         this.cacheEviction.whenForgotten(this.boxedWiring.service()::forget);
+        // An island is cleared over its border, everywhere its game mode wrote past it, a box grown past it and a
+        // margin past all of them, on every path that removes it. Its starts say where they wrote.
+        this.adminWiring.useWipeAreas(new com.uxplima.uxmskyblock.core.application.recycle.IslandWipeAreas(
+                persistence.islandFootprintPort(), this.boxedWiring.service()::radius, clearMargin(config.rootNode())));
+        this.creationWiring.schematicEngine().useFootprints(persistence.islandFootprintPort());
         this.cacheEviction.whenForgotten(this.poseidonWiring.service()::forget);
         this.cacheEviction.whenForgotten(this.strangerRealmsWiring.service()::forget);
         this.cacheEviction.whenForgotten(this.parkourWiring.service()::forget);
@@ -438,6 +443,11 @@ public final class GameplayWiring {
 
     public com.uxplima.uxmskyblock.bukkit.lifecycle.PlayerLifecycle playerLifecycle() {
         return playerLifecycle;
+    }
+
+    /** How far past everything an island wrote it is cleared, as {@code grid.clear-margin} says. */
+    private static int clearMargin(org.spongepowered.configurate.@Nullable ConfigurationNode root) {
+        return root == null ? 16 : Math.max(0, root.node("grid", "clear-margin").getInt(16));
     }
 
     /**
