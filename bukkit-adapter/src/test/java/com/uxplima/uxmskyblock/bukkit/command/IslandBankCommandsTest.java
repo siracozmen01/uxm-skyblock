@@ -10,6 +10,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -331,6 +332,137 @@ class IslandBankCommandsTest {
     }
 
     /** The next line the player was told, as they read it. */
+    private com.uxplima.uxmskyblock.core.domain.bank.IslandBank bankHolding(long minor, Map<String, Long> held) {
+        return new com.uxplima.uxmskyblock.core.domain.bank.IslandBank(
+                ISLAND, minor, 0L, 0L, 1L, java.time.Instant.now(), held);
+    }
+
+    /** The bank keeps tokens, a currency in a plugin that is here, which the player carries nine of. */
+    private void tokensKept() {
+        com.uxplima.uxmlib.condition.wallet.BridgedWallet wallet =
+                mock(com.uxplima.uxmlib.condition.wallet.BridgedWallet.class);
+        when(wallet.reaches("")).thenReturn(true);
+        when(wallet.balance(any(), any())).thenReturn(9.0);
+        var spec = new com.uxplima.uxmskyblock.bukkit.config.BankCurrencySpec(
+                "tokens",
+                com.uxplima.uxmskyblock.bukkit.config.BankCurrencySpec.Type.PLAYERPOINTS,
+                10,
+                true,
+                "Tokens",
+                "SUNFLOWER",
+                Map.of());
+        var wallets = new com.uxplima.uxmskyblock.bukkit.integration.economy.BankWallets(
+                mock(com.uxplima.uxmskyblock.core.application.economy.ExternalWalletPort.class),
+                inlineScheduler(),
+                Map.of(
+                        "tokens",
+                        new com.uxplima.uxmskyblock.bukkit.integration.economy.BankWallets.Kept(spec, wallet, "")));
+        when(bridge.wallets()).thenReturn(Optional.of(wallets));
+    }
+
+    @Test
+    @DisplayName("All of the money is what the wallet holds going in, and what the island holds coming out, whole")
+    void allOfTheMoney() throws Exception {
+        when(bridge.balance(any())).thenReturn(2_500.75);
+        when(bank.findBank(PROFILE)).thenReturn(Optional.of(bankHolding(12_345L, Map.of())));
+
+        run("bank deposit all", player);
+        run("bank withdraw all", player);
+
+        verify(bridge).depositToIslandBank(any(), eq(PROFILE), eq(2_500L), any(ServerNodeId.class), any());
+        verify(bridge).withdrawFromIslandBank(any(), eq(PROFILE), eq(123L), any(ServerNodeId.class), any());
+    }
+
+    @Test
+    @DisplayName("All of a currency is what the player carries going in, and what the island holds coming out")
+    void allOfACurrency() throws Exception {
+        tokensKept();
+        when(bank.findBank(PROFILE)).thenReturn(Optional.of(bankHolding(0L, Map.of("tokens", 40L))));
+
+        run("bank deposit all tokens", player);
+        run("bank withdraw all tokens", player);
+
+        verify(bridge).moveHeld(any(), eq(PROFILE), eq("tokens"), eq(9L), eq(true), any(ServerNodeId.class), any());
+        verify(bridge).moveHeld(any(), eq(PROFILE), eq("tokens"), eq(40L), eq(false), any(ServerNodeId.class), any());
+    }
+
+    @Test
+    @DisplayName("All of nothing moves nothing, and the player is told there is nothing to move")
+    void allOfNothing() throws Exception {
+        when(bridge.balance(any())).thenReturn(0.5);
+        when(bank.findBank(PROFILE)).thenReturn(Optional.empty());
+
+        run("bank deposit all", player);
+        assertThat(said()).contains("nothing to move");
+        run("bank withdraw all", player);
+        assertThat(said()).contains("nothing to move");
+
+        verify(bridge, never()).depositToIslandBank(any(), any(), anyLong(), any(), any());
+        verify(bridge, never()).withdrawFromIslandBank(any(), any(), anyLong(), any(), any());
+    }
+
+    @Test
+    @DisplayName("A Turkish reader writes all in their own word")
+    void allInTheReadersWord() throws Exception {
+        player.setLocale(java.util.Locale.forLanguageTag("tr"));
+        when(bridge.balance(any())).thenReturn(70.0);
+
+        run("bank deposit hepsi", player);
+
+        verify(bridge).depositToIslandBank(any(), eq(PROFILE), eq(70L), any(ServerNodeId.class), any());
+    }
+
+    @Test
+    @DisplayName("Once a move lands the bank says which currency moved, the money as primary")
+    void aLandedMoveIsSaid() throws Exception {
+        IslandBankCommands commands = new IslandBankCommands(
+                bank,
+                locations,
+                bridge,
+                inlineScheduler(),
+                ServerNodeId.of("node-1"),
+                () -> null,
+                Messages.bundled(),
+                sessions);
+        java.util.List<String> moved = new java.util.ArrayList<>();
+        commands.useMoved((who, currency) -> moved.add(currency));
+        dispatcher = new CommandDispatcher<>();
+        dispatcher.register(commands.build());
+        tokensKept();
+        var landed = mock(com.uxplima.uxmskyblock.core.domain.bank.BankTransactionOutcome.Success.class);
+        doAnswer(invocation -> {
+                    invocation
+                            .<java.util.function.Consumer<Object>>getArgument(4)
+                            .accept(landed);
+                    return null;
+                })
+                .when(bridge)
+                .depositToIslandBank(any(), any(), anyLong(), any(), any());
+        doAnswer(invocation -> {
+                    invocation
+                            .<java.util.function.Consumer<Object>>getArgument(6)
+                            .accept(landed);
+                    return null;
+                })
+                .when(bridge)
+                .moveHeld(any(), any(), any(), anyLong(), org.mockito.ArgumentMatchers.anyBoolean(), any(), any());
+        var refused = mock(com.uxplima.uxmskyblock.core.domain.bank.BankTransactionOutcome.InsufficientFunds.class);
+        doAnswer(invocation -> {
+                    invocation
+                            .<java.util.function.Consumer<Object>>getArgument(4)
+                            .accept(refused);
+                    return null;
+                })
+                .when(bridge)
+                .withdrawFromIslandBank(any(), any(), anyLong(), any(), any());
+
+        run("bank deposit 5", player);
+        run("bank deposit 3 tokens", player);
+        run("bank withdraw 5", player);
+
+        assertThat(moved).describedAs("a refused move draws nothing again").containsExactly("primary", "tokens");
+    }
+
     private String said() {
         return net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer.plainText()
                 .serialize(java.util.Objects.requireNonNull(player.nextComponentMessage()));

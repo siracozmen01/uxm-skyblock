@@ -12,7 +12,10 @@ import org.spongepowered.configurate.ConfigurationNode;
  * Configuration holder for island bank and upkeep failure policy (Section 2.39).
  */
 public record BankConfiguration(
-        IslandUpkeepPolicy upkeepPolicy, Duration operationRetention, List<BankCurrencySpec> currencies) {
+        IslandUpkeepPolicy upkeepPolicy,
+        Duration operationRetention,
+        List<BankCurrencySpec> currencies,
+        BankMoneySpec money) {
 
     public static final boolean DEFAULT_ENABLED = false;
     public static final Duration DEFAULT_INTERVAL = Duration.ofHours(24);
@@ -32,11 +35,18 @@ public record BankConfiguration(
 
     public BankConfiguration {
         currencies = List.copyOf(Objects.requireNonNull(currencies, "currencies must not be null"));
+        Objects.requireNonNull(money, "money must not be null");
         Objects.requireNonNull(upkeepPolicy, "upkeepPolicy must not be null");
         Objects.requireNonNull(operationRetention, "operationRetention must not be null");
         if (operationRetention.isNegative()) {
             throw new IllegalArgumentException("operationRetention must not be negative: " + operationRetention);
         }
+    }
+
+    /** The money drawn as shipped. */
+    public BankConfiguration(
+            IslandUpkeepPolicy upkeepPolicy, Duration operationRetention, List<BankCurrencySpec> currencies) {
+        this(upkeepPolicy, operationRetention, currencies, BankMoneySpec.DEFAULT);
     }
 
     /** The shape before the bank kept more than the island's own money. */
@@ -66,9 +76,10 @@ public record BankConfiguration(
                 : DEFAULT_OPERATION_RETENTION;
 
         List<BankCurrencySpec> currencies = BankCurrencySpec.load(rootNode);
+        BankMoneySpec money = BankMoneySpec.load(rootNode);
         ConfigurationNode upkeepNode = rootNode.node("bank", "upkeep");
         if (upkeepNode.virtual() || upkeepNode.empty()) {
-            return new BankConfiguration(IslandUpkeepPolicy.defaultPolicy(), operationRetention, currencies);
+            return new BankConfiguration(IslandUpkeepPolicy.defaultPolicy(), operationRetention, currencies, money);
         }
 
         boolean enabled = upkeepNode.node("enabled").getBoolean(DEFAULT_ENABLED);
@@ -92,6 +103,6 @@ public record BankConfiguration(
         IslandUpkeepPolicy policy = new IslandUpkeepPolicy(
                 enabled, interval, baseFeeMinor, perMemberFeeMinor, graceDuration, autoRemediate);
 
-        return new BankConfiguration(policy, operationRetention, currencies);
+        return new BankConfiguration(policy, operationRetention, currencies, money);
     }
 }

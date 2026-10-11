@@ -68,6 +68,7 @@ final class CommandGroupBuilder {
                 tree.sessionCoordinator);
 
         bankCommands.useWindows(tree.windows);
+        bankCommands.useMoved((player, currency) -> tree.bankMoved.accept(player, currency));
 
         IslandUpgradeCommands upgradeCommands = new IslandUpgradeCommands(
                 () -> tree.features.upgradeService(),

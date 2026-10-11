@@ -188,24 +188,33 @@ class IslandControlMenuTest extends MockBukkitHarness {
         when(mockUpgrades.getUpgrades(eq(islandId))).thenReturn(Map.of());
         when(mockLocations.resolveHome(eq(profileId))).thenReturn(Optional.empty());
         SkyblockMenuEngine engine = ShippedTemplates.engineWith(dataDir, "island-bank.conf");
-        new BankCurrencyList(
-                        Messages.bundled(),
-                        () -> java.util.List.of(new com.uxplima.uxmskyblock.bukkit.config.BankCurrencySpec(
-                                "experience",
-                                com.uxplima.uxmskyblock.bukkit.config.BankCurrencySpec.Type.EXPERIENCE,
-                                10,
-                                true,
-                                "@bank.currencies.experience",
-                                "EXPERIENCE_BOTTLE",
-                                Map.of())))
-                .register(engine);
+        BankCurrencyList currencies = new BankCurrencyList(
+                Messages.bundled(),
+                () -> com.uxplima.uxmskyblock.bukkit.config.BankMoneySpec.DEFAULT,
+                () -> java.util.List.of(new com.uxplima.uxmskyblock.bukkit.config.BankCurrencySpec(
+                        "experience",
+                        com.uxplima.uxmskyblock.bukkit.config.BankCurrencySpec.Type.EXPERIENCE,
+                        10,
+                        true,
+                        "@bank.currencies.experience",
+                        "EXPERIENCE_BOTTLE",
+                        Map.of())),
+                line -> line);
+        currencies.useCarried((who, id) -> Optional.of(id.equals("experience") ? "7" : "250"));
+        currencies.register(engine);
         engine.install();
         menu.useMenuEngine(engine);
+        menu.useCarried(currencies::carriedBy);
 
         menu.openWindow(player, "island-bank", () -> {});
-        settle(() -> loreAt(28).contains("In the bank"));
+        settle(() -> loreAt(11).contains("In the bank"));
 
-        assertThat(loreAt(28)).contains("Experience").contains("In the bank 42");
+        assertThat(loreAt(10)).contains("Money").contains("In the bank 0.00").contains("You carry 250");
+        assertThat(loreAt(11)).contains("Experience").contains("In the bank 42").contains("You carry 7");
+        assertThat(loreAt(5))
+                .describedAs("what missions earn the island, apart from what members carry")
+                .contains("Island crystals")
+                .contains("Island experience");
     }
 
     private String loreAt(int slot) {

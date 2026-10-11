@@ -26,6 +26,7 @@ import org.spongepowered.configurate.ConfigurationNode;
  * @param displayName its name, a catalogue key written {@code @key} or the words themselves
  * @param icon the item its tile in the bank window wears
  * @param options what its type needs, every value as the file wrote it
+ * @param quick the amounts its window moves in one click, the smallest first
  */
 public record BankCurrencySpec(
         String id,
@@ -34,7 +35,11 @@ public record BankCurrencySpec(
         boolean enabled,
         String displayName,
         String icon,
-        Map<String, String> options) {
+        Map<String, String> options,
+        List<Long> quick) {
+
+    /** The amounts a currency whose file names none moves in one click. */
+    public static final List<Long> DEFAULT_QUICK = List.of(10L, 100L);
 
     private static final Logger LOGGER = Logger.getLogger(BankCurrencySpec.class.getName());
 
@@ -72,9 +77,38 @@ public record BankCurrencySpec(
         Objects.requireNonNull(displayName, "displayName must not be null");
         Objects.requireNonNull(icon, "icon must not be null");
         options = Map.copyOf(Objects.requireNonNull(options, "options must not be null"));
+        quick = List.copyOf(Objects.requireNonNull(quick, "quick must not be null"));
         if (!BankCurrencies.isHeld(id)) {
             throw new IllegalArgumentException("'" + id + "' is not a currency id the bank can keep");
         }
+    }
+
+    /** A currency that moves the shipped amounts in one click. */
+    public BankCurrencySpec(
+            String id,
+            Type type,
+            int order,
+            boolean enabled,
+            String displayName,
+            String icon,
+            Map<String, String> options) {
+        this(id, type, order, enabled, displayName, icon, options, DEFAULT_QUICK);
+    }
+
+    /**
+     * The amounts under {@code node}: whole numbers above nothing, the smallest first, or {@code fallback} when the
+     * file names none it can use.
+     */
+    static List<Long> quickOf(ConfigurationNode node, List<Long> fallback) {
+        List<Long> amounts = new ArrayList<>();
+        for (ConfigurationNode written : node.childrenList()) {
+            long amount = written.getLong(0L);
+            if (amount > 0 && !amounts.contains(amount)) {
+                amounts.add(amount);
+            }
+        }
+        amounts.sort(Comparator.naturalOrder());
+        return amounts.isEmpty() ? fallback : List.copyOf(amounts);
     }
 
     /** An option of its type, or nothing when the file left it out. */
@@ -109,7 +143,7 @@ public record BankCurrencySpec(
             }
             Map<String, String> options = new LinkedHashMap<>();
             node.childrenMap().forEach((key, child) -> {
-                if (child.isMap()) {
+                if (child.isMap() || child.isList()) {
                     return;
                 }
                 String value = child.getString();
@@ -124,7 +158,8 @@ public record BankCurrencySpec(
                     node.node("enabled").getBoolean(true),
                     node.node("display-name").getString(id),
                     node.node("icon").getString(defaultIcon(type.get())),
-                    options));
+                    options,
+                    quickOf(node.node("quick"), DEFAULT_QUICK)));
         }
         specs.sort(Comparator.comparingInt(BankCurrencySpec::order).thenComparing(BankCurrencySpec::id));
         return List.copyOf(specs);

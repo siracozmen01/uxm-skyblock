@@ -244,6 +244,15 @@ public final class IslandControlMenu {
         return Map.copyOf(values);
     }
 
+    private static Map<String, String> withCarried(Map<String, String> values, Map<String, String> carrying) {
+        if (carrying.isEmpty()) {
+            return values;
+        }
+        Map<String, String> both = new HashMap<>(values);
+        both.putAll(carrying);
+        return Map.copyOf(both);
+    }
+
     private static Map<String, String> numbers(
             Island island, @Nullable IslandBank bank, @Nullable Map<UpgradeId, Integer> upgrades, int vaultPages) {
         long minorBalance = bank != null ? bank.primaryBalanceMinorUnits() : 0L;
@@ -307,10 +316,35 @@ public final class IslandControlMenu {
      * one would otherwise show the tier it had before.
      */
     public void refresh(Player player, String specId) {
-        show(player, specId, true, () -> {});
+        refresh(player, specId, UnaryOperator.identity());
+    }
+
+    /**
+     * The same, for a window opened with values of its own beside the island's: {@code extend} adds them to the
+     * island's values as they stand now.
+     */
+    public void refresh(Player player, String specId, UnaryOperator<Map<String, String>> extend) {
+        show(player, specId, true, () -> {}, Objects.requireNonNull(extend, "extend must not be null"));
+    }
+
+    /** What a player carries of each currency the bank keeps, read off their thread, for the bank's windows. */
+    private volatile @Nullable Function<java.util.UUID, Map<String, String>> carried;
+
+    /** Hands the bank's windows what a player carries of each currency, as {@code carried_<id>}. */
+    public void useCarried(@Nullable Function<java.util.UUID, Map<String, String>> carried) {
+        this.carried = carried;
     }
 
     private void show(Player player, String specId, boolean refresh, Runnable otherwise) {
+        show(player, specId, refresh, otherwise, UnaryOperator.identity());
+    }
+
+    private void show(
+            Player player,
+            String specId,
+            boolean refresh,
+            Runnable otherwise,
+            UnaryOperator<Map<String, String>> extend) {
         Objects.requireNonNull(player, "player must not be null");
         PlayerUuid playerUuid = new PlayerUuid(player.getUniqueId());
         Optional<ProfileId> activeOpt = activeProfileProvider.apply(player.getUniqueId());
@@ -365,6 +399,11 @@ public final class IslandControlMenu {
             ToIntFunction<IslandId> pagesOf = this.vaultPages;
             int pages = pagesOf == null ? 1 : pagesOf.applyAsInt(islandId);
             Optional<IslandLocation> optLoc = locationService.resolveHome(profileId);
+            // Only the bank's windows show what a player carries, and reading it may wait on another plugin.
+            Function<java.util.UUID, Map<String, String>> carriedOf = this.carried;
+            Map<String, String> carrying = carriedOf != null && specId.startsWith(BankCurrencyList.BANK_FILE)
+                    ? carriedOf.apply(player.getUniqueId())
+                    : Map.of();
 
             schedulerPort.onEntity(playerUuid, () -> {
                 if (!player.isOnline()) {
@@ -373,7 +412,10 @@ public final class IslandControlMenu {
                 if (refresh) {
                     SkyblockMenuEngine engine = this.menuEngine;
                     if (engine != null && engine.showing(player, specId)) {
-                        engine.open(player, specId, liveValues(player, island, bank, upgrades, pages));
+                        engine.open(
+                                player,
+                                specId,
+                                extend.apply(withCarried(liveValues(player, island, bank, upgrades, pages), carrying)));
                     }
                     return;
                 }
@@ -381,7 +423,12 @@ public final class IslandControlMenu {
                 // Bedrock player, so every window it opens is reachable there too. The form built in
                 // code below only answered with hints in chat, and stays for a file that is missing.
                 SkyblockMenuEngine engine = this.menuEngine;
-                if (engine != null && engine.open(player, specId, liveValues(player, island, bank, upgrades, pages))) {
+                if (engine != null
+                        && engine.open(
+                                player,
+                                specId,
+                                extend.apply(
+                                        withCarried(liveValues(player, island, bank, upgrades, pages), carrying)))) {
                     return;
                 }
                 if (!"island-main".equals(specId)) {

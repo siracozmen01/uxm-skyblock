@@ -18,7 +18,7 @@ class BankCurrencySpecTest {
     }
 
     @Test
-    @DisplayName("The shipped file keeps experience, and lists points and diamonds turned off")
+    @DisplayName("The shipped file keeps experience, points and diamonds, every one on, and the money first")
     void theShippedFile() throws Exception {
         ConfigurationNode root = HoconConfigurationLoader.builder()
                 .path(Path.of("src/main/resources/modules/bank.conf"))
@@ -30,7 +30,15 @@ class BankCurrencySpecTest {
         assertThat(config.currencies())
                 .extracting(BankCurrencySpec::id)
                 .containsExactly("experience", "points", "diamonds");
-        assertThat(config.enabledCurrencies()).extracting(BankCurrencySpec::id).containsExactly("experience");
+        assertThat(config.enabledCurrencies())
+                .describedAs("a currency whose plugin is missing stays out by itself, so every one ships on")
+                .extracting(BankCurrencySpec::id)
+                .containsExactly("experience", "points", "diamonds");
+        assertThat(config.currencies())
+                .extracting(BankCurrencySpec::quick)
+                .containsExactly(List.of(10L, 100L), List.of(10L, 100L), List.of(1L, 16L));
+        assertThat(config.money())
+                .isEqualTo(new BankMoneySpec("@bank.currencies.money", "GOLD_INGOT", 0, List.of(100L, 1000L)));
         BankCurrencySpec experience = config.currencies().get(0);
         assertThat(experience.type()).isEqualTo(BankCurrencySpec.Type.EXPERIENCE);
         assertThat(experience.option("unit")).hasValue("points");
@@ -64,6 +72,37 @@ class BankCurrencySpecTest {
         assertThat(spec.displayName()).isEqualTo("shards");
         assertThat(spec.icon()).isEqualTo("EXPERIENCE_BOTTLE");
         assertThat(spec.option("unit")).isEmpty();
+        assertThat(spec.quick()).isEqualTo(BankCurrencySpec.DEFAULT_QUICK);
+    }
+
+    @Test
+    @DisplayName("The amounts a click moves are whole and above nothing, each once, the smallest first")
+    void theQuickAmounts() throws Exception {
+        BankCurrencySpec spec = BankCurrencySpec.load(
+                        read("bank.currencies.shards { type = \"experience\", quick = [64, 0, 8, -3, 8] }"))
+                .get(0);
+
+        assertThat(spec.quick()).containsExactly(8L, 64L);
+        assertThat(spec.options()).doesNotContainKey("quick");
+    }
+
+    @Test
+    @DisplayName("A quick list with nothing usable in it moves the shipped amounts")
+    void noUsableQuickAmount() throws Exception {
+        BankCurrencySpec spec = BankCurrencySpec.load(
+                        read("bank.currencies.shards { type = \"experience\", quick = [0] }"))
+                .get(0);
+
+        assertThat(spec.quick()).isEqualTo(BankCurrencySpec.DEFAULT_QUICK);
+    }
+
+    @Test
+    @DisplayName("The money is drawn as the file says, and as shipped where it says nothing")
+    void theMoney() throws Exception {
+        assertThat(BankMoneySpec.load(read("""
+                        bank.money { display-name = "Coins", icon = "SUNFLOWER", order = 50, quick = [5] }
+                        """))).isEqualTo(new BankMoneySpec("Coins", "SUNFLOWER", 50, List.of(5L)));
+        assertThat(BankMoneySpec.load(read("bank.upkeep.enabled = false"))).isEqualTo(BankMoneySpec.DEFAULT);
     }
 
     @Test

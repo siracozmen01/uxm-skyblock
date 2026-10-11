@@ -117,16 +117,16 @@ class EveryMenuWordComesFromTheCatalogueTest extends MockBukkitHarness {
                 Map.of("value", "@menu.bank.shared_note")));
 
         assertThat(plain(java.util.Objects.requireNonNull(turkish.nextComponentMessage())))
-                .isEqualTo("Ada bankası her üyenin ortak bankasıdır.");
+                .isEqualTo("Ada bankası her üyenin ortak bankasıdır. Bir birime tıkla, koy ya da al.");
     }
 
     @Test
     @DisplayName("Only argument names are asked for, so a colour tag never runs a placeholder")
     void onlyArgumentsAreAsked() {
         Player viewer = createPlayer("Reader");
-        AskedFor values = new AskedFor(Map.of("argument_balance", "12.50"));
+        AskedFor values = new AskedFor(Map.of("argument_crystals", "12"));
 
-        new CatalogueMenuWords(Messages.bundled()).text(viewer, "menu.bank.balance.coins.value", values);
+        new CatalogueMenuWords(Messages.bundled()).text(viewer, "menu.bank.island_pool.crystals.value", values);
 
         assertThat(values.asked).isNotEmpty().allMatch(name -> name.startsWith("argument_"));
     }

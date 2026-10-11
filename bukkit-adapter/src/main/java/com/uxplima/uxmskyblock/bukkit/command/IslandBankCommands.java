@@ -51,6 +51,36 @@ public final class IslandBankCommands {
         this.windows = java.util.Objects.requireNonNull(windows, "windows must not be null");
     }
 
+    /** What runs once a move lands, with the player and the currency it moved, {@code primary} for the money. */
+    private java.util.function.BiConsumer<Player, String> moved = (player, currency) -> {};
+
+    /** Hands the bank what to do once a move lands, which is drawing its windows again. */
+    public void useMoved(java.util.function.BiConsumer<Player, String> moved) {
+        this.moved = Objects.requireNonNull(moved, "moved must not be null");
+    }
+
+    /** The id the money goes by when a move of it lands. */
+    static final String MONEY = "primary";
+
+    /**
+     * An amount as a player wrote it: a number, or all of what there is, which is read once the move knows where
+     * from.
+     */
+    private record Amount(long units, boolean all) {}
+
+    /**
+     * {@code written} as an amount: {@code all}, or the reader's own word for it, or a number the bank reads.
+     * Nothing for anything else.
+     */
+    private Optional<Amount> amountOf(Player player, String written) {
+        String word = written.strip();
+        if (word.equalsIgnoreCase("all") || word.equalsIgnoreCase(messages.words(player, "@bank.all_word"))) {
+            return Optional.of(new Amount(0L, true));
+        }
+        java.util.OptionalLong read = BankAmount.parse(word);
+        return read.isPresent() ? Optional.of(new Amount(read.getAsLong(), false)) : Optional.empty();
+    }
+
     private final IslandBankService islandBankService;
     private final IslandLocationService islandLocationService;
     private final SkyblockEconomyBridge economyBridge;
@@ -264,12 +294,11 @@ public final class IslandBankCommands {
             moveHeld(player, held.get(), true, IslandPermission.BANK_DEPOSIT);
             return Cmd.OK;
         }
-        java.util.OptionalLong read = BankAmount.parse(written);
+        Optional<Amount> read = amountOf(player, written);
         if (read.isEmpty()) {
             send(player, "bank.amount_unreadable", Placeholder.unparsed("written", written));
             return Cmd.OK;
         }
-        long amount = read.getAsLong();
         Optional<ProfileId> optProfile = activeProfile(player);
         if (optProfile.isEmpty()) {
             send(player, "error.session_not_active");
@@ -277,39 +306,46 @@ public final class IslandBankCommands {
         }
         ProfileId profileId = optProfile.get();
 
-        ifTheRoleAllowsIt(
-                player,
-                profileId,
-                IslandPermission.BANK_DEPOSIT,
-                () -> economyBridge.depositToIslandBank(player, profileId, amount, serverNodeId, outcome -> {
-                    if (outcome instanceof BankTransactionOutcome.Success) {
-                        send(player, "bank.deposit_success", Placeholder.unparsed("amount", Long.toString(amount)));
-                        IslandBankruptcyService bService = bankruptcyServiceProvider.get();
-                        if (bService != null && bService.policy().autoRemediateOnDeposit()) {
-                            // The bridge answers a refused deposit on the caller's own thread and a settled
-                            // one off it, so which thread this outcome arrives on depends on the branch
-                            // taken inside the bridge. Reading and settling arrears is two more round trips
-                            // to the database either way, so it asks for the scheduler itself rather than
-                            // trusting the thread it was handed.
-                            schedulerPort.async(() -> islandLocationService
-                                    .findIslandId(profileId)
-                                    .ifPresent(islandId -> {
-                                        BankruptcyRemediationResult rem =
-                                                bService.settleArrears(islandId, Instant.now(), serverNodeId);
-                                        if (rem instanceof BankruptcyRemediationResult.Settled settled) {
-                                            send(
-                                                    player,
-                                                    "bank.auto_settled",
-                                                    Placeholder.unparsed("amount", money(settled.amountPaid())));
-                                        }
-                                    }));
-                        }
-                    } else if (outcome instanceof BankTransactionOutcome.InsufficientFunds) {
-                        send(player, "bank.wallet_insufficient");
-                    } else {
-                        send(player, BankRefusalLines.keyFor(outcome, "bank.deposit_wallet_refused"));
+        ifTheRoleAllowsIt(player, profileId, IslandPermission.BANK_DEPOSIT, () -> {
+            // All of it is what the wallet holds in whole money, read where the move runs.
+            long amount = read.get().all()
+                    ? (long) Math.floor(economyBridge.balance(player))
+                    : read.get().units();
+            if (amount <= 0) {
+                send(player, "bank.nothing_to_move");
+                return;
+            }
+            economyBridge.depositToIslandBank(player, profileId, amount, serverNodeId, outcome -> {
+                if (outcome instanceof BankTransactionOutcome.Success) {
+                    send(player, "bank.deposit_success", Placeholder.unparsed("amount", Long.toString(amount)));
+                    moved.accept(player, MONEY);
+                    IslandBankruptcyService bService = bankruptcyServiceProvider.get();
+                    if (bService != null && bService.policy().autoRemediateOnDeposit()) {
+                        // The bridge answers a refused deposit on the caller's own thread and a settled
+                        // one off it, so which thread this outcome arrives on depends on the branch
+                        // taken inside the bridge. Reading and settling arrears is two more round trips
+                        // to the database either way, so it asks for the scheduler itself rather than
+                        // trusting the thread it was handed.
+                        schedulerPort.async(() -> islandLocationService
+                                .findIslandId(profileId)
+                                .ifPresent(islandId -> {
+                                    BankruptcyRemediationResult rem =
+                                            bService.settleArrears(islandId, Instant.now(), serverNodeId);
+                                    if (rem instanceof BankruptcyRemediationResult.Settled settled) {
+                                        send(
+                                                player,
+                                                "bank.auto_settled",
+                                                Placeholder.unparsed("amount", money(settled.amountPaid())));
+                                    }
+                                }));
                     }
-                }));
+                } else if (outcome instanceof BankTransactionOutcome.InsufficientFunds) {
+                    send(player, "bank.wallet_insufficient");
+                } else {
+                    send(player, BankRefusalLines.keyFor(outcome, "bank.deposit_wallet_refused"));
+                }
+            });
+        });
 
         return Cmd.OK;
     }
@@ -354,12 +390,11 @@ public final class IslandBankCommands {
             moveHeld(player, held.get(), false, IslandPermission.BANK_WITHDRAW);
             return Cmd.OK;
         }
-        java.util.OptionalLong read = BankAmount.parse(written);
+        Optional<Amount> read = amountOf(player, written);
         if (read.isEmpty()) {
             send(player, "bank.amount_unreadable", Placeholder.unparsed("written", written));
             return Cmd.OK;
         }
-        long amount = read.getAsLong();
         Optional<ProfileId> optProfile = activeProfile(player);
         if (optProfile.isEmpty()) {
             send(player, "error.session_not_active");
@@ -367,19 +402,29 @@ public final class IslandBankCommands {
         }
         ProfileId profileId = optProfile.get();
 
-        ifTheRoleAllowsIt(
-                player,
-                profileId,
-                IslandPermission.BANK_WITHDRAW,
-                () -> economyBridge.withdrawFromIslandBank(player, profileId, amount, serverNodeId, outcome -> {
-                    if (outcome instanceof BankTransactionOutcome.Success) {
-                        send(player, "bank.withdraw_success", Placeholder.unparsed("amount", Long.toString(amount)));
-                    } else if (outcome instanceof BankTransactionOutcome.InsufficientFunds) {
-                        send(player, "bank.withdraw_insufficient");
-                    } else {
-                        send(player, BankRefusalLines.keyFor(outcome, "bank.withdraw_wallet_refused"));
-                    }
-                }));
+        ifTheRoleAllowsIt(player, profileId, IslandPermission.BANK_WITHDRAW, () -> {
+            // All of it is what the island holds in whole money.
+            long amount = read.get().all()
+                    ? islandBankService
+                            .findBank(profileId)
+                            .map(bank -> bank.primaryBalanceMinorUnits() / 100L)
+                            .orElse(0L)
+                    : read.get().units();
+            if (amount <= 0) {
+                send(player, "bank.nothing_to_move");
+                return;
+            }
+            economyBridge.withdrawFromIslandBank(player, profileId, amount, serverNodeId, outcome -> {
+                if (outcome instanceof BankTransactionOutcome.Success) {
+                    send(player, "bank.withdraw_success", Placeholder.unparsed("amount", Long.toString(amount)));
+                    moved.accept(player, MONEY);
+                } else if (outcome instanceof BankTransactionOutcome.InsufficientFunds) {
+                    send(player, "bank.withdraw_insufficient");
+                } else {
+                    send(player, BankRefusalLines.keyFor(outcome, "bank.withdraw_wallet_refused"));
+                }
+            });
+        });
 
         return Cmd.OK;
     }
@@ -406,42 +451,56 @@ public final class IslandBankCommands {
     /** Moves an amount of one of the operator's currencies in or out, when the caller's role allows it. */
     private void moveHeld(Player player, HeldMove move, boolean intoTheBank, IslandPermission permission) {
         String name = messages.words(player, move.currency().spec().displayName());
-        java.util.OptionalLong read = BankAmount.parse(move.amount());
+        Optional<Amount> read = amountOf(player, move.amount());
         if (read.isEmpty()) {
             send(player, "bank.amount_unreadable", Placeholder.unparsed("written", move.amount()));
             return;
         }
-        long units = read.getAsLong();
         Optional<ProfileId> optProfile = activeProfile(player);
         if (optProfile.isEmpty()) {
             send(player, "error.session_not_active");
             return;
         }
         ProfileId profileId = optProfile.get();
-        TagResolver amount = Placeholder.unparsed("amount", Long.toString(units));
+        String id = move.currency().spec().id();
         TagResolver currency = Placeholder.unparsed("currency", name);
-        ifTheRoleAllowsIt(
-                player,
-                profileId,
-                permission,
-                () -> economyBridge.moveHeld(
-                        player, profileId, move.currency().spec().id(), units, intoTheBank, serverNodeId, outcome -> {
-                            if (outcome instanceof BankTransactionOutcome.Success) {
-                                send(
-                                        player,
-                                        intoTheBank ? "bank.held_deposit_success" : "bank.held_withdraw_success",
-                                        amount,
-                                        currency);
-                            } else if (outcome instanceof BankTransactionOutcome.InsufficientFunds poor) {
-                                send(
-                                        player,
-                                        intoTheBank ? "bank.held_wallet_insufficient" : "bank.held_bank_insufficient",
-                                        Placeholder.unparsed("have", Long.toString(poor.currentBalance())),
-                                        currency);
-                            } else {
-                                send(player, "bank.held_refused", currency);
-                            }
-                        }));
+        ifTheRoleAllowsIt(player, profileId, permission, () -> {
+            // All of it is what the player carries going in, and what the island holds coming out.
+            long units = !read.get().all()
+                    ? read.get().units()
+                    : intoTheBank
+                            ? economyBridge
+                                    .wallets()
+                                    .flatMap(wallets -> wallets.carried(player.getUniqueId(), id))
+                                    .orElse(0L)
+                            : islandBankService
+                                    .findBank(profileId)
+                                    .map(bank -> bank.heldOf(id))
+                                    .orElse(0L);
+            if (units <= 0) {
+                send(player, "bank.nothing_to_move");
+                return;
+            }
+            TagResolver amount = Placeholder.unparsed("amount", Long.toString(units));
+            economyBridge.moveHeld(player, profileId, id, units, intoTheBank, serverNodeId, outcome -> {
+                if (outcome instanceof BankTransactionOutcome.Success) {
+                    send(
+                            player,
+                            intoTheBank ? "bank.held_deposit_success" : "bank.held_withdraw_success",
+                            amount,
+                            currency);
+                    moved.accept(player, id);
+                } else if (outcome instanceof BankTransactionOutcome.InsufficientFunds poor) {
+                    send(
+                            player,
+                            intoTheBank ? "bank.held_wallet_insufficient" : "bank.held_bank_insufficient",
+                            Placeholder.unparsed("have", Long.toString(poor.currentBalance())),
+                            currency);
+                } else {
+                    send(player, "bank.held_refused", currency);
+                }
+            });
+        });
     }
 
     private Optional<ProfileId> activeProfile(Player player) {

@@ -126,6 +126,45 @@ class TheBankKeepsTheOperatorsCurrenciesTest {
     }
 
     @Test
+    @DisplayName("A currency whose plugin is not here stays out of the bank, and comes back once the plugin is")
+    void aCurrencyNobodyAnswersStaysOut() {
+        com.uxplima.uxmlib.condition.wallet.BridgedWallet points =
+                mock(com.uxplima.uxmlib.condition.wallet.BridgedWallet.class);
+        when(points.reaches("")).thenReturn(false);
+        BankWallets wallets = new BankWallets(
+                money,
+                scheduler,
+                Map.of(
+                        "points",
+                        new BankWallets.Kept(
+                                spec("points", BankCurrencySpec.Type.PLAYERPOINTS, true, Map.of()), points, ""),
+                        "tokens",
+                        new BankWallets.Kept(
+                                spec("tokens", BankCurrencySpec.Type.PLACEHOLDER, true, Map.of()),
+                                mock(com.uxplima.uxmlib.condition.Wallet.class),
+                                ""),
+                        "xp",
+                        new BankWallets.Kept(
+                                spec("xp", BankCurrencySpec.Type.EXPERIENCE, true, Map.of()),
+                                mock(com.uxplima.uxmlib.condition.Wallet.class),
+                                "")));
+
+        assertThat(wallets.currencies())
+                .describedAs("PlayerPoints and PlaceholderAPI are not on this server")
+                .extracting(kept -> kept.spec().id())
+                .containsExactly("xp");
+        assertThat(wallets.currency("points")).isEmpty();
+        assertThat(wallets.walletFor("points"))
+                .describedAs("a move a crash left half done still finds its wallet")
+                .isPresent();
+
+        when(points.reaches("")).thenReturn(true);
+
+        assertThat(wallets.currencies()).extracting(kept -> kept.spec().id()).containsExactly("points", "xp");
+        assertThat(wallets.currency("points")).isPresent();
+    }
+
+    @Test
     @DisplayName("A description that names no material, or no placeholder, is refused with the reason")
     void aDescriptionSaysWhatItLacks() {
         System.Logger log = System.getLogger("test");

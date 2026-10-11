@@ -89,20 +89,40 @@ public final class BankWallets implements WalletDirectory {
                         wrong);
             }
         }
+        kept.values().stream()
+                .filter(currency -> !answers(currency))
+                .forEach(currency -> LOGGER.info(() ->
+                        "The bank currency " + currency.spec().id() + " lives in a plugin this server does not run now."
+                                + " It stays out of the bank until that plugin is here."));
         return new BankWallets(money, scheduler, kept);
     }
 
-    /** The currencies the bank keeps beside the island's own money, in the operator's order. */
+    /**
+     * Whether the economy a currency lives in answers now. Experience and items are in the player and always
+     * answer. A currency in another plugin answers while that plugin is here, so one the server does not run is
+     * left out of the bank's windows and commands rather than drawn as a balance of nothing nobody can move.
+     */
+    static boolean answers(Kept kept) {
+        return switch (kept.spec().type()) {
+            case ITEM, EXPERIENCE -> true;
+            case PLACEHOLDER -> Bukkit.getPluginManager().isPluginEnabled("PlaceholderAPI");
+            case TREASURY -> Bukkit.getPluginManager().isPluginEnabled("Treasury");
+            default -> !(kept.wallet() instanceof BridgedWallet bridged) || bridged.reaches(kept.pool());
+        };
+    }
+
+    /** The currencies the bank keeps beside the island's own money and can reach now, in the operator's order. */
     public List<Kept> currencies() {
         return kept.values().stream()
+                .filter(BankWallets::answers)
                 .sorted(java.util.Comparator.comparingInt((Kept k) -> k.spec().order())
                         .thenComparing(k -> k.spec().id()))
                 .toList();
     }
 
-    /** The currency kept under {@code id}, or nothing when the bank keeps none by that name. */
+    /** The currency kept under {@code id} when it can be reached now, or nothing. */
     public Optional<Kept> currency(String id) {
-        return Optional.ofNullable(kept.get(id.toLowerCase(Locale.ROOT)));
+        return Optional.ofNullable(kept.get(id.toLowerCase(Locale.ROOT))).filter(BankWallets::answers);
     }
 
     @Override
@@ -110,7 +130,8 @@ public final class BankWallets implements WalletDirectory {
         if (BankCurrencies.isPrimary(currency)) {
             return Optional.of(money);
         }
-        return currency(currency).map(PlayerWallet::new);
+        // A move a crash left half done is finished or undone through the wallet it began with, reachable or not.
+        return Optional.ofNullable(kept.get(currency.toLowerCase(Locale.ROOT))).map(PlayerWallet::new);
     }
 
     /** What {@code player} carries of the currency {@code id}, read where it lives, or nothing when unknown. */

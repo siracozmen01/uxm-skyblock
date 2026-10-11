@@ -109,17 +109,30 @@ final class IslandCommandWiring {
                         persistence.islandMutationLock(),
                         gameplay.membershipService()::rolesChangedOn),
                 config.roleConfig());
-        // Each currency the bank keeps beside its money is a tile of the bank window, with a window of its own.
-        new com.uxplima.uxmskyblock.bukkit.menu.BankCurrencyList(
-                        integration.messages(),
-                        () -> integration
-                                .economyBridge()
-                                .wallets()
-                                .map(wallets -> wallets.currencies().stream()
-                                        .map(com.uxplima.uxmskyblock.bukkit.integration.economy.BankWallets.Kept::spec)
-                                        .toList())
-                                .orElse(java.util.List.of()))
-                .register(integration.menuEngine());
+        // Every currency the bank keeps, its money among them, is a tile of the bank window with a window of its own.
+        var economy = integration.economyBridge();
+        var bankCurrencies = new com.uxplima.uxmskyblock.bukkit.menu.BankCurrencyList(
+                integration.messages(),
+                () -> config.bankConfig().money(),
+                () -> economy.wallets()
+                        .map(wallets -> wallets.currencies().stream()
+                                .map(com.uxplima.uxmskyblock.bukkit.integration.economy.BankWallets.Kept::spec)
+                                .toList())
+                        .orElse(java.util.List.of()),
+                tree::typed);
+        bankCurrencies.useCarried((player, id) -> com.uxplima.uxmskyblock.bukkit.menu.BankCurrencyList.MONEY.equals(id)
+                ? java.util.Optional.of(
+                        economy.isEconomyAvailable()
+                                ? Long.toString(
+                                        (long) Math.floor(economy.balance(org.bukkit.Bukkit.getOfflinePlayer(player))))
+                                : "0")
+                : economy.wallets()
+                        .flatMap(wallets -> wallets.carried(player, id))
+                        .map(String::valueOf));
+        bankCurrencies.useControl(integration.controlMenu());
+        bankCurrencies.register(integration.menuEngine());
+        integration.controlMenu().useCarried(bankCurrencies::carriedBy);
+        tree.useBankMoved(bankCurrencies::moved);
         // The homes and every leaderboard are windows, one tile each, rather than lines in chat.
         var homeList = new com.uxplima.uxmskyblock.bukkit.menu.HomeList(tree::typed);
         homeList.useMenuEngine(integration.menuEngine());

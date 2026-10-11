@@ -15,6 +15,16 @@ dependencies:
     PlaceholderAPI:
       load: BEFORE
       required: false
+    # The economies a bank currency may live in, so each is up before the bank asks it.
+    Treasury:
+      load: BEFORE
+      required: false
+    PlayerPoints:
+      load: BEFORE
+      required: false
+    EcoBits:
+      load: BEFORE
+      required: false
     mcMMO:
       load: BEFORE
       required: false

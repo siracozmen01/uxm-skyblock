@@ -452,6 +452,14 @@ public final class IslandCommandTree {
         this.presetList = list;
     }
 
+    /** What runs once a bank move lands: the bank's windows drawn again with what it left. */
+    volatile java.util.function.BiConsumer<org.bukkit.entity.Player, String> bankMoved = (player, currency) -> {};
+
+    /** Hands the bank what to do once a move lands, with the player and the currency it moved. */
+    public void useBankMoved(java.util.function.BiConsumer<org.bukkit.entity.Player, String> moved) {
+        this.bankMoved = java.util.Objects.requireNonNull(moved, "moved must not be null");
+    }
+
     /** The window the homes are listed in, rather than lines in chat. */
     public void useHomeList(com.uxplima.uxmskyblock.bukkit.menu.@Nullable HomeList homeList) {
         this.homeList = homeList;
