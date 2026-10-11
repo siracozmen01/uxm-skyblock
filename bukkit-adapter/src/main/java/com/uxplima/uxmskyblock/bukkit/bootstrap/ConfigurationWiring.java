@@ -601,6 +601,19 @@ public final class ConfigurationWiring {
         return acidIslandConfig;
     }
 
+    /** The walls, {@code modules/walls.conf}, the shipped ones until the loader hands the file over. */
+    private volatile com.uxplima.uxmskyblock.bukkit.wall.WallConfiguration wallConfig =
+            com.uxplima.uxmskyblock.bukkit.wall.WallConfiguration.defaultConfiguration();
+
+    public com.uxplima.uxmskyblock.bukkit.wall.WallConfiguration wallConfig() {
+        return wallConfig;
+    }
+
+    /** Hands over {@code modules/walls.conf} as the server read it. */
+    public void useWallConfig(com.uxplima.uxmskyblock.bukkit.wall.WallConfiguration config) {
+        this.wallConfig = Objects.requireNonNull(config, "config must not be null");
+    }
+
     /** Whether islands can be ChunkBlock islands, and what each chunk costs in level. */
     public com.uxplima.uxmskyblock.bukkit.config.ChunkBlockConfiguration chunkBlockConfig() {
         return chunkBlockConfig;

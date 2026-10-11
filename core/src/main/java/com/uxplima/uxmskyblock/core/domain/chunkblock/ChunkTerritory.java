@@ -59,6 +59,14 @@ public final class ChunkTerritory {
         return List.copyOf(opened);
     }
 
+    /** Every open chunk, the first among them. */
+    public Set<ChunkPos> open() {
+        Set<ChunkPos> open = new LinkedHashSet<>();
+        open.add(origin);
+        open.addAll(opened);
+        return java.util.Collections.unmodifiableSet(open);
+    }
+
     public int size() {
         return opened.size() + 1;
     }

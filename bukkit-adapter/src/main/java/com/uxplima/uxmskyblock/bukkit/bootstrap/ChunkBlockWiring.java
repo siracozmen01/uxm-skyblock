@@ -21,6 +21,7 @@ public final class ChunkBlockWiring {
     private final ChunkBlockConfiguration config;
     private final ChunkBlockService service;
     private final com.uxplima.uxmskyblock.bukkit.chunkblock.ChunkBlockListener listener;
+    private final com.uxplima.uxmskyblock.bukkit.chunkblock.@org.jspecify.annotations.Nullable TerritoryWalls walls;
 
     public ChunkBlockWiring(
             ConfigurationWiring configuration,
@@ -38,6 +39,25 @@ public final class ChunkBlockWiring {
                 config.bypassPermission());
         // A fallen level closes chunks off the main thread; whoever stands in one is moved out.
         service.whenClosed(listener::moveOut);
+        // The open ground is walled where it meets closed ground, in the style modules/walls.conf names.
+        var wallConfig = configuration.wallConfig();
+        this.walls = wallConfig
+                .chunkBlockStyle()
+                .map(style -> new com.uxplima.uxmskyblock.bukkit.chunkblock.TerritoryWalls(
+                        service,
+                        islands,
+                        scheduler,
+                        new com.uxplima.uxmskyblock.bukkit.wall.WallPanels(wallConfig),
+                        style,
+                        islandId -> persistence
+                                .islandStoragePort()
+                                .findLocationByIslandId(islandId)
+                                .map(com.uxplima.uxmskyblock.core.domain.island.IslandLocation::worldName)))
+                .orElse(null);
+        if (walls != null) {
+            service.whenOpened(walls::opened);
+            service.whenClosed(walls::closed);
+        }
         // Every territory into memory before anybody steps near a closed chunk, so no step is a query.
         scheduler.async(() -> {
             try {
@@ -82,6 +102,11 @@ public final class ChunkBlockWiring {
     /** The edge of every territory, registered while the operator lets islands be ChunkBlock islands. */
     public com.uxplima.uxmskyblock.bukkit.chunkblock.ChunkBlockListener listener() {
         return listener;
+    }
+
+    /** The wall around every territory's open ground, while the operator names a style for it. */
+    public com.uxplima.uxmskyblock.bukkit.chunkblock.@org.jspecify.annotations.Nullable TerritoryWalls walls() {
+        return walls;
     }
 
     public ChunkBlockConfiguration config() {

@@ -76,6 +76,26 @@ class ChunkBlockServiceTest {
     }
 
     @Test
+    @DisplayName("An opened chunk is told once it is open in memory, and a refused one is not told")
+    void anOpenedChunkIsTold() {
+        service.start(islandId, 8, 8);
+        List<ChunkPos> told = new ArrayList<>();
+        AtomicBoolean openWhenTold = new AtomicBoolean();
+        service.whenOpened((island, chunk) -> {
+            told.add(chunk);
+            openWhenTold.set(service.isOpen(island, chunk).orElse(false));
+        });
+
+        service.unlock(islandId, new ChunkPos(1, 0), BOUNDS, 0);
+        service.unlock(islandId, new ChunkPos(1, 0), BOUNDS, 9);
+
+        assertThat(told).containsExactly(new ChunkPos(1, 0));
+        assertThat(openWhenTold).isTrue();
+        assertThat(service.inMemory(islandId).orElseThrow().open())
+                .containsExactly(new ChunkPos(0, 0), new ChunkPos(1, 0));
+    }
+
+    @Test
     @DisplayName("A fallen level closes the newest chunks in the table, then in memory, then says so")
     void aFallenLevelClosesAndTells() {
         service.start(islandId, 8, 8);

@@ -43,6 +43,7 @@ public final class ChunkBlockService {
     private final Map<IslandId, ChunkTerritory> memory = new ConcurrentHashMap<>();
     private final Map<IslandId, Object> locks = new ConcurrentHashMap<>();
     private final List<BiConsumer<IslandId, List<ChunkPos>>> closedListeners = new CopyOnWriteArrayList<>();
+    private final List<BiConsumer<IslandId, ChunkPos>> openedListeners = new CopyOnWriteArrayList<>();
 
     public ChunkBlockService(ChunkTerritoryPort port, ChunkUnlockRules rules) {
         this.port = Objects.requireNonNull(port, "port must not be null");
@@ -98,6 +99,7 @@ public final class ChunkBlockService {
     public UnlockResult unlock(IslandId islandId, ChunkPos chunk, IslandBounds bounds, long level) {
         Objects.requireNonNull(chunk, "chunk must not be null");
         Objects.requireNonNull(bounds, "bounds must not be null");
+        UnlockResult opened;
         synchronized (lockOf(islandId)) {
             Optional<ChunkTerritory> current = territory(islandId);
             if (current.isEmpty()) {
@@ -114,8 +116,12 @@ public final class ChunkBlockService {
                 return new UnlockResult(Outcome.TAKEN, rules.requiredFor(size(islandId)));
             }
             memory.put(islandId, next);
-            return new UnlockResult(Outcome.UNLOCKED, next.nextRequirement(rules));
+            opened = new UnlockResult(Outcome.UNLOCKED, next.nextRequirement(rules));
         }
+        for (BiConsumer<IslandId, ChunkPos> listener : openedListeners) {
+            listener.accept(islandId, chunk);
+        }
+        return opened;
     }
 
     /**
@@ -142,6 +148,11 @@ public final class ChunkBlockService {
             listener.accept(islandId, closed);
         }
         return closed;
+    }
+
+    /** Told which chunk an island opened, after it is open. */
+    public void whenOpened(BiConsumer<IslandId, ChunkPos> listener) {
+        openedListeners.add(Objects.requireNonNull(listener, "listener must not be null"));
     }
 
     /** Told which chunks an island lost, after they are closed. */

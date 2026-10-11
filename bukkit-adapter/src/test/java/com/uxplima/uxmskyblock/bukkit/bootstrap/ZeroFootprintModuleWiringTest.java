@@ -425,6 +425,8 @@ class ZeroFootprintModuleWiringTest {
                 .thenReturn(com.uxplima.uxmskyblock.bukkit.config.LifecycleConfiguration.defaultConfiguration());
         when(config.chunkBlockConfig())
                 .thenReturn(com.uxplima.uxmskyblock.bukkit.config.ChunkBlockConfiguration.defaultConfiguration());
+        when(config.wallConfig())
+                .thenReturn(com.uxplima.uxmskyblock.bukkit.wall.WallConfiguration.defaultConfiguration());
         when(config.parkourConfig())
                 .thenReturn(com.uxplima.uxmskyblock.bukkit.config.ParkourConfiguration.defaultConfiguration());
         when(config.brixConfig())

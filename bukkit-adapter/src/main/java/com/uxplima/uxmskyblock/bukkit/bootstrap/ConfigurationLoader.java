@@ -445,6 +445,12 @@ public final class ConfigurationLoader {
                 webMapConfig,
                 presetConfig);
 
+        wiring.useWallConfig(loadConfig(
+                plugin,
+                dataDir,
+                "walls.conf",
+                com.uxplima.uxmskyblock.bukkit.wall.WallConfiguration::load,
+                com.uxplima.uxmskyblock.bukkit.wall.WallConfiguration.defaultConfiguration()));
         wiring.validate();
         return wiring;
     }
