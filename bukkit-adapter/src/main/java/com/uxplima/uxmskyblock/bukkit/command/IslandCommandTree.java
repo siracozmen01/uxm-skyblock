@@ -444,6 +444,16 @@ public final class IslandCommandTree {
         this.socialWindows = windows;
     }
 
+    /** Whether a kind of island can be made on this server: its world is loaded. */
+    volatile java.util.function.Predicate<com.uxplima.uxmskyblock.core.domain.preset.StarterPreset> playableKinds =
+            preset -> true;
+
+    /** Hands the commands which kinds of island this server can make. */
+    public void usePlayableKinds(
+            java.util.function.Predicate<com.uxplima.uxmskyblock.core.domain.preset.StarterPreset> playable) {
+        this.playableKinds = java.util.Objects.requireNonNull(playable, "playable must not be null");
+    }
+
     /** How a player picks a kind of island, and the window the kinds are shown in. */
     public void usePresets(
             com.uxplima.uxmskyblock.bukkit.config.PresetChoices choices,

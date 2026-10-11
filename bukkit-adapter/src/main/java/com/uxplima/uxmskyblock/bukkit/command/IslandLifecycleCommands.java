@@ -85,6 +85,16 @@ public final class IslandLifecycleCommands {
     /** The window of island kinds, when the operator kept its file. */
     private Supplier<com.uxplima.uxmskyblock.bukkit.menu.@Nullable PresetList> presetList = () -> null;
 
+    /** Whether a kind of island can be made on this server, so the kinds a player is told of are ones it can. */
+    private java.util.function.Predicate<com.uxplima.uxmskyblock.core.domain.preset.StarterPreset> playableKinds =
+            preset -> true;
+
+    /** Hands the commands which kinds of island this server can make. */
+    public void usePlayableKinds(
+            java.util.function.Predicate<com.uxplima.uxmskyblock.core.domain.preset.StarterPreset> playable) {
+        this.playableKinds = Objects.requireNonNull(playable, "playable must not be null");
+    }
+
     /** Tells this command group how a player picks a kind of island, and where the window of kinds is. */
     public void usePresetChoices(
             Supplier<com.uxplima.uxmskyblock.bukkit.config.PresetChoices> choices,
@@ -841,6 +851,7 @@ public final class IslandLifecycleCommands {
     /** The preset ids an operator can actually pass, read off the catalogue rather than typed. */
     private String availablePresetIds() {
         return presetCatalog.allPresets().stream()
+                .filter(playableKinds)
                 .map(preset -> preset.id())
                 .collect(java.util.stream.Collectors.joining(", "));
     }

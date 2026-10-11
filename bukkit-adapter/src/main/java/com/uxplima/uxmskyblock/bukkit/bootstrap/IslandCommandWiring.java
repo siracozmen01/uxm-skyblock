@@ -147,8 +147,14 @@ final class IslandCommandWiring {
         // The kinds of island are a window, and a player with no island is met the way the operator chose.
         com.uxplima.uxmskyblock.bukkit.config.PresetChoices choices =
                 config.presetConfig().choices();
+        // A kind whose world this server has not loaded is not offered: on Folia, Boxed and StrangerRealms.
+        var kinds = com.uxplima.uxmskyblock.bukkit.world.PresetWorlds.ofServer(worldName);
         var presetList = new com.uxplima.uxmskyblock.bukkit.menu.PresetList(
-                integration.messages(), () -> gameplay.presetCatalog().allPresets(), () -> choices, tree::typed);
+                integration.messages(),
+                () -> kinds.playable(gameplay.presetCatalog().allPresets()),
+                () -> choices,
+                tree::typed);
+        tree.usePlayableKinds(kinds::playable);
         presetList.useMenuEngine(integration.menuEngine());
         tree.usePresets(choices, presetList);
         integration.controlMenu().useNoIsland(player -> {

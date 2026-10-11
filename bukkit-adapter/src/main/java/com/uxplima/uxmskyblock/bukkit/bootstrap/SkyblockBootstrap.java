@@ -187,6 +187,15 @@ public final class SkyblockBootstrap implements AutoCloseable {
         drawIslandsOnTheWebMap();
         writeShippedPlatforms();
         groundTheSpawns();
+        noteKindsThatCannotBeMade();
+    }
+
+    /** Says once, now that the worlds are loaded, which kinds of island this server cannot make and why. */
+    private void noteKindsThatCannotBeMade() {
+        com.uxplima.uxmskyblock.bukkit.world.PresetWorlds.ofServer(
+                        configWiring.nodeConfig().worldName())
+                .notes(configWiring.presetConfig().presets())
+                .forEach(plugin.getLogger()::warning);
     }
 
     /**
