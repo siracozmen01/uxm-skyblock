@@ -99,6 +99,66 @@ public final class ChunkBlockWiring {
         return panel;
     }
 
+    /**
+     * Paying for chunks by their grades: what players hand in, what the island's bank pays, and the rewards opening
+     * one fires.
+     */
+    public com.uxplima.uxmskyblock.bukkit.chunkblock.ChunkPurchase purchase(
+            PersistenceBootstrap persistence,
+            com.uxplima.uxmskyblock.core.application.bank.IslandBankService bank,
+            com.uxplima.uxmskyblock.bukkit.integration.economy.SkyblockEconomyBridge economy,
+            com.uxplima.uxmskyblock.core.application.island.IslandAccessService access,
+            SchedulerPort scheduler,
+            com.uxplima.uxmskyblock.bukkit.i18n.Messages messages,
+            java.util.function.Function<
+                            java.util.UUID, java.util.Optional<com.uxplima.uxmskyblock.core.domain.identity.ProfileId>>
+                    activeProfile,
+            java.util.function.BiFunction<
+                            com.uxplima.uxmskyblock.core.domain.identity.IslandId,
+                            com.uxplima.uxmskyblock.core.domain.identity.ProfileId,
+                            Long>
+                    levelOf,
+            com.uxplima.uxmskyblock.core.domain.session.ServerNodeId node) {
+        var unlocks = new com.uxplima.uxmskyblock.core.application.chunkblock.ChunkUnlocks(
+                service,
+                persistence.chunkPaymentPort(),
+                config.tiers(),
+                persistence.islandBankPort(),
+                bank,
+                persistence.islandAuthorityPort());
+        var purse = new com.uxplima.uxmskyblock.bukkit.chunkblock.PlayerChunkPurse(
+                new com.uxplima.uxmskyblock.bukkit.chunkblock.PlayerChunkPurse.Money() {
+                    @Override
+                    public double balance(org.bukkit.entity.Player player) {
+                        return economy.balance(player);
+                    }
+
+                    @Override
+                    public boolean withdraw(org.bukkit.entity.Player player, double amount) {
+                        return economy.withdrawWallet(player, amount);
+                    }
+
+                    @Override
+                    public boolean deposit(org.bukkit.entity.Player player, double amount) {
+                        return economy.depositWallet(player, amount);
+                    }
+                },
+                id -> economy.wallets().flatMap(wallets -> wallets.currency(id)));
+        var rewards = new com.uxplima.uxmskyblock.bukkit.chunkblock.ChunkRewards(
+                config.tiers(), new com.uxplima.uxmskyblock.bukkit.effect.InteractionEffectPlayer(scheduler, messages));
+        return new com.uxplima.uxmskyblock.bukkit.chunkblock.ChunkPurchase(
+                unlocks,
+                persistence.islandStoragePort(),
+                access,
+                scheduler,
+                messages,
+                purse,
+                rewards,
+                activeProfile,
+                levelOf,
+                node);
+    }
+
     /** The edge of every territory, registered while the operator lets islands be ChunkBlock islands. */
     public com.uxplima.uxmskyblock.bukkit.chunkblock.ChunkBlockListener listener() {
         return listener;

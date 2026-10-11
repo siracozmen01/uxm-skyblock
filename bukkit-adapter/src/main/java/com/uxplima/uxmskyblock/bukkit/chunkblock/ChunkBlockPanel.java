@@ -46,6 +46,7 @@ public final class ChunkBlockPanel {
     private final Function<UUID, Optional<ProfileId>> activeProfile;
     private final BiFunction<IslandId, ProfileId, Long> levelOf;
     private @Nullable SkyblockMenuEngine engine;
+    private @Nullable ChunkPurchase purchase;
 
     /**
      * @param levelOf the island's level as the level command works it out, read off the main thread
@@ -69,6 +70,15 @@ public final class ChunkBlockPanel {
         this.engine = engine;
     }
 
+    /** Pays for chunks by their grades, rather than by the level ladder alone. */
+    public void usePurchase(@Nullable ChunkPurchase purchase) {
+        this.purchase = purchase;
+    }
+
+    public @Nullable ChunkPurchase purchase() {
+        return purchase;
+    }
+
     /** Shows how far the player's island has opened, or says why there is nothing to show. */
     public void open(Player player) {
         withIsland(player, (islandId, profile) -> {
@@ -83,13 +93,19 @@ public final class ChunkBlockPanel {
         });
     }
 
-    /** Opens the chunk beside the player's, in the direction the player faces. */
+    /** Pays toward the chunk beside the player's, in the direction the player faces, and opens it once paid. */
     public void unlockFaced(Player player) {
         Location at = player.getLocation();
         if (at == null) {
             return;
         }
         ChunkPos faced = faced(at);
+        ChunkPurchase grades = this.purchase;
+        if (grades != null) {
+            // Hands in what the player carries toward the chunk's grade, and opens it once its price is met.
+            grades.payAll(player, faced, () -> {});
+            return;
+        }
         withIsland(player, (islandId, profile) -> {
             Optional<Island> island = islands.findIslandById(islandId);
             if (island.isEmpty()) {

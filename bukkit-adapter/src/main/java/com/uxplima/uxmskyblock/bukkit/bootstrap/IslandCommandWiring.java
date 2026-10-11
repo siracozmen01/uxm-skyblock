@@ -213,6 +213,20 @@ final class IslandCommandWiring {
                         integration.messages(),
                         authority.sessionCoordinator()::activeProfile,
                         (islandId, profile) -> levelOf(gameplay, islandId, profile));
+        if (chunkBlockPanel != null) {
+            // Chunks are paid for by their grades, out of what players carry and the island's bank.
+            chunkBlockPanel.usePurchase(gameplay.chunkBlockWiring()
+                    .purchase(
+                            persistence,
+                            gameplay.bankService(),
+                            integration.economyBridge(),
+                            gameplay.accessService(),
+                            gameplay.scheduler(),
+                            integration.messages(),
+                            authority.sessionCoordinator()::activeProfile,
+                            (islandId, profile) -> levelOf(gameplay, islandId, profile),
+                            config.nodeConfig().nodeId()));
+        }
         tree.useChunkBlock(chunkBlockPanel);
         integration.placeholderExpansion().useChunkBlock(chunkBlockPanel);
         tree.useOneBlock(oneBlockPanel);

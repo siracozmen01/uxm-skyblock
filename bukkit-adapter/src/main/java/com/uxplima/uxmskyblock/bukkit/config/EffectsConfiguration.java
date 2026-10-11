@@ -136,7 +136,8 @@ public final class EffectsConfiguration {
         return new InteractionEffects(byInteraction);
     }
 
-    private static ActionList parseAll(String interaction, List<String> lines) {
+    /** Every line of {@code lines} the action engine reads, in order; one it cannot read is logged and skipped. */
+    public static ActionList parseAll(String interaction, List<String> lines) {
         List<Action> actions = new ArrayList<>();
         for (String line : lines) {
             try {

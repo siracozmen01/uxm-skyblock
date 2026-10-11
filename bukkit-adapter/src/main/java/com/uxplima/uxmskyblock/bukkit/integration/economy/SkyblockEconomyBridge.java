@@ -194,6 +194,14 @@ public final class SkyblockEconomyBridge {
         return economyBridge.deposit(player, amount);
     }
 
+    /** Takes {@code amount} from the player's own money, false when the economy is away or they hold less. */
+    public boolean withdrawWallet(OfflinePlayer player, double amount) {
+        if (!economyBridge.isPresent()) {
+            return false;
+        }
+        return economyBridge.withdraw(player, amount);
+    }
+
     public int recoverPendingSagas(ServerNodeId nodeId) {
         if (sagaCoordinator != null) {
             return sagaCoordinator.recoverIncompleteSagas(Instant.now(), nodeId);
