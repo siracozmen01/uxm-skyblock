@@ -238,6 +238,7 @@ class AChunkIsAWindowOfItsPriceTest extends MockBukkitHarness {
                 .containsEntry("needed", "2")
                 .containsEntry("left", "1")
                 .containsEntry("from", "Held by the island's level")
+                .containsEntry("state", "Not reached yet")
                 .containsEntry("material", "EXPERIENCE_BOTTLE");
         assertThat(rows.get(3).words())
                 .containsEntry("what", "Chunk points")
@@ -249,7 +250,8 @@ class AChunkIsAWindowOfItsPriceTest extends MockBukkitHarness {
                 .describedAs("a level past the one asked is the one asked, and nothing is left")
                 .containsEntry("paid", "2")
                 .containsEntry("left", "0")
-                .containsEntry("state", "Paid");
+                .containsEntry("state", "Reached");
+        assertThat(high.get(0).words()).containsEntry("state", "Still to pay");
     }
 
     @Test

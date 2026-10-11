@@ -247,7 +247,7 @@ public final class ChunkWindow {
             words.put("left", amount(line, left));
             words.put("from", messages.words(player, "@menu.chunk.from." + source(line)));
             words.put("how", messages.words(player, "@menu.chunk.how." + source(line)));
-            words.put("state", messages.words(player, left == 0 ? "@menu.chunk.done" : "@menu.chunk.owing"));
+            words.put("state", messages.words(player, "@menu.chunk." + state(line, left)));
             words.put("material", material(line));
             rows.add(new MenuRow(words, line));
         }
@@ -333,6 +333,14 @@ public final class ChunkWindow {
             case ChunkRequirement.Points points -> "NETHER_STAR";
             case ChunkRequirement.Level held -> "EXPERIENCE_BOTTLE";
         };
+    }
+
+    /** Whether {@code line} is met: a level is reached or not, anything else paid or still to pay. */
+    static String state(ChunkRequirement line, long left) {
+        if (line instanceof ChunkRequirement.Level) {
+            return left == 0 ? "reached" : "not_reached";
+        }
+        return left == 0 ? "done" : "owing";
     }
 
     /** Who pays {@code line}: the player, the island's bank, its points, or its level. */
