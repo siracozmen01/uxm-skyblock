@@ -33,6 +33,23 @@ class TheWallsAreTheOperatorsTest {
         assertThat(config.top()).isEqualTo(320);
         assertThat(config.slice()).isEqualTo(64);
         assertThat(config.bedrock()).isEqualTo(WallConfiguration.Bedrock.SHIPPED);
+        assertThat(config.island())
+                .describedAs("islands keep the client's border")
+                .isEqualTo("border");
+        assertThat(config.edges()).containsExactly("border", "glass", "mist", "none");
+    }
+
+    @Test
+    @DisplayName("An island's default edge is the border, none or a style, and anything else falls back to the border")
+    void theIslandsDefaultEdge() throws Exception {
+        assertThat(read("walls { island = \"mist\" }").island()).isEqualTo("mist");
+        assertThat(read("walls { island = \" none \" }").island()).isEqualTo("none");
+        assertThat(read("walls { island = \"lava\" }").island()).isEqualTo("border");
+        WallConfiguration config = read("walls { island = \"mist\" }");
+        assertThat(config.edge("mist")).isTrue();
+        assertThat(config.edge("border")).isTrue();
+        assertThat(config.edge("none")).isTrue();
+        assertThat(config.edge("lava")).isFalse();
     }
 
     @Test

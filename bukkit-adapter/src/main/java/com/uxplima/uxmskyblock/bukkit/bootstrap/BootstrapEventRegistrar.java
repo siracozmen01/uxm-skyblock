@@ -32,6 +32,8 @@ public final class BootstrapEventRegistrar {
         if (featureModuleWiring.moduleRegistry().isModuleEnabled("chat") && gameplayWiring.chatListener() != null) {
             pm.registerEvents(gameplayWiring.chatListener(), plugin);
         }
+        // The wall along the edge of an island that chose one.
+        pm.registerEvents(gameplayWiring.islandEdgeWalls(), plugin);
         if (gameplayWiring.chunkBlockWiring().enabled()) {
             pm.registerEvents(gameplayWiring.chunkBlockWiring().listener(), plugin);
             var walls = gameplayWiring.chunkBlockWiring().walls();

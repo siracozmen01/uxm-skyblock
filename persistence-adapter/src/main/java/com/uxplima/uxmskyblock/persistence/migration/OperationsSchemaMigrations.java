@@ -43,6 +43,7 @@ final class OperationsSchemaMigrations {
         list.add(BankSchemaMigrationsV48.migration(dialect));
         list.add(RecycleSchemaMigrationsV49.migration(dialect));
         list.add(ChunkBlockSchemaMigrationsV50.migration(dialect));
+        list.add(IslandEdgeSchemaMigrationsV51.migration(dialect));
         return List.copyOf(list);
     }
 }

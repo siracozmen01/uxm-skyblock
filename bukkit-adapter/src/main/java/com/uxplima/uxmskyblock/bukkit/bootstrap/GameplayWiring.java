@@ -110,6 +110,10 @@ public final class GameplayWiring {
     private final IslandCacheEviction cacheEviction;
     private final OneBlockWiring oneBlockWiring;
     private final ChunkBlockWiring chunkBlockWiring;
+    private final com.uxplima.uxmskyblock.bukkit.boundary.IslandEdges islandEdges;
+    private static final java.util.logging.Logger LOGGER =
+            java.util.logging.Logger.getLogger(GameplayWiring.class.getName());
+    private final com.uxplima.uxmskyblock.bukkit.boundary.IslandEdgeWalls islandEdgeWalls;
     private final AcidIslandWiring acidIslandWiring;
     private final BoxedWiring boxedWiring;
     private final PoseidonWiring poseidonWiring;
@@ -380,12 +384,34 @@ public final class GameplayWiring {
                         this.chunkBlockWiring.service().onLevel(islandId, score.calculatedLevel()));
         this.cacheEviction.whenForgotten(this.economicWiring.worthService()::forgetIsland);
         this.cacheEviction.whenForgotten(this.chunkBlockWiring.service()::forget);
-        // A ChunkBlock island is edged by the wall around its open ground, never by the client's square border.
-        var edges = environmentWiring.boundaryListener();
-        if (edges != null) {
-            var chunkBlock = this.chunkBlockWiring.service();
-            edges.useBorderFor(island -> chunkBlock.inMemory(island).isEmpty());
+        // Each island's edge is drawn the way its members chose: the client's border, a wall, or nothing. A ChunkBlock
+        // island is edged by the wall around its open ground instead.
+        var chunkBlock = this.chunkBlockWiring.service();
+        this.islandEdges = new com.uxplima.uxmskyblock.bukkit.boundary.IslandEdges(
+                persistence.islandEdgePort(),
+                config.wallConfig(),
+                island -> chunkBlock.inMemory(island).isPresent());
+        this.islandEdgeWalls = new com.uxplima.uxmskyblock.bukkit.boundary.IslandEdgeWalls(
+                islandEdges,
+                protectionListener,
+                scheduler,
+                new com.uxplima.uxmskyblock.bukkit.wall.WallPanels(config.wallConfig()),
+                persistence.islandStoragePort()::findLocationByIslandId);
+        var border = environmentWiring.boundaryListener();
+        if (border != null) {
+            border.useBorderFor(islandEdges::drawsBorder);
+            islandEdges.whenChanged(island -> refreshTheBorderOn(island, border));
         }
+        islandEdges.whenChanged(islandEdgeWalls::changed);
+        this.cacheEviction.whenForgotten(islandEdgeWalls::forget);
+        scheduler.async(() -> {
+            try {
+                int count = islandEdges.prime();
+                LOGGER.fine(() -> count + " islands chose how their edge is drawn.");
+            } catch (RuntimeException e) {
+                LOGGER.log(java.util.logging.Level.WARNING, "How the islands draw their edges could not be read.", e);
+            }
+        });
         var chunkSigns = this.chunkBlockWiring.signs();
         if (chunkSigns != null) {
             this.cacheEviction.whenForgotten(chunkSigns::forget);
@@ -735,6 +761,40 @@ public final class GameplayWiring {
         var unused = new com.uxplima.uxmskyblock.bukkit.boundary.IslandEdgeRedraw(
                         environmentWiring.boundaryService(), GameplayWiring::whereTheyStand)
                 .show(moved);
+        var after = moved.location().bounds();
+        islandEdgeWalls.moved(
+                moved.island().id(),
+                moved.location().worldName(),
+                com.uxplima.uxmskyblock.core.domain.island.IslandBounds.fromCenterAndRadius(
+                        after.centerX(), after.centerZ(), moved.fromRadius()),
+                after);
+    }
+
+    /** Shows everybody standing on {@code island} its edge the new way, each on their own thread. */
+    private void refreshTheBorderOn(
+            com.uxplima.uxmskyblock.core.domain.identity.IslandId island, IslandBoundaryListener border) {
+        for (org.bukkit.entity.Player online : org.bukkit.Bukkit.getOnlinePlayers()) {
+            scheduler.onEntity(com.uxplima.uxmskyblock.core.domain.identity.PlayerUuid.of(online.getUniqueId()), () -> {
+                org.bukkit.Location at = online.getLocation();
+                if (at != null
+                        && protectionListener
+                                .findIslandAt(at)
+                                .map(found -> found.id().equals(island))
+                                .orElse(false)) {
+                    border.refresh(online);
+                }
+            });
+        }
+    }
+
+    /** How each island's edge is drawn, as its members chose. */
+    public com.uxplima.uxmskyblock.bukkit.boundary.IslandEdges islandEdges() {
+        return islandEdges;
+    }
+
+    /** The walls along the edges of islands that chose a wall. */
+    public com.uxplima.uxmskyblock.bukkit.boundary.IslandEdgeWalls islandEdgeWalls() {
+        return islandEdgeWalls;
     }
 
     private static java.util.Optional<com.uxplima.uxmskyblock.bukkit.boundary.IslandEdgeRedraw.StandingAt>

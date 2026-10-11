@@ -188,6 +188,25 @@ class IslandBoundaryListenerTest extends MockBukkitHarness {
     }
 
     @Test
+    @DisplayName("An island that changes how its edge is drawn shows the player standing on it the new way at once")
+    void aRefreshShowsTheNewWay() {
+        Location inside = new Location(world, 0, 101, 0);
+        player.setLocation(inside);
+        boundaryListener.arrived(new com.uxplima.uxmskyblock.bukkit.arrival.Arrival(
+                player, null, inside, com.uxplima.uxmskyblock.bukkit.arrival.ArrivalCause.TELEPORT, false));
+        PlayerUuid uuid = new PlayerUuid(player.getUniqueId());
+
+        boundaryListener.useBorderFor(id -> false);
+        boundaryListener.refresh(player);
+        verify(worldBorderPort).resetWorldBorder(uuid);
+
+        boundaryListener.useBorderFor(id -> true);
+        boundaryListener.refresh(player);
+        verify(worldBorderPort, org.mockito.Mockito.times(2))
+                .sendWorldBorder(eq(uuid), eq(0), eq(0), eq(10.0), eq(0.0), eq(0L));
+    }
+
+    @Test
     @DisplayName("A player who hid the border logs in on an island and is drawn none")
     void aHiddenBorderStaysHiddenAtLogin() {
         BorderChoice.keep(player, false);

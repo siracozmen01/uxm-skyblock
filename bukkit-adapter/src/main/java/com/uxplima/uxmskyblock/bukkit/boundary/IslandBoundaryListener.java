@@ -221,6 +221,21 @@ public final class IslandBoundaryListener implements Listener, ArrivalGate, Arri
         }
     }
 
+    /**
+     * Draws the edge where {@code player} stands again, from nothing: an island that changed how its edge is drawn is
+     * shown the new way at once. Runs on the player's own thread.
+     */
+    public void refresh(Player player) {
+        Location at = player.getLocation();
+        if (at == null) {
+            return;
+        }
+        if (bordered.remove(player.getUniqueId()) != null) {
+            boundaryService.handlePlayerExitIsland(new PlayerUuid(player.getUniqueId()));
+        }
+        showBorder(player, at, protectionListener.findIslandAt(at));
+    }
+
     @EventHandler
     public void onPlayerQuit(PlayerQuitEvent event) {
         PlayerUuid uuid = new PlayerUuid(event.getPlayer().getUniqueId());
