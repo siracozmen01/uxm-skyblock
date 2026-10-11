@@ -100,15 +100,14 @@ public final class PresetList {
 
     /**
      * Shows the kinds to a player, on the thread that owns them, and answers whether a window opened. It answers
-     * false when the operator removed the file, so the command makes the default island instead.
+     * false when the operator removed the file, so the command makes the default island instead. It answers false
+     * as well when the server offers one kind: a window with one tile is a click for nothing, and a OneBlock server
+     * makes its island at once.
      */
     public boolean show(Player player) {
         Objects.requireNonNull(player, "player must not be null");
         SkyblockMenuEngine current = this.engine;
-        return current != null
-                && current.open(
-                        player,
-                        FILE,
-                        Map.of("count", Integer.toString(presets.get().size())));
+        int count = presets.get().size();
+        return current != null && count > 1 && current.open(player, FILE, Map.of("count", Integer.toString(count)));
     }
 }

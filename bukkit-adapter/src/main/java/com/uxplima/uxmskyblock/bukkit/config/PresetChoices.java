@@ -1,13 +1,18 @@
 package com.uxplima.uxmskyblock.bukkit.config;
 
+import java.util.EnumSet;
 import java.util.LinkedHashMap;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 
 import org.bukkit.permissions.Permissible;
 
+import com.uxplima.uxmskyblock.core.domain.gamemode.GameModeType;
+import com.uxplima.uxmskyblock.core.domain.preset.StarterPreset;
 import org.spongepowered.configurate.ConfigurationNode;
+import org.spongepowered.configurate.serialize.SerializationException;
 
 /**
  * How a player picks the island they start with, as {@code modules/presets.conf} says.
@@ -17,14 +22,24 @@ import org.spongepowered.configurate.ConfigurationNode;
  * says here whether a player picks from a window, gets the default island at once, or reads the command list, and
  * which permission node, if any, each kind asks for.
  *
+ * <p>A server plays one game mode as a rule, and a player who typed {@code /is} was shown every kind of every mode
+ * the plugin ships: OneBlock, Poseidon and Parkour beside the skyblock islands. The operator names here the modes
+ * this server offers, and only the kinds of those modes are shown and made. A mode left out still runs for the
+ * islands that play it already.
+ *
  * @param looks how each kind is drawn in the window and who may start it, by preset id
  * @param whenNoIsland what {@code /is} does for a player with no island
  * @param createAsks whether {@code /is create} with no kind written opens the window rather than making the default
+ * @param modes the game modes whose kinds are offered, every mode when empty
  */
-public record PresetChoices(Map<String, Look> looks, WhenNoIsland whenNoIsland, boolean createAsks) {
+public record PresetChoices(
+        Map<String, Look> looks, WhenNoIsland whenNoIsland, boolean createAsks, Set<GameModeType> modes) {
 
     /** The window for both, every kind open to everyone, each wearing the item its id suggests. */
     public static final PresetChoices DEFAULT = new PresetChoices(Map.of(), WhenNoIsland.MENU, true);
+
+    /** The word in {@code modes} that offers every game mode. */
+    static final String EVERY_MODE = "all";
 
     private static final java.util.logging.Logger LOGGER =
             java.util.logging.Logger.getLogger(PresetChoices.class.getName());
@@ -65,6 +80,22 @@ public record PresetChoices(Map<String, Look> looks, WhenNoIsland whenNoIsland, 
     public PresetChoices {
         looks = Map.copyOf(Objects.requireNonNull(looks, "looks must not be null"));
         Objects.requireNonNull(whenNoIsland, "whenNoIsland must not be null");
+        modes = Set.copyOf(Objects.requireNonNull(modes, "modes must not be null"));
+    }
+
+    /** Choices that offer the kinds of every game mode. */
+    public PresetChoices(Map<String, Look> looks, WhenNoIsland whenNoIsland, boolean createAsks) {
+        this(looks, whenNoIsland, createAsks, Set.of());
+    }
+
+    /** Whether islands of {@code preset} are offered here: its game mode is one the operator named. */
+    public boolean offers(StarterPreset preset) {
+        return modes.isEmpty() || modes.contains(preset.mode());
+    }
+
+    /** These choices, offering the kinds of every game mode. */
+    PresetChoices offeringEvery() {
+        return new PresetChoices(looks, whenNoIsland, createAsks, Set.of());
     }
 
     /** How the kind {@code presetId} is drawn: as the file says, or with the item its id suggests. */
@@ -77,14 +108,11 @@ public record PresetChoices(Map<String, Look> looks, WhenNoIsland whenNoIsland, 
      * {@code presets} in the order the file gives them. The file's own order cannot be read back, as the format
      * keeps no order among the entries, so each names its place, and two of one place stand by their ids.
      */
-    public java.util.List<com.uxplima.uxmskyblock.core.domain.preset.StarterPreset> ordered(
-            java.util.List<com.uxplima.uxmskyblock.core.domain.preset.StarterPreset> presets) {
-        java.util.List<com.uxplima.uxmskyblock.core.domain.preset.StarterPreset> sorted =
-                new java.util.ArrayList<>(presets);
-        sorted.sort(
-                java.util.Comparator.comparingInt((com.uxplima.uxmskyblock.core.domain.preset.StarterPreset preset) ->
-                                lookOf(preset.id()).order())
-                        .thenComparing(com.uxplima.uxmskyblock.core.domain.preset.StarterPreset::id));
+    public java.util.List<StarterPreset> ordered(java.util.List<StarterPreset> presets) {
+        java.util.List<StarterPreset> sorted = new java.util.ArrayList<>(presets);
+        sorted.sort(java.util.Comparator.comparingInt(
+                        (StarterPreset preset) -> lookOf(preset.id()).order())
+                .thenComparing(StarterPreset::id));
         return java.util.List.copyOf(sorted);
     }
 
@@ -122,7 +150,40 @@ public record PresetChoices(Map<String, Look> looks, WhenNoIsland whenNoIsland, 
             LOGGER.warning(() -> "presets.create-without-type is '" + create
                     + "', which is neither menu nor default. /is create opens the window.");
         }
-        return new PresetChoices(looks, whenNoIsland, !create.equalsIgnoreCase("default"));
+        return new PresetChoices(looks, whenNoIsland, !create.equalsIgnoreCase("default"), modesOf(presets));
+    }
+
+    /**
+     * The game modes {@code presets.modes} names. A file without the line, or one that writes {@code all}, offers
+     * every mode. A word that names no mode is left out, and the console says so.
+     */
+    private static Set<GameModeType> modesOf(ConfigurationNode presets) {
+        ConfigurationNode node = presets.node("modes");
+        if (node.virtual()) {
+            return Set.of();
+        }
+        java.util.List<String> written;
+        try {
+            written = node.isList()
+                    ? node.getList(String.class, java.util.List.of())
+                    : java.util.List.of(node.getString(""));
+        } catch (SerializationException unreadable) {
+            LOGGER.warning(() -> "presets.modes cannot be read as a list of words, so every game mode is offered.");
+            return Set.of();
+        }
+        Set<GameModeType> modes = EnumSet.noneOf(GameModeType.class);
+        for (String word : written) {
+            String mode = word.trim();
+            if (mode.equalsIgnoreCase(EVERY_MODE)) {
+                return Set.of();
+            }
+            try {
+                modes.add(GameModeType.valueOf(mode.toUpperCase(Locale.ROOT)));
+            } catch (IllegalArgumentException unknown) {
+                LOGGER.warning(() -> "presets.modes names '" + mode + "', which is no game mode, so it is left out.");
+            }
+        }
+        return modes;
     }
 
     /** The item a kind's id suggests, for a kind whose file names none. */

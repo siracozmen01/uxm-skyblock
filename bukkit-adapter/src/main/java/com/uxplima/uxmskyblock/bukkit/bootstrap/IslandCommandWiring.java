@@ -145,16 +145,20 @@ final class IslandCommandWiring {
         socialWindows.useMenuEngine(integration.menuEngine());
         tree.useSocialWindows(socialWindows);
         // The kinds of island are a window, and a player with no island is met the way the operator chose.
-        com.uxplima.uxmskyblock.bukkit.config.PresetChoices choices =
-                config.presetConfig().choices();
-        // A kind whose world this server has not loaded is not offered: on Folia, Boxed and StrangerRealms.
-        var kinds = com.uxplima.uxmskyblock.bukkit.world.PresetWorlds.ofServer(worldName);
+        com.uxplima.uxmskyblock.bukkit.config.PresetChoices choices = gameplay.presetChoices();
+        // A kind of a game mode the operator does not offer is not shown, and neither is one whose world this
+        // server has not loaded: on Folia, Boxed and StrangerRealms.
+        var worlds = com.uxplima.uxmskyblock.bukkit.world.PresetWorlds.ofServer(worldName);
+        java.util.function.Predicate<com.uxplima.uxmskyblock.core.domain.preset.StarterPreset> offered =
+                preset -> choices.offers(preset) && worlds.playable(preset);
         var presetList = new com.uxplima.uxmskyblock.bukkit.menu.PresetList(
                 integration.messages(),
-                () -> kinds.playable(gameplay.presetCatalog().allPresets()),
+                () -> gameplay.presetCatalog().allPresets().stream()
+                        .filter(offered)
+                        .toList(),
                 () -> choices,
                 tree::typed);
-        tree.usePlayableKinds(kinds::playable);
+        tree.usePlayableKinds(offered);
         presetList.useMenuEngine(integration.menuEngine());
         tree.usePresets(choices, presetList);
         integration.controlMenu().useNoIsland(player -> {

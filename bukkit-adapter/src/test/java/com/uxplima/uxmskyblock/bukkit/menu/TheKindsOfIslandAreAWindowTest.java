@@ -117,4 +117,15 @@ class TheKindsOfIslandAreAWindowTest extends MockBukkitHarness {
         engine.install();
         assertThat(list().show(ada)).isTrue();
     }
+
+    @Test
+    @DisplayName("A server that offers one kind opens no window, so its island is made at once")
+    void oneKindOpensNoWindow() {
+        engine.install();
+        PresetList one =
+                new PresetList(Messages.bundled(), () -> List.of(StarterPresetCatalog.CLASSIC), () -> choices, l -> l);
+        one.useMenuEngine(engine);
+
+        assertThat(one.show(ada)).isFalse();
+    }
 }

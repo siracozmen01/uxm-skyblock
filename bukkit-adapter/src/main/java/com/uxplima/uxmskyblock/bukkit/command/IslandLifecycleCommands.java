@@ -367,6 +367,15 @@ public final class IslandLifecycleCommands {
         // A kind the operator keeps behind a permission node is refused before anything is made.
         java.util.Optional<com.uxplima.uxmskyblock.core.domain.preset.StarterPreset> asked =
                 presetCatalog.findById(presetId);
+        // A kind this server does not offer, of a mode the operator left out, is answered as no kind at all.
+        if (asked.isPresent() && !playableKinds.test(asked.get())) {
+            send(
+                    player,
+                    "create.unknown_preset",
+                    Placeholder.unparsed("preset", presetId),
+                    Placeholder.unparsed("presets", availablePresetIds()));
+            return Cmd.OK;
+        }
         if (asked.isPresent() && !presetChoices.get().allows(player, asked.get().id())) {
             send(
                     player,

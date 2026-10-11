@@ -93,7 +93,28 @@ public record PresetConfiguration(
         }
         String defaultId = node.node("default").getString(presets.get(0).id());
         return new PresetConfiguration(
-                presets, defaultId, SchematicPasteConfiguration.load(node.node("paste")), choices);
+                        presets, defaultId, SchematicPasteConfiguration.load(node.node("paste")), choices)
+                .settled();
+    }
+
+    /**
+     * These presets with a default that is offered and modes that offer something. A file that names modes none of
+     * its kinds plays offers every mode, so a player is never left with nothing to start, and a default of a mode
+     * the file leaves out gives way to the first kind it offers, so {@code /is create} on a OneBlock server makes a
+     * OneBlock island though the line still says classic.
+     */
+    private PresetConfiguration settled() {
+        List<StarterPreset> offered =
+                choices.ordered(presets).stream().filter(choices::offers).toList();
+        if (offered.isEmpty()) {
+            LOGGER.warning(() -> "presets.modes names no game mode a kind in modules/presets.conf plays, so the"
+                    + " kinds of every mode are offered.");
+            return new PresetConfiguration(presets, defaultId, paste, choices.offeringEvery()).settled();
+        }
+        if (offered.stream().anyMatch(preset -> preset.id().equals(defaultId))) {
+            return this;
+        }
+        return new PresetConfiguration(presets, offered.get(0).id(), paste, choices);
     }
 
     /** An operator who writes a biome the server does not know gets plains rather than a failed start. */
@@ -169,7 +190,7 @@ public record PresetConfiguration(
         if (startable.isEmpty()) {
             return defaultConfiguration(paste, choices);
         }
-        return new PresetConfiguration(startable, defaultId, paste, choices);
+        return new PresetConfiguration(startable, defaultId, paste, choices).settled();
     }
 
     /** Whether the preset's own start and every dimension's start have providers. */

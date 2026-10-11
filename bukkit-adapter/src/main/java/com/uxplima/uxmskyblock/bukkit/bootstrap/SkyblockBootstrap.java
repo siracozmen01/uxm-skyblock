@@ -190,11 +190,17 @@ public final class SkyblockBootstrap implements AutoCloseable {
         noteKindsThatCannotBeMade();
     }
 
-    /** Says once, now that the worlds are loaded, which kinds of island this server cannot make and why. */
+    /**
+     * Says once, now that the worlds are loaded, which kinds of island this server cannot make and why. A kind of a
+     * mode the operator does not offer is not one a player would miss, so it is not named.
+     */
     private void noteKindsThatCannotBeMade() {
+        var choices = gameplayWiring.presetChoices();
         com.uxplima.uxmskyblock.bukkit.world.PresetWorlds.ofServer(
                         configWiring.nodeConfig().worldName())
-                .notes(configWiring.presetConfig().presets())
+                .notes(gameplayWiring.presetCatalog().allPresets().stream()
+                        .filter(choices::offers)
+                        .toList())
                 .forEach(plugin.getLogger()::warning);
     }
 

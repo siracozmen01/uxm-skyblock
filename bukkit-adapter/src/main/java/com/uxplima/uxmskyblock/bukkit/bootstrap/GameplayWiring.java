@@ -548,6 +548,11 @@ public final class GameplayWiring {
         return creationWiring.presetCatalog();
     }
 
+    /** How a player picks among the kinds of {@link #presetCatalog()}, and which of them are offered. */
+    public com.uxplima.uxmskyblock.bukkit.config.PresetChoices presetChoices() {
+        return creationWiring.presetChoices();
+    }
+
     /**
      * The server's structure files, pasted and saved through uxmLib on the region that owns each chunk, with
      * no WorldEdit or FAWE on the server.

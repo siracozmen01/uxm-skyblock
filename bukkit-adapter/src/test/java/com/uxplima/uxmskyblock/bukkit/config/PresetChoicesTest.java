@@ -5,6 +5,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 import java.nio.file.Path;
+import java.util.List;
 
 import org.bukkit.permissions.Permissible;
 
@@ -42,6 +43,69 @@ class PresetChoicesTest {
                 .describedAs("in the order the file names, which the format alone does not keep")
                 .startsWith("classic", "desert", "nether", "cave", "oneblock");
         assertThat(choices.lookOf("classic").permission()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("The shipped file offers the skyblock islands and no other mode")
+    void theShippedFileOffersSkyblock() throws Exception {
+        ConfigurationNode root = HoconConfigurationLoader.builder()
+                .path(Path.of("src/main/resources/modules/presets.conf"))
+                .build()
+                .load();
+        PresetConfiguration presets = PresetConfiguration.load(root);
+        PresetChoices choices = presets.choices();
+
+        assertThat(choices.ordered(presets.presets()).stream().filter(choices::offers))
+                .extracting(preset -> preset.id())
+                .containsExactly("classic", "desert", "nether", "cave");
+        assertThat(presets.defaultId()).isEqualTo("classic");
+    }
+
+    @Test
+    @DisplayName("A server of one mode offers its kinds, and a default of another mode gives way to the first of them")
+    void oneModeOffersItsKinds() throws Exception {
+        PresetConfiguration presets = read("""
+                presets {
+                    modes = ["OneBlock", "nonsense"]
+                    default = "classic"
+                    entries {
+                        classic { order = 1 }
+                        oneblock { mode = "oneblock", order = 2 }
+                        oneblock_desert { mode = "oneblock", order = 3 }
+                    }
+                }
+                """);
+        PresetChoices choices = presets.choices();
+
+        assertThat(presets.presets().stream().filter(choices::offers))
+                .extracting(preset -> preset.id())
+                .containsExactlyInAnyOrder("oneblock", "oneblock_desert");
+        assertThat(presets.defaultId()).isEqualTo("oneblock");
+    }
+
+    @Test
+    @DisplayName("All, no line, or modes no kind plays offer every mode, so a player always has an island to start")
+    void everyModeWhenNothingNarrowsIt() throws Exception {
+        String entries = "entries { classic {}, oneblock { mode = oneblock } }";
+        for (String modes : List.of("modes = [oneblock, all]", "", "modes = [boxed]")) {
+            PresetConfiguration presets = read("presets { " + modes + "\n" + entries + " }");
+
+            assertThat(presets.presets()).describedAs(modes).allMatch(presets.choices()::offers);
+        }
+    }
+
+    @Test
+    @DisplayName("A server whose offered mode it cannot start offers the kinds it can")
+    void anUnstartableModeOffersTheRest() throws Exception {
+        PresetConfiguration startable = read("""
+                        presets {
+                            modes = [oneblock]
+                            entries { classic {}, oneblock { mode = oneblock, start = ["uxm:oneblock"] } }
+                        }
+                        """).startableWith(actions -> !actions.contains("uxm:oneblock"));
+
+        assertThat(startable.presets()).allMatch(startable.choices()::offers);
+        assertThat(startable.defaultId()).isEqualTo("classic");
     }
 
     @Test

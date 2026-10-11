@@ -254,6 +254,23 @@ class IslandLifecycleCommandsTest {
     }
 
     @Test
+    @DisplayName("A kind this server does not offer is answered as no kind, and nothing is made")
+    void aKindNotOfferedIsNotMade() throws Exception {
+        commands.usePlayableKinds(preset -> !preset.id().equals("desert"));
+
+        run("create desert", player);
+
+        verify(create, never()).execute(any(), any(), anyString(), any(ServerNodeId.class), anyString());
+        assertThat(net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer.plainText()
+                        .serialize(java.util.Objects.requireNonNull(player.nextComponentMessage())))
+                .describedAs("this test's catalogue answers with the key")
+                .isEqualTo("create.unknown_preset");
+
+        run("create nether", player);
+        verify(create).execute(any(PlayerUuid.class), eq(PROFILE), eq("nether"), any(ServerNodeId.class), eq(WORLD));
+    }
+
+    @Test
     @DisplayName("A creation the database throws out of is still answered, in the player's own words")
     void aThrownCreationIsAnswered() throws Exception {
         when(create.execute(any(), any(), anyString(), any(ServerNodeId.class), anyString()))

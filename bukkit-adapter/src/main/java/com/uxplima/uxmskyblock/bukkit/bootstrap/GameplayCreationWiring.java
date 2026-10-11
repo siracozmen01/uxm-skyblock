@@ -32,6 +32,7 @@ import org.jspecify.annotations.Nullable;
 public final class GameplayCreationWiring {
 
     private final StarterPresetCatalog presetCatalog;
+    private final com.uxplima.uxmskyblock.bukkit.config.PresetChoices presetChoices;
     private final StarterSchematicEngine schematicEngine;
     private final com.uxplima.uxmskyblock.bukkit.schematic.@org.jspecify.annotations.Nullable IslandSchematics
             islandSchematics;
@@ -86,9 +87,9 @@ public final class GameplayCreationWiring {
                         .map(com.uxplima.uxmskyblock.core.domain.dimension.DimensionMapping::schematic));
         gameModeStarts.forEach(schematicEngine.actions()::register);
         // A preset a switched-off game mode builds names an action nobody provides here, and is not offered.
-        this.presetCatalog = config.presetConfig()
-                .startableWith(schematicEngine.actions()::knowsAll)
-                .catalogue();
+        var startable = config.presetConfig().startableWith(schematicEngine.actions()::knowsAll);
+        this.presetCatalog = startable.catalogue();
+        this.presetChoices = startable.choices();
         this.coordinateAllocator = persistence.gridAllocator();
         this.gridService = new SpiralWorldGridService(coordinateAllocator);
 
@@ -160,6 +161,11 @@ public final class GameplayCreationWiring {
 
     public StarterPresetCatalog presetCatalog() {
         return presetCatalog;
+    }
+
+    /** How a player picks among the kinds of {@link #presetCatalog()}, and which of them are offered. */
+    public com.uxplima.uxmskyblock.bukkit.config.PresetChoices presetChoices() {
+        return presetChoices;
     }
 
     public StarterSchematicEngine schematicEngine() {
