@@ -27,6 +27,19 @@ public interface ChunkTerritoryPort {
      */
     boolean open(IslandId islandId, ChunkPos chunk, int order);
 
-    /** Closes these opened chunks. The chunk the island started with is never closed. */
+    /**
+     * Records {@code chunk} as the island's {@code order}th opened chunk, and whether it was paid for, so it stays
+     * open whatever the level does.
+     *
+     * @return false when another opening took that place or that chunk first
+     */
+    default boolean open(IslandId islandId, ChunkPos chunk, int order, boolean bought) {
+        return open(islandId, chunk, order);
+    }
+
+    /**
+     * Closes these opened chunks, and numbers the ones left from one again in the order they were opened, so the
+     * next opening takes the place after them. The chunk the island started with is never closed.
+     */
     void close(IslandId islandId, List<ChunkPos> chunks);
 }

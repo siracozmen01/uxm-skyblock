@@ -136,6 +136,7 @@ public final class PersistenceBootstrap implements AutoCloseable {
     private final SqlNotificationAdapter notificationAdapter;
     private final com.uxplima.uxmskyblock.persistence.network.SqlClusterNodesAdapter clusterNodesAdapter;
     private final com.uxplima.uxmskyblock.persistence.chunkblock.SqlChunkTerritoryAdapter chunkTerritoryAdapter;
+    private final com.uxplima.uxmskyblock.persistence.chunkblock.SqlChunkPaymentAdapter chunkPaymentAdapter;
     private final com.uxplima.uxmskyblock.persistence.acid.SqlAcidIslandsAdapter acidIslandsAdapter;
     private final com.uxplima.uxmskyblock.persistence.boxed.SqlBoxedIslandsAdapter boxedIslandsAdapter;
     private final com.uxplima.uxmskyblock.persistence.poseidon.SqlPoseidonIslandsAdapter poseidonIslandsAdapter;
@@ -214,6 +215,8 @@ public final class PersistenceBootstrap implements AutoCloseable {
         this.clusterNodesAdapter = new com.uxplima.uxmskyblock.persistence.network.SqlClusterNodesAdapter(database);
         this.chunkTerritoryAdapter =
                 new com.uxplima.uxmskyblock.persistence.chunkblock.SqlChunkTerritoryAdapter(database.dataSource());
+        this.chunkPaymentAdapter =
+                new com.uxplima.uxmskyblock.persistence.chunkblock.SqlChunkPaymentAdapter(database.dataSource());
         this.acidIslandsAdapter =
                 new com.uxplima.uxmskyblock.persistence.acid.SqlAcidIslandsAdapter(database.dataSource());
         this.boxedIslandsAdapter =
@@ -525,6 +528,11 @@ public final class PersistenceBootstrap implements AutoCloseable {
     /** The chunks each ChunkBlock island has open. */
     public com.uxplima.uxmskyblock.core.application.chunkblock.ChunkTerritoryPort chunkTerritoryPort() {
         return chunkTerritoryAdapter;
+    }
+
+    /** What has been paid toward each closed chunk of a ChunkBlock island, and each island's chunk points. */
+    public com.uxplima.uxmskyblock.core.application.chunkblock.ChunkPaymentPort chunkPaymentPort() {
+        return chunkPaymentAdapter;
     }
 
     /** Which nodes are alive, the world each serves and how loaded it is. */
