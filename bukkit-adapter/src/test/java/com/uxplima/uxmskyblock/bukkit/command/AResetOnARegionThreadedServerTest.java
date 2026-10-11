@@ -68,6 +68,11 @@ class AResetOnARegionThreadedServerTest extends MockBukkitHarness {
         world.setSpawnLocation(12, 70, -34);
 
         IslandRecycleService recycle = mock(IslandRecycleService.class);
+        org.mockito.Mockito.lenient()
+                .when(recycle.generateResetChallenge(
+                        org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any()))
+                .thenReturn(new com.uxplima.uxmskyblock.core.domain.recycle.ResetChallenge(
+                        "1234", java.time.Instant.now().plusSeconds(60)));
         when(recycle.executeReset(any(), any(), any(), anyBoolean()))
                 .thenReturn(CompletableFuture.completedFuture(
                         new IslandRecycleService.RecycleResult.Success(ISLAND, 3L, WORLD, 1, 2)));
@@ -101,12 +106,12 @@ class AResetOnARegionThreadedServerTest extends MockBukkitHarness {
     void aFinishedResetMovesThePlayerAndSaysSo() throws Exception {
         assertThat(player.teleportAsync(new Location(world, 500, 64, 500))).isCompletedWithValue(true);
 
-        List<String> said = run("reset confirm 1234");
+        List<String> said = run("reset confirm");
 
         Location at = player.getLocation();
         assertThat(at.getBlockX()).isEqualTo(12);
         assertThat(at.getBlockZ()).isEqualTo(-34);
-        assertThat(said).anyMatch(line -> line.contains("is reset")).anyMatch(line -> line.contains("/is create"));
+        assertThat(said).anyMatch(line -> line.contains("is deleted")).anyMatch(line -> line.contains("/is create"));
     }
 
     private List<String> run(String line) throws Exception {

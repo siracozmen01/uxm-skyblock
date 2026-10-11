@@ -52,6 +52,11 @@ class AResetIsCountedWhenThePlayerLeavesTest extends MockBukkitHarness {
         server.addSimpleWorld(WORLD);
         PlayerMock player = createRegionThreadedPlayer("Leaver");
         IslandRecycleService recycle = mock(IslandRecycleService.class);
+        org.mockito.Mockito.lenient()
+                .when(recycle.generateResetChallenge(
+                        org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any()))
+                .thenReturn(new com.uxplima.uxmskyblock.core.domain.recycle.ResetChallenge(
+                        "1234", java.time.Instant.now().plusSeconds(60)));
         when(recycle.executeReset(any(), any(), any(), anyBoolean()))
                 .thenReturn(CompletableFuture.completedFuture(
                         new IslandRecycleService.RecycleResult.Success(ISLAND, 3L, WORLD, 1, 2)));
@@ -94,7 +99,7 @@ class AResetIsCountedWhenThePlayerLeavesTest extends MockBukkitHarness {
         CommandSourceStack source = mock(CommandSourceStack.class);
         when(source.getSender()).thenReturn(player);
 
-        dispatcher.execute("reset confirm 1234", source);
+        dispatcher.execute("reset confirm", source);
 
         verify(antiAbuse).recordReset(org.mockito.ArgumentMatchers.eq(new PlayerUuid(player.getUniqueId())), any());
     }
@@ -105,6 +110,11 @@ class AResetIsCountedWhenThePlayerLeavesTest extends MockBukkitHarness {
         server.addSimpleWorld(WORLD);
         PlayerMock player = createRegionThreadedPlayer("Leaver2");
         IslandRecycleService recycle = mock(IslandRecycleService.class);
+        org.mockito.Mockito.lenient()
+                .when(recycle.generateResetChallenge(
+                        org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any()))
+                .thenReturn(new com.uxplima.uxmskyblock.core.domain.recycle.ResetChallenge(
+                        "1234", java.time.Instant.now().plusSeconds(60)));
         when(recycle.executeReset(any(), any(), any(), anyBoolean()))
                 .thenReturn(CompletableFuture.completedFuture(
                         new IslandRecycleService.RecycleResult.Success(ISLAND, 3L, WORLD, 1, 2)));
@@ -145,7 +155,7 @@ class AResetIsCountedWhenThePlayerLeavesTest extends MockBukkitHarness {
         CommandSourceStack source = mock(CommandSourceStack.class);
         when(source.getSender()).thenReturn(player);
 
-        dispatcher.execute("reset confirm 1234", source);
+        dispatcher.execute("reset confirm", source);
 
         verify(antiAbuse).oweInventoryPurge(new PlayerUuid(player.getUniqueId()));
         verify(antiAbuse, org.mockito.Mockito.never()).settleInventoryPurge(any());
@@ -157,6 +167,11 @@ class AResetIsCountedWhenThePlayerLeavesTest extends MockBukkitHarness {
         server.addSimpleWorld(WORLD);
         PlayerMock player = createRegionThreadedPlayer("Clicker");
         IslandRecycleService recycle = mock(IslandRecycleService.class);
+        org.mockito.Mockito.lenient()
+                .when(recycle.generateResetChallenge(
+                        org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any()))
+                .thenReturn(new com.uxplima.uxmskyblock.core.domain.recycle.ResetChallenge(
+                        "1234", java.time.Instant.now().plusSeconds(60)));
         when(recycle.generateResetChallenge(any(), any()))
                 .thenReturn(new com.uxplima.uxmskyblock.core.domain.recycle.ResetChallenge(
                         "4321", java.time.Instant.now().plusSeconds(60)));
@@ -208,11 +223,8 @@ class AResetIsCountedWhenThePlayerLeavesTest extends MockBukkitHarness {
         when(source.getSender()).thenReturn(player);
         dispatcher.execute("reset", source);
         org.mockito.ArgumentCaptor<Runnable> confirm = org.mockito.ArgumentCaptor.forClass(Runnable.class);
-        verify(window)
-                .open(
-                        org.mockito.ArgumentMatchers.eq(player),
-                        org.mockito.ArgumentMatchers.eq("4321"),
-                        confirm.capture());
+        verify(window).open(org.mockito.ArgumentMatchers.eq(player), confirm.capture());
+        verify(recycle, org.mockito.Mockito.never()).generateResetChallenge(any(), any());
 
         confirm.getValue().run();
 
@@ -227,6 +239,11 @@ class AResetIsCountedWhenThePlayerLeavesTest extends MockBukkitHarness {
         server.addSimpleWorld(WORLD);
         PlayerMock player = createRegionThreadedPlayer("Thrown");
         IslandRecycleService recycle = mock(IslandRecycleService.class);
+        org.mockito.Mockito.lenient()
+                .when(recycle.generateResetChallenge(
+                        org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any()))
+                .thenReturn(new com.uxplima.uxmskyblock.core.domain.recycle.ResetChallenge(
+                        "1234", java.time.Instant.now().plusSeconds(60)));
         when(recycle.executeReset(any(), any(), any(), anyBoolean()))
                 .thenThrow(new UnsupportedOperationException("Not on any region"));
         IslandLocationService locations = mock(IslandLocationService.class);
@@ -271,7 +288,7 @@ class AResetIsCountedWhenThePlayerLeavesTest extends MockBukkitHarness {
         CommandSourceStack source = mock(CommandSourceStack.class);
         when(source.getSender()).thenReturn(player);
 
-        dispatcher.execute("reset confirm 1234", source);
+        dispatcher.execute("reset confirm", source);
 
         verify(antiAbuse).endReset(new PlayerUuid(player.getUniqueId()));
         org.assertj.core.api.Assertions.assertThat(
@@ -306,6 +323,11 @@ class AResetIsCountedWhenThePlayerLeavesTest extends MockBukkitHarness {
                                 com.uxplima.uxmskyblock.core.domain.island.IslandRole.MEMBER,
                                 java.time.Instant.now()));
         IslandRecycleService recycle = mock(IslandRecycleService.class);
+        org.mockito.Mockito.lenient()
+                .when(recycle.generateResetChallenge(
+                        org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any()))
+                .thenReturn(new com.uxplima.uxmskyblock.core.domain.recycle.ResetChallenge(
+                        "1234", java.time.Instant.now().plusSeconds(60)));
         when(recycle.executeReset(any(), any(), any(), anyBoolean()))
                 .thenReturn(CompletableFuture.completedFuture(
                         new IslandRecycleService.RecycleResult.Success(ISLAND, 3L, WORLD, 1, 2)));
@@ -355,12 +377,12 @@ class AResetIsCountedWhenThePlayerLeavesTest extends MockBukkitHarness {
         CommandSourceStack source = mock(CommandSourceStack.class);
         when(source.getSender()).thenReturn(owner);
 
-        dispatcher.execute("reset confirm 1234", source);
+        dispatcher.execute("reset confirm", source);
 
         org.assertj.core.api.Assertions.assertThat(
                         net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer.plainText()
                                 .serialize(java.util.Objects.requireNonNull(here.nextComponentMessage())))
-                .contains("Owner reset the island you belonged to");
+                .contains("Owner deleted the island you belonged to");
         verify(notices)
                 .notify(
                         org.mockito.ArgumentMatchers.eq(awayProfile),

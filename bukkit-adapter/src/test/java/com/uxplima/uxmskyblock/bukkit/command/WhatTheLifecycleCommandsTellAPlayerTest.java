@@ -71,6 +71,11 @@ class WhatTheLifecycleCommandsTellAPlayerTest extends MockBukkitHarness {
         player = createPlayer("Founder");
         create = mock(CreateIslandUseCase.class);
         recycle = mock(IslandRecycleService.class);
+        org.mockito.Mockito.lenient()
+                .when(recycle.generateResetChallenge(
+                        org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any()))
+                .thenReturn(new com.uxplima.uxmskyblock.core.domain.recycle.ResetChallenge(
+                        "1234", java.time.Instant.now().plusSeconds(60)));
         names = mock(IslandNameService.class);
         IslandLocationService locations = mock(IslandLocationService.class);
         when(locations.findIslandId(PROFILE)).thenReturn(Optional.of(ISLAND));
@@ -113,16 +118,17 @@ class WhatTheLifecycleCommandsTellAPlayerTest extends MockBukkitHarness {
     }
 
     @Test
-    @DisplayName("A wrong reset code tells the player how to get a new one, not the service's sentence")
-    void aWrongCodeSaysWhatToDo() throws Exception {
+    @DisplayName("A confirmation the service refuses tells the player how to try again, not the service's sentence")
+    void aRefusedConfirmationSaysWhatToDo() throws Exception {
         when(recycle.executeReset(any(), any(), any(), anyBoolean()))
                 .thenReturn(CompletableFuture.completedFuture(new IslandRecycleService.RecycleResult.InvalidChallenge(
                         "Invalid or expired confirmation code.")));
 
-        assertThat(run("reset confirm 0000"))
+        assertThat(run("reset confirm"))
                 .singleElement()
                 .asString()
-                .contains("/is reset")
+                .contains("/is delete")
+                .doesNotContain("code")
                 .doesNotContain("Invalid or expired");
     }
 
@@ -133,7 +139,7 @@ class WhatTheLifecycleCommandsTellAPlayerTest extends MockBukkitHarness {
                 .thenReturn(CompletableFuture.completedFuture(new IslandRecycleService.RecycleResult.Failure(
                         "Canonical island deletion failed: " + INTERNALS)));
 
-        assertThat(run("reset confirm 1234"))
+        assertThat(run("reset confirm"))
                 .singleElement()
                 .asString()
                 .contains("administrator")

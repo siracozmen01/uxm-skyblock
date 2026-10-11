@@ -306,44 +306,60 @@ class IslandLifecycleCommandsTest {
     }
 
     @Test
-    @DisplayName("A bare /is reset asks for a code and erases nothing")
-    void resetAsksForACodeAndErasesNothing() throws Exception {
+    @DisplayName("A bare /is reset asks, with no code to copy, and erases nothing")
+    void resetAsksAndErasesNothing() throws Exception {
         run("reset", player);
 
-        verify(recycle).generateResetChallenge(PROFILE, ISLAND);
+        java.util.List<String> said = new java.util.ArrayList<>();
+        for (net.kyori.adventure.text.Component line = player.nextComponentMessage();
+                line != null;
+                line = player.nextComponentMessage()) {
+            said.add(net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer.plainText()
+                    .serialize(line));
+        }
+        assertThat(said)
+                .describedAs("with no window, the player is told the one line that confirms")
+                .contains("reset.confirm_hint");
+        assertThat(net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer.plainText()
+                        .serialize(Messages.bundled().render(player, "reset.confirm_hint")))
+                .describedAs("and that line carries no code")
+                .contains("/is delete confirm")
+                .doesNotContainPattern("\\d{4}");
+
+        verify(recycle, never()).generateResetChallenge(any(), any());
         verify(recycle, never()).executeReset(any(), any(), any(), anyBoolean());
     }
 
     @Test
-    @DisplayName("A bare /is delete is the same warning as /is reset and erases nothing either")
+    @DisplayName("A bare /is delete asks, with no code to copy, and erases nothing")
     void deleteIsTheSameWarning() throws Exception {
         run("delete", player);
 
-        verify(recycle).generateResetChallenge(PROFILE, ISLAND);
+        verify(recycle, never()).generateResetChallenge(any(), any());
         verify(recycle, never()).executeReset(any(), any(), any(), anyBoolean());
     }
 
     @Test
-    @DisplayName("A bare /is disband is the same warning as /is reset and erases nothing either")
+    @DisplayName("A bare /is disband asks, with no code to copy, and erases nothing")
     void disbandIsTheSameWarning() throws Exception {
         run("disband", player);
 
-        verify(recycle).generateResetChallenge(PROFILE, ISLAND);
+        verify(recycle, never()).generateResetChallenge(any(), any());
         verify(recycle, never()).executeReset(any(), any(), any(), anyBoolean());
     }
 
     @Test
-    @DisplayName("Confirming under the disband word erases the same island, code and all")
+    @DisplayName("Confirming under the disband word erases the same island")
     void disbandConfirmErasesTheSameIsland() throws Exception {
-        run("disband confirm AB12CD", player);
+        run("disband confirm", player);
 
         verify(recycle).executeReset(PROFILE, ISLAND, "AB12CD", false);
     }
 
     @Test
-    @DisplayName("The confirmation carries the code the player typed, and never claims the bypass")
-    void confirmCarriesTheCodeAndNeverBypasses() throws Exception {
-        run("reset confirm AB12CD", player);
+    @DisplayName("The typed confirmation erases at once with the challenge it asked for itself, never the bypass")
+    void confirmErasesAtOnceAndNeverBypasses() throws Exception {
+        run("reset confirm", player);
 
         verify(recycle).executeReset(PROFILE, ISLAND, "AB12CD", false);
     }
@@ -372,8 +388,8 @@ class IslandLifecycleCommandsTest {
 
         CommandDispatcher<CommandSourceStack> slow = dispatcherOver(antiAbuse, slowRecycle);
 
-        runOn(slow, "reset confirm AB12CD", player);
-        runOn(slow, "reset confirm AB12CD", player);
+        runOn(slow, "reset confirm", player);
+        runOn(slow, "reset confirm", player);
 
         verify(slowRecycle, org.mockito.Mockito.times(1)).executeReset(PROFILE, ISLAND, "AB12CD", false);
         assertThat(antiAbuse.resetsRunning())
@@ -402,7 +418,7 @@ class IslandLifecycleCommandsTest {
                 .thenReturn(CompletableFuture.completedFuture(
                         new IslandRecycleService.RecycleResult.InvalidChallenge("wrong code")));
 
-        runOn(dispatcherOver(antiAbuse, failing), "reset confirm AB12CD", player);
+        runOn(dispatcherOver(antiAbuse, failing), "reset confirm", player);
 
         assertThat(antiAbuse.resetsRunning())
                 .describedAs("an erasure that failed must not lock the player out for ever")
@@ -496,19 +512,20 @@ class IslandLifecycleCommandsTest {
     }
 
     @Test
-    @DisplayName("A confirmation with no code at all is refused by the parser")
-    void confirmNeedsACode() {
-        org.assertj.core.api.Assertions.assertThatThrownBy(() -> run("reset confirm", player))
+    @DisplayName("A code typed after the confirmation is refused by the parser, as there is no code any more")
+    void aTypedCodeIsRefused() {
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> run("reset confirm 1234", player))
                 .isInstanceOf(Exception.class);
         verify(recycle, never()).executeReset(any(), any(), any(), anyBoolean());
     }
 
     @Test
-    @DisplayName("A wrong code is the service's answer, and the island survives it")
-    void aWrongCodeIsRefused() throws Exception {
-        run("reset confirm NOPE", player);
+    @DisplayName("A challenge the service refuses is its answer, and the island survives it")
+    void aRefusedChallengeLeavesTheIsland() throws Exception {
+        run("reset confirm", player);
 
-        verify(recycle).executeReset(PROFILE, ISLAND, "NOPE", false);
+        verify(recycle).executeReset(PROFILE, ISLAND, "AB12CD", false);
+        verify(recycle, never()).cancelResetChallenge(any());
     }
 
     @Test

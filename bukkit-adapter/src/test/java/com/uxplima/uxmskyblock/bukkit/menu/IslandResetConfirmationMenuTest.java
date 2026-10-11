@@ -60,9 +60,9 @@ class IslandResetConfirmationMenuTest extends MockBukkitHarness {
     }
 
     @Test
-    @DisplayName("buildGui sets confirm, cancel and info items in expected slots")
+    @DisplayName("buildGui sets the delete and keep buttons, and nothing between them asks for a code")
     void buildGuiSetsExpectedSlots() {
-        SimpleGui gui = menu.buildGui(player, profileId, islandId, "1234", () -> {});
+        SimpleGui gui = menu.buildGui(player, profileId, islandId, () -> {});
 
         assertThat(gui.size()).isEqualTo(27);
         assertThat(gui.getItem(11)).isInstanceOf(GuiItem.Static.class);
@@ -71,19 +71,11 @@ class IslandResetConfirmationMenuTest extends MockBukkitHarness {
                         .getType())
                 .isEqualTo(Material.RED_CONCRETE);
 
-        assertThat(gui.getItem(13)).isInstanceOf(GuiItem.Static.class);
         assertThat(((GuiItem.Static) Objects.requireNonNull(gui.getItem(13)))
                         .item()
                         .getType())
-                .isEqualTo(Material.BARRIER);
-        assertThat(((GuiItem.Static) Objects.requireNonNull(gui.getItem(13)))
-                        .item()
-                        .lore())
-                .describedAs("the info tile names the code the player types to go on")
-                .anySatisfy(line -> assertThat(
-                                net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer.plainText()
-                                        .serialize(line))
-                        .contains("1234"));
+                .describedAs("two buttons and nothing else: no code to copy out")
+                .isEqualTo(Material.GRAY_STAINED_GLASS_PANE);
 
         assertThat(gui.getItem(15)).isInstanceOf(GuiItem.Static.class);
         assertThat(((GuiItem.Static) Objects.requireNonNull(gui.getItem(15)))
@@ -110,7 +102,7 @@ class IslandResetConfirmationMenuTest extends MockBukkitHarness {
         when(mockSessionCoordinator.activeProfile(player.getUniqueId())).thenReturn(Optional.of(profileId));
         when(mockStorage.findIslandIdByProfileId(eq(profileId))).thenReturn(Optional.empty());
 
-        menu.open(player, "1234", () -> {});
+        menu.open(player, () -> {});
 
         if (player.getOpenInventory() != null && player.getOpenInventory().getTopInventory() != null) {
             assertThat(player.getOpenInventory().getTopInventory().getSize()).isNotEqualTo(27);
@@ -123,7 +115,7 @@ class IslandResetConfirmationMenuTest extends MockBukkitHarness {
         when(mockSessionCoordinator.activeProfile(player.getUniqueId())).thenReturn(Optional.of(profileId));
         when(mockStorage.findIslandIdByProfileId(eq(profileId))).thenReturn(Optional.of(islandId));
 
-        menu.open(player, "4321", () -> {});
+        menu.open(player, () -> {});
 
         assertThat(player.getOpenInventory().getTopInventory().getSize()).isEqualTo(27);
     }
@@ -141,7 +133,7 @@ class IslandResetConfirmationMenuTest extends MockBukkitHarness {
         when(mockSessionCoordinator.activeProfile(player.getUniqueId())).thenReturn(Optional.of(profileId));
         when(mockStorage.findIslandIdByProfileId(eq(profileId))).thenReturn(Optional.of(islandId));
 
-        bedrockMenu.open(player, "9999", () -> {});
+        bedrockMenu.open(player, () -> {});
 
         org.mockito.Mockito.verify(mockBedrock)
                 .openConfirmationModal(
@@ -200,7 +192,7 @@ class IslandResetConfirmationMenuTest extends MockBukkitHarness {
     @DisplayName("The confirm button runs the confirmation it was given, and erases nothing by itself")
     void theConfirmButtonRunsTheGivenConfirmation() {
         java.util.concurrent.atomic.AtomicInteger confirmed = new java.util.concurrent.atomic.AtomicInteger();
-        SimpleGui gui = menu.buildGui(player, profileId, islandId, "1234", confirmed::incrementAndGet);
+        SimpleGui gui = menu.buildGui(player, profileId, islandId, confirmed::incrementAndGet);
 
         clickSlot(gui, 11);
 

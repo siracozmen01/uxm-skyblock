@@ -62,17 +62,25 @@ class TheResetIsAskedFromItsFileTest extends MockBukkitHarness {
     }
 
     @Test
-    @DisplayName("The shipped file names the code the player would type")
-    void theFileNamesTheCode() {
+    @DisplayName("The shipped file is two buttons, delete and keep, and asks for no code")
+    void theFileIsTwoButtons() {
         SkyblockMenuEngine engine = new SkyblockMenuEngine(MockBukkit.createMockPlugin(), Messages.bundled(), dataDir);
-        var info = java.util.Objects.requireNonNull(
-                ShippedTemplates.spec("island-reset.conf").items().get("info"));
+        var spec = ShippedTemplates.spec("island-reset.conf");
+        var renderer = ShippedTemplates.renderer(engine, Messages.bundled());
 
+        assertThat(spec.items().keySet().stream().filter(id -> !id.startsWith("__")))
+                .containsExactlyInAnyOrder("confirm", "cancel");
         assertThat(ShippedTemplates.lore(
-                        ShippedTemplates.renderer(engine, Messages.bundled()),
-                        info,
-                        MenuContext.of(player, null, 0, Map.of("code", "4321"))))
-                .contains("Confirmation code 4321");
+                        renderer,
+                        java.util.Objects.requireNonNull(spec.items().get("confirm")),
+                        MenuContext.of(player, null, 0)))
+                .contains("Delete")
+                .doesNotContainIgnoringCase("code");
+        assertThat(ShippedTemplates.lore(
+                        renderer,
+                        java.util.Objects.requireNonNull(spec.items().get("cancel")),
+                        MenuContext.of(player, null, 0)))
+                .contains("Keep it");
     }
 
     @Test
@@ -81,7 +89,7 @@ class TheResetIsAskedFromItsFileTest extends MockBukkitHarness {
         SkyblockMenuEngine engine = ShippedTemplates.engineWith(dataDir, "island-reset.conf");
         menu.useMenuEngine(engine);
         AtomicInteger confirmed = new AtomicInteger();
-        menu.open(player, "4321", confirmed::incrementAndGet);
+        menu.open(player, confirmed::incrementAndGet);
         MenuContext drawn = MenuContext.of(player, null, 0);
 
         ShippedTemplates.click(engine, "skyblock:reset-confirm", drawn, player, ClickKind.LEFT, "");
@@ -92,12 +100,12 @@ class TheResetIsAskedFromItsFileTest extends MockBukkitHarness {
     }
 
     @Test
-    @DisplayName("Calling it off in the file stops the code and says so, and confirms nothing")
+    @DisplayName("Keeping the island in the file says so, and confirms nothing")
     void callingItOffStopsTheCode() {
         SkyblockMenuEngine engine = ShippedTemplates.engineWith(dataDir, "island-reset.conf");
         menu.useMenuEngine(engine);
         AtomicInteger confirmed = new AtomicInteger();
-        menu.open(player, "4321", confirmed::incrementAndGet);
+        menu.open(player, confirmed::incrementAndGet);
         while (player.nextComponentMessage() != null) {
             // what opening said, before the click
         }
@@ -109,20 +117,19 @@ class TheResetIsAskedFromItsFileTest extends MockBukkitHarness {
         assertThat(confirmed).hasValue(0);
         assertThat(PlainTextComponentSerializer.plainText()
                         .serialize(java.util.Objects.requireNonNull(player.nextComponentMessage())))
-                .contains("Island reset cancelled.");
+                .contains("You kept your island as it is.");
     }
 
     @Test
-    @DisplayName("Opening the question hands the code to the file, and the window built in code is not drawn")
+    @DisplayName("Opening the question opens the file with no code, and the window built in code is not drawn")
     void openingUsesTheFile() {
         SkyblockMenuEngine engine = mock(SkyblockMenuEngine.class);
-        when(engine.open(eq(player), eq("island-reset"), eq(Map.of("code", "4321"))))
-                .thenReturn(true);
+        when(engine.open(eq(player), eq("island-reset"), eq(Map.of()))).thenReturn(true);
         menu.useMenuEngine(engine);
 
-        menu.open(player, "4321", () -> {});
+        menu.open(player, () -> {});
 
-        verify(engine).open(player, "island-reset", Map.of("code", "4321"));
+        verify(engine).open(player, "island-reset", Map.of());
         org.bukkit.inventory.@org.jspecify.annotations.Nullable Inventory top =
                 player.getOpenInventory().getTopInventory();
         assertThat(top == null || !(top.getHolder() instanceof com.uxplima.uxmlib.gui.Gui))

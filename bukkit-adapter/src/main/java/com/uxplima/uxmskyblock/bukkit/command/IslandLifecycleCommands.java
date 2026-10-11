@@ -47,7 +47,6 @@ import com.uxplima.uxmskyblock.core.domain.identity.ProfileId;
 import com.uxplima.uxmskyblock.core.domain.island.IslandLocation;
 import com.uxplima.uxmskyblock.core.domain.name.IslandName;
 import com.uxplima.uxmskyblock.core.domain.name.IslandNameRefusedException;
-import com.uxplima.uxmskyblock.core.domain.recycle.ResetChallenge;
 import com.uxplima.uxmskyblock.core.domain.session.ServerNodeId;
 import org.jspecify.annotations.Nullable;
 
@@ -212,28 +211,25 @@ public final class IslandLifecycleCommands {
     public LiteralArgumentBuilder<CommandSourceStack> buildReset() {
         return Cmd.literal("reset")
                 .executes(this::executeReset)
-                .then(Cmd.literal("confirm")
-                        .then(Cmd.argument("code", StringArgumentType.word()).executes(this::executeResetConfirm)));
+                .then(Cmd.literal("confirm").executes(this::executeResetConfirm));
     }
 
     public LiteralArgumentBuilder<CommandSourceStack> buildDelete() {
         return Cmd.literal("delete")
                 .executes(this::executeReset)
-                .then(Cmd.literal("confirm")
-                        .then(Cmd.argument("code", StringArgumentType.word()).executes(this::executeResetConfirm)));
+                .then(Cmd.literal("confirm").executes(this::executeResetConfirm));
     }
 
     /**
      * {@code /is disband}: the word the documents use for erasing the island.
      *
-     * <p>It is {@code /is delete} with another name, confirmation code and all. A document that
+     * <p>It is {@code /is delete} with another name, its window and its confirmation and all. A document that
      * tells an operator to type a word is a document the command tree has to answer.
      */
     public LiteralArgumentBuilder<CommandSourceStack> buildDisband() {
         return Cmd.literal("disband")
                 .executes(this::executeReset)
-                .then(Cmd.literal("confirm")
-                        .then(Cmd.argument("code", StringArgumentType.word()).executes(this::executeResetConfirm)));
+                .then(Cmd.literal("confirm").executes(this::executeResetConfirm));
     }
 
     public LiteralArgumentBuilder<CommandSourceStack> buildRename() {
@@ -517,34 +513,29 @@ public final class IslandLifecycleCommands {
         boolean bypass = mayBypassTheResetRules(player);
 
         schedulerPort.async(() -> {
-            Optional<IslandId> optIsland = islandLocationService.findIslandId(profileId);
-            if (optIsland.isEmpty()) {
+            if (islandLocationService.findIslandId(profileId).isEmpty()) {
                 send(player, "error.no_island");
                 return;
             }
-            IslandId islandId = optIsland.get();
             if (checkResetBlocked(player, antiAbuse, bypass)) {
                 return;
             }
 
-            ResetChallenge challenge = recycleService.generateResetChallenge(profileId, islandId);
-
-            send(player, "reset.warning");
-            send(player, "reset.warning_detail");
-            send(player, "reset.confirm_hint", Placeholder.unparsed("code", challenge.code()));
-
+            // The window asks with two buttons, erase and keep, and nothing to copy out of chat. A code to
+            // type back proved nothing the button did not: the player who clicks it is the owner who asked.
             IslandResetConfirmationMenu resetMenu = resetMenuProvider.get();
-            if (resetMenu != null) {
-                // Opening an inventory belongs to the thread that owns the player.
-                schedulerPort.onEntity(playerUuid, () -> {
-                    if (player.isOnline()) {
-                        resetMenu.open(
-                                player,
-                                challenge.code(),
-                                () -> resetWithCode(player, recycleService, challenge.code()));
-                    }
-                });
+            if (resetMenu == null) {
+                send(player, "reset.warning");
+                send(player, "reset.warning_detail");
+                send(player, "reset.confirm_hint");
+                return;
             }
+            // Opening an inventory belongs to the thread that owns the player.
+            schedulerPort.onEntity(playerUuid, () -> {
+                if (player.isOnline()) {
+                    resetMenu.open(player, () -> resetConfirmed(player, recycleService));
+                }
+            });
         });
         return Cmd.OK;
     }
@@ -583,20 +574,21 @@ public final class IslandLifecycleCommands {
             return Cmd.OK;
         }
 
-        String code = StringArgumentType.getString(ctx, "code");
-        resetWithCode(player, recycleService, code);
+        resetConfirmed(player, recycleService);
         return Cmd.OK;
     }
 
     /**
-     * Erases the player's island once they have given the code, under every rule a reset is held to.
+     * Erases the player's island once they have confirmed, under every rule a reset is held to.
      *
-     * <p>The typed confirmation and the confirmation window both come here. The window's button
+     * <p>The typed confirmation and the confirmation window both come here. The erasure still asks the
+     * recycle service for a challenge and answers it at once, so the service's own guard, that only the
+     * owner erases their island, holds as it always did. The window's button
      * erased the island on its own, so a reset from the window was never counted against the daily
      * allowance, had no guard against a double click and never emptied the inventory the operator
      * asked to have emptied.
      */
-    private void resetWithCode(Player player, IslandRecycleService recycleService, String code) {
+    private void resetConfirmed(Player player, IslandRecycleService recycleService) {
         Optional<ProfileId> optProfile = activeProfile(player);
         if (optProfile.isEmpty()) {
             send(player, "error.session_not_active");
@@ -624,6 +616,8 @@ public final class IslandLifecycleCommands {
                 send(player, "reset.already_running");
                 return;
             }
+            String code =
+                    recycleService.generateResetChallenge(profileId, islandId).code();
             confirmReset(player, recycleService, antiAbuse, profileId, islandId, code);
         });
     }

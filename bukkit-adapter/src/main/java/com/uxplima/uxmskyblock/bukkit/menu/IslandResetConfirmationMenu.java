@@ -8,9 +8,6 @@ import java.util.UUID;
 import org.bukkit.Material;
 import org.bukkit.entity.Player;
 
-import net.kyori.adventure.text.minimessage.tag.resolver.Placeholder;
-import net.kyori.adventure.text.minimessage.tag.resolver.TagResolver;
-
 import com.uxplima.uxmlib.gui.Guis;
 import com.uxplima.uxmlib.gui.SimpleGui;
 import com.uxplima.uxmlib.gui.item.GuiItem;
@@ -105,11 +102,14 @@ public final class IslandResetConfirmationMenu {
     /**
      * Opens the confirmation for {@code player}.
      *
+     * <p>Two buttons, erase and keep. The window showed a code as well, for a player to type in chat
+     * instead, and a player who had the window open had no use for it.
+     *
      * @param onConfirm what confirming does. It is the command's own confirmation, so a reset from
      *     here is held to the same rules as a typed one: the allowance, the double click guard and
      *     the inventory the operator asked to have emptied.
      */
-    public void open(Player player, String verificationCode, Runnable onConfirm) {
+    public void open(Player player, Runnable onConfirm) {
         UUID rawUuid = player.getUniqueId();
         PlayerUuid playerUuid = new PlayerUuid(rawUuid);
         Optional<ProfileId> activeOpt =
@@ -141,8 +141,7 @@ public final class IslandResetConfirmationMenu {
                     bedrockFormService.openConfirmationModal(
                             player,
                             legacy(messages.renderPlain(player, "menu.reset.title")),
-                            legacy(messages.renderPlain(
-                                    player, "menu.reset.form_body", Placeholder.unparsed("code", verificationCode))),
+                            legacy(messages.renderPlain(player, "menu.reset.form_body")),
                             legacy(messages.renderPlain(player, "menu.reset.confirm.title")),
                             legacy(messages.renderPlain(player, "menu.reset.cancel.title")),
                             onConfirm,
@@ -155,12 +154,12 @@ public final class IslandResetConfirmationMenu {
                 SkyblockMenuEngine engine = this.menuEngine;
                 if (engine != null) {
                     pending.put(rawUuid, new Pending(profileId, onConfirm));
-                    if (engine.open(player, FILE, Map.of("code", verificationCode))) {
+                    if (engine.open(player, FILE, Map.of())) {
                         return;
                     }
                     pending.remove(rawUuid);
                 }
-                SimpleGui gui = buildGui(player, profileId, islandId, verificationCode, onConfirm);
+                SimpleGui gui = buildGui(player, profileId, islandId, onConfirm);
                 gui.open(player);
             });
         });
@@ -171,8 +170,7 @@ public final class IslandResetConfirmationMenu {
         return com.uxplima.uxmskyblock.bukkit.bedrock.FormText.of(component);
     }
 
-    public SimpleGui buildGui(
-            Player player, ProfileId profileId, IslandId islandId, String verificationCode, Runnable onConfirm) {
+    public SimpleGui buildGui(Player player, ProfileId profileId, IslandId islandId, Runnable onConfirm) {
         SimpleGui gui = Guis.gui()
                 .title(MenuTitles.centre(messages.renderPlain(player, "menu.reset.title")))
                 .rows(3)
@@ -180,8 +178,6 @@ public final class IslandResetConfirmationMenu {
         gui.filler().fill(GuiItem.display(SkyblockTiles.filler()));
 
         SkyblockTiles tiles = new SkyblockTiles(messages);
-        TagResolver[] code = SkyblockTiles.arguments(Map.of("code", verificationCode));
-        gui.set(13, GuiItem.display(tiles.item(Material.BARRIER, player, "tile:warn @menu.reset.info code", code)));
         gui.set(11, GuiItem.button(tiles.item(Material.RED_CONCRETE, player, "tile:bad @menu.reset.confirm"), event -> {
             player.closeInventory();
             onConfirm.run();
