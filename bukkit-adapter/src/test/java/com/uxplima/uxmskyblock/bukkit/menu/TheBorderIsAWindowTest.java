@@ -66,7 +66,17 @@ class TheBorderIsAWindowTest extends MockBukkitHarness {
     void theWindowSaysWhereItStands() {
         assertThat(ShippedTemplates.spec("island-border.conf").items().keySet().stream()
                         .filter(id -> !id.startsWith("__")))
-                .containsExactlyInAnyOrder("toggle", "blue", "green", "red", "back");
+                .containsExactlyInAnyOrder(
+                        "toggle",
+                        "blue",
+                        "green",
+                        "red",
+                        "back",
+                        "edges",
+                        "previous",
+                        "no-previous",
+                        "next",
+                        "no-next");
         assertThat(lore("toggle")).contains("Shown").doesNotContain("Hidden");
         assertThat(lore("blue")).contains("In use");
         assertThat(lore("green")).contains("Not in use");
@@ -124,5 +134,130 @@ class TheBorderIsAWindowTest extends MockBukkitHarness {
 
         engine.install();
         assertThat(window.show(ada)).isTrue();
+    }
+
+    /** An island's choices in memory, and a window that may choose them. */
+    private final java.util.Map<com.uxplima.uxmskyblock.core.domain.identity.IslandId, String> stored =
+            new java.util.HashMap<>();
+
+    private final java.util.Set<com.uxplima.uxmskyblock.core.domain.identity.IslandId> ownEdge =
+            new java.util.HashSet<>();
+
+    private com.uxplima.uxmskyblock.bukkit.boundary.IslandEdges edges() {
+        var port = new com.uxplima.uxmskyblock.core.application.boundary.IslandEdgePort() {
+            @Override
+            public java.util.Optional<String> find(com.uxplima.uxmskyblock.core.domain.identity.IslandId islandId) {
+                return java.util.Optional.ofNullable(stored.get(islandId));
+            }
+
+            @Override
+            public java.util.Map<com.uxplima.uxmskyblock.core.domain.identity.IslandId, String> findAll() {
+                return java.util.Map.copyOf(stored);
+            }
+
+            @Override
+            public void keep(com.uxplima.uxmskyblock.core.domain.identity.IslandId islandId, String style) {
+                stored.put(islandId, style);
+            }
+        };
+        var walls = new com.uxplima.uxmskyblock.bukkit.wall.WallConfiguration(
+                java.util.Map.of(
+                        "mist",
+                        com.uxplima.uxmskyblock.bukkit.wall.WallStyle.colour("mist", 0x8A93A1, 22),
+                        "glass",
+                        com.uxplima.uxmskyblock.bukkit.wall.WallStyle.block("glass", "minecraft:glass")),
+                "mist",
+                -64,
+                320,
+                64);
+        return new com.uxplima.uxmskyblock.bukkit.boundary.IslandEdges(port, walls, ownEdge::contains);
+    }
+
+    @Test
+    @DisplayName("The island's edge is a tile per way, the border, each wall and nothing, the one in use marked")
+    void theEdgeIsATilePerWay() {
+        var known = edges();
+        var island = com.uxplima.uxmskyblock.core.domain.identity.IslandId.of(java.util.UUID.randomUUID());
+        var mine = java.util.Optional.of(new BorderWindow.Own(island, true));
+        known.choose(island, "glass");
+
+        var rows = window.edgeRows(ada, known, mine);
+
+        assertThat(rows).extracting(MenuRow::handle).containsExactly("border", "glass", "mist", "none");
+        assertThat(rows)
+                .extracting(row -> row.words().get("name"))
+                .containsExactly("The border", "Glass wall", "Mist wall", "Nothing");
+        assertThat(rows.get(1).words()).containsEntry("state", "In use").containsEntry("material", "GLASS");
+        assertThat(rows.get(2).words())
+                .containsEntry("state", "Not in use")
+                .containsEntry("material", "LIGHT_GRAY_STAINED_GLASS");
+        assertThat(rows.get(0).words()).containsEntry("material", "LIGHT_BLUE_STAINED_GLASS");
+        assertThat(rows.get(3).words()).containsEntry("material", "BARRIER");
+
+        assertThat(window.edgeRows(ada, known, java.util.Optional.empty()))
+                .describedAs("no island")
+                .isEmpty();
+        ownEdge.add(island);
+        assertThat(window.edgeRows(ada, known, mine))
+                .describedAs("a ChunkBlock island shows none")
+                .isEmpty();
+    }
+
+    @Test
+    @DisplayName("A role that may change settings chooses the edge; one that may not, or a ChunkBlock island, is told")
+    void choosingTheEdge() {
+        var known = edges();
+        var island = com.uxplima.uxmskyblock.core.domain.identity.IslandId.of(java.util.UUID.randomUUID());
+        var may = new java.util.concurrent.atomic.AtomicBoolean(false);
+        window.useEdges(
+                known,
+                player -> java.util.Optional.of(new BorderWindow.Own(island, may.get())),
+                new com.uxplima.uxmskyblock.bukkit.test.InlineSchedulerPort());
+
+        window.choose(ada, "mist");
+        assertThat(said()).contains("cannot change how its edge is drawn");
+        assertThat(stored).isEmpty();
+
+        may.set(true);
+        window.choose(ada, "mist");
+        assertThat(said()).contains("drawn as Mist wall now");
+        assertThat(known.styleOf(island)).isEqualTo("mist");
+
+        window.choose(ada, "lava");
+        assertThat(said()).contains("draws no edge called lava");
+
+        ownEdge.add(island);
+        window.choose(ada, "glass");
+        assertThat(said()).contains("the wall around its open chunks");
+        assertThat(stored).containsEntry(island, "mist");
+
+        window.useEdges(
+                known,
+                player -> java.util.Optional.empty(),
+                new com.uxplima.uxmskyblock.bukkit.test.InlineSchedulerPort());
+        window.choose(ada, "glass");
+        assertThat(said()).contains("do not belong to an island");
+    }
+
+    @Test
+    @DisplayName("With the island's edge to choose, the window opens with its tiles once the island is read")
+    void theWindowOpensWithTheEdge() {
+        var known = edges();
+        var island = com.uxplima.uxmskyblock.core.domain.identity.IslandId.of(java.util.UUID.randomUUID());
+        window.useEdges(
+                known,
+                player -> java.util.Optional.of(new BorderWindow.Own(island, true)),
+                new com.uxplima.uxmskyblock.bukkit.test.InlineSchedulerPort());
+        engine.install();
+
+        assertThat(window.show(ada)).isTrue();
+        assertThat(engine.bindings().list(BorderWindow.EDGES).orElseThrow().apply(MenuContext.of(ada, null, 0)))
+                .hasSize(4);
+
+        MenuRow mist = window.edgeRows(ada, known, java.util.Optional.of(new BorderWindow.Own(island, true)))
+                .get(2);
+        ShippedTemplates.click(
+                engine, BorderWindow.EDGE, MenuContext.of(ada, null, 0).withEntry(mist), ada, ClickKind.LEFT, "");
+        assertThat(stored).containsEntry(island, "mist");
     }
 }

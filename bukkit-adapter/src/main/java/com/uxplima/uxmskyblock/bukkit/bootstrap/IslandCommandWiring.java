@@ -137,6 +137,24 @@ final class IslandCommandWiring {
         var borderWindow =
                 new com.uxplima.uxmskyblock.bukkit.menu.BorderWindow(integration.messages(), gameplay::boundaryService);
         borderWindow.useMenuEngine(integration.menuEngine());
+        // And how the island's edge is drawn for everybody, which a role that may change settings chooses.
+        var islandStore = persistence.islandStoragePort();
+        borderWindow.useEdges(
+                gameplay.islandEdges(),
+                player -> authority
+                        .sessionCoordinator()
+                        .activeProfile(player)
+                        .flatMap(profile -> islandStore
+                                .findIslandIdByProfileId(profile)
+                                .flatMap(islandStore::findIslandById)
+                                .map(island -> new com.uxplima.uxmskyblock.bukkit.menu.BorderWindow.Own(
+                                        island.id(),
+                                        island.isOwner(profile)
+                                                || island.hasPermission(
+                                                        profile,
+                                                        com.uxplima.uxmskyblock.core.domain.island.IslandPermission
+                                                                .SETTINGS_MODIFY)))),
+                gameplay.scheduler());
         tree.useBorderWindow(borderWindow);
         // The homes and every leaderboard are windows, one tile each, rather than lines in chat.
         var homeList = new com.uxplima.uxmskyblock.bukkit.menu.HomeList(tree::typed);

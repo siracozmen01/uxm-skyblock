@@ -71,6 +71,11 @@ public final class IslandEdges {
         return Optional.ofNullable(walls.styles().get(styleOf(island)));
     }
 
+    /** The wall style {@code way} names, when it names one. */
+    public Optional<WallStyle> wallStyle(String way) {
+        return Optional.ofNullable(walls.styles().get(way));
+    }
+
     /** Whether the members of {@code island} may choose how its edge is drawn. One that edges its own ground may not. */
     public boolean choosable(IslandId island) {
         return !ownEdge.test(island);
