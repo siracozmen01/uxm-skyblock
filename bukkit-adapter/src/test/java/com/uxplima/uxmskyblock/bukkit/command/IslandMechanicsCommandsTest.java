@@ -100,7 +100,7 @@ class IslandMechanicsCommandsTest {
                 .thenReturn(new BoosterApplyResult.RejectedLowerTier(2.0, 1.5));
 
         boundaries = mock(IslandBoundaryService.class);
-        when(boundaries.togglePerimeter(any(PlayerUuid.class))).thenReturn(true);
+        when(boundaries.toggleBorder(any(PlayerUuid.class))).thenReturn(true);
 
         IslandLocationService locations = mock(IslandLocationService.class);
         when(locations.findIslandId(PROFILE)).thenReturn(Optional.of(ISLAND));
@@ -192,12 +192,26 @@ class IslandMechanicsCommandsTest {
     }
 
     @Test
+    @DisplayName("The border a player hid stays hidden past a rejoin, kept on the player")
+    void theChoiceIsKeptOnThePlayer() throws Exception {
+        when(boundaries.toggleBorder(any(PlayerUuid.class))).thenReturn(false, true);
+
+        run("border", player);
+        assertThat(com.uxplima.uxmskyblock.bukkit.boundary.BorderChoice.hidden(player))
+                .isTrue();
+
+        run("border", player);
+        assertThat(com.uxplima.uxmskyblock.bukkit.boundary.BorderChoice.hidden(player))
+                .isFalse();
+    }
+
+    @Test
     @DisplayName("/is border and /is bounds are the same switch")
     void borderAndBoundsAreTheSameSwitch() throws Exception {
         run("border", player);
         run("bounds", player);
 
-        verify(boundaries, org.mockito.Mockito.times(2)).togglePerimeter(any(PlayerUuid.class));
+        verify(boundaries, org.mockito.Mockito.times(2)).toggleBorder(any(PlayerUuid.class));
     }
 
     @Test
@@ -288,6 +302,6 @@ class IslandMechanicsCommandsTest {
 
         verify(limits, never()).getCounts(any());
         verify(antiAbuse, never()).getQuarantineRemaining(any(), any());
-        verify(boundaries, never()).togglePerimeter(any());
+        verify(boundaries, never()).toggleBorder(any());
     }
 }

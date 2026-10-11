@@ -166,6 +166,22 @@ class IslandBoundaryListenerTest extends MockBukkitHarness {
     }
 
     @Test
+    @DisplayName("A player who hid the border logs in on an island and is drawn none")
+    void aHiddenBorderStaysHiddenAtLogin() {
+        BorderChoice.keep(player, false);
+        boundaryListener.onPlayerJoin(new org.bukkit.event.player.PlayerJoinEvent(player, "joined"));
+
+        boundaryListener.arrived(new com.uxplima.uxmskyblock.bukkit.arrival.Arrival(
+                player,
+                null,
+                new Location(world, 0, 101, 0),
+                com.uxplima.uxmskyblock.bukkit.arrival.ArrivalCause.JOIN,
+                false));
+
+        org.mockito.Mockito.verifyNoInteractions(worldBorderPort);
+    }
+
+    @Test
     @DisplayName("A login on an island draws its border, and a ride inside it draws it no second time")
     void aLoginDrawsTheBorderOnce() {
         Location inside = new Location(world, 0, 101, 0);

@@ -50,6 +50,46 @@ class IslandBoundaryServiceTest {
     }
 
     @Test
+    @DisplayName("Hiding the border takes the wall away and keeps it away on every island, and showing it draws it"
+            + " where the player stands")
+    void theBorderIsHiddenAndShown() {
+        PlayerUuid player = new PlayerUuid(UUID.randomUUID());
+        IslandBounds home = IslandBounds.fromCenterAndRadius(0, 0, 50);
+        IslandBounds next = IslandBounds.fromCenterAndRadius(5120, 0, 50);
+        boundaryService.handlePlayerEnterIsland(player, home);
+        org.mockito.Mockito.clearInvocations(worldBorderPort);
+
+        assertThat(boundaryService.toggleBorder(player)).isFalse();
+        verify(worldBorderPort).resetWorldBorder(player);
+        boundaryService.handlePlayerExitIsland(player);
+        boundaryService.handlePlayerEnterIsland(player, next);
+        boundaryService.handleIslandExpand(player, next, IslandBounds.fromCenterAndRadius(5120, 0, 75), 0L);
+        org.mockito.Mockito.verifyNoMoreInteractions(worldBorderPort);
+        assertThat(boundaryService.isBorderHidden(player)).isTrue();
+
+        assertThat(boundaryService.toggleBorder(player)).isTrue();
+        verify(worldBorderPort).sendWorldBorder(player, 5120, 0, 75, 0.0, 0L);
+        assertThat(boundaryService.isBorderHidden(player)).isFalse();
+    }
+
+    @Test
+    @DisplayName("A player marked hidden as they join is drawn no border, and one who left is forgotten")
+    void aHiddenBorderOutlivesNothingButTheSession() {
+        PlayerUuid player = new PlayerUuid(UUID.randomUUID());
+        boundaryService.hideBorder(player);
+
+        boundaryService.handlePlayerEnterIsland(player, IslandBounds.fromCenterAndRadius(0, 0, 50));
+        org.mockito.Mockito.verifyNoInteractions(worldBorderPort);
+
+        boundaryService.forget(player);
+        assertThat(boundaryService.isBorderHidden(player)).isFalse();
+        assertThat(boundaryService.toggleBorder(player))
+                .describedAs("forgotten, so the first switch hides it and nothing is drawn where no island is known")
+                .isFalse();
+        org.mockito.Mockito.verifyNoInteractions(worldBorderPort);
+    }
+
+    @Test
     @DisplayName("spillover detection identifies breaches out of boundary accurately")
     void testSpilloverDetection() {
         IslandBounds bounds = IslandBounds.fromCenterAndRadius(0, 0, 50);

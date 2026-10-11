@@ -19,6 +19,12 @@ public final class IslandBoundaryService {
     private final @Nullable WorldBorderPacketPort worldBorderPort;
     private final Set<PlayerUuid> activePerimeterViewers = ConcurrentHashMap.newKeySet();
 
+    /** The players who hid the border, so no island draws it for them. */
+    private final Set<PlayerUuid> hiddenBorders = ConcurrentHashMap.newKeySet();
+
+    /** The island each player stands in, so a border shown again is drawn where they are. */
+    private final java.util.Map<PlayerUuid, IslandBounds> standingIn = new ConcurrentHashMap<>();
+
     public IslandBoundaryService(@Nullable WorldBorderPacketPort worldBorderPort) {
         this.worldBorderPort = worldBorderPort;
     }
@@ -112,18 +118,65 @@ public final class IslandBoundaryService {
         return points;
     }
 
+    /**
+     * Hides the border for a player who shows it, and shows it for one who hid it, and answers whether it is shown
+     * now. {@code /is border} said the border was shown and then hidden while the wall a player saw never moved: it
+     * turned a line of particles on and off, and the wall is what it hides now.
+     */
+    public boolean toggleBorder(PlayerUuid playerUuid) {
+        Objects.requireNonNull(playerUuid, "playerUuid must not be null");
+        if (hiddenBorders.remove(playerUuid)) {
+            IslandBounds bounds = standingIn.get(playerUuid);
+            if (bounds != null) {
+                send(playerUuid, bounds);
+            }
+            return true;
+        }
+        hiddenBorders.add(playerUuid);
+        if (worldBorderPort != null && standingIn.containsKey(playerUuid)) {
+            worldBorderPort.resetWorldBorder(playerUuid);
+        }
+        return false;
+    }
+
+    /** Marks the border hidden for a player who hid it before, as they join, and draws nothing. */
+    public void hideBorder(PlayerUuid playerUuid) {
+        hiddenBorders.add(Objects.requireNonNull(playerUuid, "playerUuid must not be null"));
+    }
+
+    /** Whether the player hid the border. */
+    public boolean isBorderHidden(PlayerUuid playerUuid) {
+        return hiddenBorders.contains(Objects.requireNonNull(playerUuid, "playerUuid must not be null"));
+    }
+
+    /** Forgets a player who left: their choice is kept where the server keeps the player. */
+    public void forget(PlayerUuid playerUuid) {
+        Objects.requireNonNull(playerUuid, "playerUuid must not be null");
+        hiddenBorders.remove(playerUuid);
+        standingIn.remove(playerUuid);
+        activePerimeterViewers.remove(playerUuid);
+    }
+
     public void handlePlayerEnterIsland(PlayerUuid playerUuid, IslandBounds bounds) {
         Objects.requireNonNull(playerUuid, "playerUuid must not be null");
         Objects.requireNonNull(bounds, "bounds must not be null");
-        if (worldBorderPort != null) {
-            worldBorderPort.sendWorldBorder(playerUuid, bounds.centerX(), bounds.centerZ(), bounds.radius(), 0.0, 0L);
+        standingIn.put(playerUuid, bounds);
+        if (!hiddenBorders.contains(playerUuid)) {
+            send(playerUuid, bounds);
         }
     }
 
     public void handlePlayerExitIsland(PlayerUuid playerUuid) {
         Objects.requireNonNull(playerUuid, "playerUuid must not be null");
-        if (worldBorderPort != null) {
+        standingIn.remove(playerUuid);
+        if (worldBorderPort != null && !hiddenBorders.contains(playerUuid)) {
             worldBorderPort.resetWorldBorder(playerUuid);
+        }
+    }
+
+    private void send(PlayerUuid playerUuid, IslandBounds bounds) {
+        if (worldBorderPort != null) {
+            worldBorderPort.sendWorldBorder(playerUuid, bounds.centerX(), bounds.centerZ(), bounds.radius(), 0.0, 0L);
         }
     }
 
@@ -132,7 +185,8 @@ public final class IslandBoundaryService {
         Objects.requireNonNull(playerUuid, "playerUuid must not be null");
         Objects.requireNonNull(oldBounds, "oldBounds must not be null");
         Objects.requireNonNull(newBounds, "newBounds must not be null");
-        if (worldBorderPort != null) {
+        standingIn.replace(playerUuid, oldBounds, newBounds);
+        if (worldBorderPort != null && !hiddenBorders.contains(playerUuid)) {
             worldBorderPort.sendWorldBorder(
                     playerUuid,
                     newBounds.centerX(),

@@ -226,7 +226,7 @@ class WhatTheMechanicsCommandsSayTest extends MockBukkitHarness {
     @Test
     @DisplayName("The border says which way it was switched")
     void theBorderSaysWhichWay() throws Exception {
-        when(boundaries.togglePerimeter(any(PlayerUuid.class))).thenReturn(true, false);
+        when(boundaries.toggleBorder(any(PlayerUuid.class))).thenReturn(true, false);
 
         assertThat(run("border")).singleElement().asString().contains("is shown");
         assertThat(run("border")).singleElement().asString().contains("is hidden");

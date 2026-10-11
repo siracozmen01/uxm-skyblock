@@ -16,6 +16,7 @@ import org.bukkit.event.Listener;
 import org.bukkit.event.block.BlockFromToEvent;
 import org.bukkit.event.block.BlockPistonExtendEvent;
 import org.bukkit.event.block.BlockPistonRetractEvent;
+import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.event.player.PlayerMoveEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
 
@@ -202,11 +203,20 @@ public final class IslandBoundaryListener implements Listener, ArrivalGate, Arri
         showBorder(event.getPlayer(), to, toIsland);
     }
 
+    /** A player who hid the border before finds it hidden, before any island draws it for them. */
+    @EventHandler(priority = EventPriority.LOWEST)
+    public void onPlayerJoin(PlayerJoinEvent event) {
+        if (BorderChoice.hidden(event.getPlayer())) {
+            boundaryService.hideBorder(new PlayerUuid(event.getPlayer().getUniqueId()));
+        }
+    }
+
     @EventHandler
     public void onPlayerQuit(PlayerQuitEvent event) {
         PlayerUuid uuid = new PlayerUuid(event.getPlayer().getUniqueId());
         bordered.remove(event.getPlayer().getUniqueId());
         boundaryService.disablePerimeter(uuid);
+        boundaryService.forget(uuid);
     }
 
     /**

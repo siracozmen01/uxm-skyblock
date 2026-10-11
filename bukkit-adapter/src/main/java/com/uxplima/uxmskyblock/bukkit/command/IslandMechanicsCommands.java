@@ -365,7 +365,8 @@ public final class IslandMechanicsCommands {
             return Cmd.OK;
         }
         PlayerUuid uuid = new PlayerUuid(player.getUniqueId());
-        boolean active = boundaryService.togglePerimeter(uuid);
+        boolean active = boundaryService.toggleBorder(uuid);
+        com.uxplima.uxmskyblock.bukkit.boundary.BorderChoice.keep(player, active);
         if (active) {
             send(player, "border.enabled");
         } else {
