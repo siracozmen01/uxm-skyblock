@@ -8,7 +8,6 @@ import static org.mockito.Mockito.when;
 
 import java.time.Instant;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -36,18 +35,14 @@ import com.uxplima.uxmskyblock.bukkit.test.MockBukkitHarness;
 import com.uxplima.uxmskyblock.core.application.bank.IslandBankPort;
 import com.uxplima.uxmskyblock.core.application.bank.IslandBankService;
 import com.uxplima.uxmskyblock.core.application.chunkblock.ChunkBlockService;
-import com.uxplima.uxmskyblock.core.application.chunkblock.ChunkPaymentPort;
-import com.uxplima.uxmskyblock.core.application.chunkblock.ChunkTerritoryPort;
 import com.uxplima.uxmskyblock.core.application.chunkblock.ChunkUnlocks;
 import com.uxplima.uxmskyblock.core.application.island.IslandAccessService;
 import com.uxplima.uxmskyblock.core.application.island.IslandAuthorityPort;
 import com.uxplima.uxmskyblock.core.application.island.IslandStoragePort;
 import com.uxplima.uxmskyblock.core.application.scheduler.SchedulerPort;
-import com.uxplima.uxmskyblock.core.domain.chunkblock.ChunkPayments;
 import com.uxplima.uxmskyblock.core.domain.chunkblock.ChunkPos;
 import com.uxplima.uxmskyblock.core.domain.chunkblock.ChunkRequirement;
 import com.uxplima.uxmskyblock.core.domain.chunkblock.ChunkRequirement.Source;
-import com.uxplima.uxmskyblock.core.domain.chunkblock.ChunkTerritory;
 import com.uxplima.uxmskyblock.core.domain.chunkblock.ChunkTier;
 import com.uxplima.uxmskyblock.core.domain.chunkblock.ChunkTiers;
 import com.uxplima.uxmskyblock.core.domain.chunkblock.ChunkUnlockRules;
@@ -72,10 +67,9 @@ class AChunkIsBoughtWithWhatAPlayerCarriesTest extends MockBukkitHarness {
 
     private static final ChunkPos EAST = new ChunkPos(1, 0);
 
-    private final Map<IslandId, ChunkPos> origins = new HashMap<>();
-    private final Map<IslandId, List<ChunkPos>> opened = new HashMap<>();
-    private final Map<IslandId, List<ChunkPos>> bought = new HashMap<>();
-    private final Payments payments = new Payments();
+    private final ChunkBlockStores.Territories territories = new ChunkBlockStores.Territories();
+    private final Map<IslandId, List<ChunkPos>> bought = territories.bought;
+    private final ChunkBlockStores.Payments payments = new ChunkBlockStores.Payments();
     private final IslandStoragePort islands = mock(IslandStoragePort.class);
     private final IslandAccessService access = mock(IslandAccessService.class);
     private final AtomicLong level = new AtomicLong();
@@ -115,7 +109,7 @@ class AChunkIsBoughtWithWhatAPlayerCarriesTest extends MockBukkitHarness {
         when(islands.findIslandIdByProfileId(profile)).thenReturn(Optional.of(island.id()));
         when(islands.findIslandById(island.id())).thenReturn(Optional.of(island));
         when(access.canWithdrawBank(any(), any())).thenReturn(true);
-        service = new ChunkBlockService(memory(), new ChunkUnlockRules(List.of(2L, 5L), 5));
+        service = new ChunkBlockService(territories, new ChunkUnlockRules(List.of(2L, 5L), 5));
         service.start(island.id(), 8, 8);
         scheduler = mock(SchedulerPort.class);
         doAnswer(call -> {
@@ -509,99 +503,6 @@ class AChunkIsBoughtWithWhatAPlayerCarriesTest extends MockBukkitHarness {
         @Override
         public boolean deposit(Player who, double amount) {
             money += amount;
-            return true;
-        }
-    }
-
-    private ChunkTerritoryPort memory() {
-        return new ChunkTerritoryPort() {
-            @Override
-            public Map<IslandId, ChunkTerritory> findAll() {
-                return Map.of();
-            }
-
-            @Override
-            public Optional<ChunkTerritory> find(IslandId islandId) {
-                ChunkPos origin = origins.get(islandId);
-                return origin == null
-                        ? Optional.empty()
-                        : Optional.of(new ChunkTerritory(origin, opened.getOrDefault(islandId, List.of())));
-            }
-
-            @Override
-            public void start(IslandId islandId, ChunkPos origin) {
-                origins.putIfAbsent(islandId, origin);
-            }
-
-            @Override
-            public boolean open(IslandId islandId, ChunkPos chunk, int order) {
-                return opened.computeIfAbsent(islandId, id -> new ArrayList<>()).add(chunk);
-            }
-
-            @Override
-            public boolean open(IslandId islandId, ChunkPos chunk, int order, boolean paidFor) {
-                if (paidFor) {
-                    bought.computeIfAbsent(islandId, id -> new ArrayList<>()).add(chunk);
-                }
-                return open(islandId, chunk, order);
-            }
-
-            @Override
-            public void close(IslandId islandId, List<ChunkPos> chunks) {
-                opened.getOrDefault(islandId, new ArrayList<>()).removeAll(chunks);
-            }
-        };
-    }
-
-    private static final class Payments implements ChunkPaymentPort {
-        private final Map<String, Long> paid = new HashMap<>();
-        private final Map<IslandId, Long> points = new HashMap<>();
-        boolean failing;
-
-        private String at(IslandId islandId, ChunkPos chunk) {
-            return islandId + "/" + chunk.x() + "," + chunk.z() + "/";
-        }
-
-        @Override
-        public ChunkPayments find(IslandId islandId, ChunkPos chunk) {
-            Map<String, Long> found = new HashMap<>();
-            paid.forEach((key, amount) -> {
-                if (key.startsWith(at(islandId, chunk))) {
-                    found.put(key.substring(at(islandId, chunk).length()), amount);
-                }
-            });
-            return new ChunkPayments(found);
-        }
-
-        @Override
-        public void add(IslandId islandId, ChunkPos chunk, String key, long amount) {
-            if (failing) {
-                throw new IllegalStateException("the table is gone");
-            }
-            paid.merge(at(islandId, chunk) + key, amount, Long::sum);
-        }
-
-        @Override
-        public void clear(IslandId islandId, ChunkPos chunk) {
-            paid.keySet().removeIf(key -> key.startsWith(at(islandId, chunk)));
-        }
-
-        @Override
-        public long points(IslandId islandId) {
-            return points.getOrDefault(islandId, 0L);
-        }
-
-        @Override
-        public void addPoints(IslandId islandId, long amount) {
-            points.merge(islandId, amount, Long::sum);
-        }
-
-        @Override
-        public boolean spendPoints(IslandId islandId, long amount) {
-            if (points(islandId) < amount) {
-                return false;
-            }
-            points.merge(islandId, -amount, Long::sum);
             return true;
         }
     }

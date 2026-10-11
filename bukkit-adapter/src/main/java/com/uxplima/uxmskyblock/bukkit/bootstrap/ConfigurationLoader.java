@@ -116,7 +116,8 @@ public final class ConfigurationLoader {
             "island-bookmarks.conf",
             "island-alliances.conf",
             "island-bank-currency.conf",
-            "island-border.conf");
+            "island-border.conf",
+            "island-chunk.conf");
 
     private ConfigurationLoader() {
         throw new UnsupportedOperationException("ConfigurationLoader is a set of loading steps, not a thing to hold.");

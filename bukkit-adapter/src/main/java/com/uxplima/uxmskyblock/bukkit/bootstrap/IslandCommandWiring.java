@@ -215,7 +215,7 @@ final class IslandCommandWiring {
                         (islandId, profile) -> levelOf(gameplay, islandId, profile));
         if (chunkBlockPanel != null) {
             // Chunks are paid for by their grades, out of what players carry and the island's bank.
-            chunkBlockPanel.usePurchase(gameplay.chunkBlockWiring()
+            var purchase = gameplay.chunkBlockWiring()
                     .purchase(
                             persistence,
                             gameplay.bankService(),
@@ -225,7 +225,20 @@ final class IslandCommandWiring {
                             integration.messages(),
                             authority.sessionCoordinator()::activeProfile,
                             (islandId, profile) -> levelOf(gameplay, islandId, profile),
-                            config.nodeConfig().nodeId()));
+                            config.nodeConfig().nodeId());
+            chunkBlockPanel.usePurchase(purchase);
+            // Each closed chunk the island can open next, as a window of its price.
+            var chunkWindow = new com.uxplima.uxmskyblock.bukkit.chunkblock.ChunkWindow(
+                    purchase,
+                    gameplay.chunkBlockWiring().service(),
+                    persistence.islandStoragePort(),
+                    gameplay.scheduler(),
+                    integration.messages(),
+                    id -> integration.economyBridge().wallets().flatMap(wallets -> wallets.currency(id)),
+                    authority.sessionCoordinator()::activeProfile,
+                    (islandId, profile) -> levelOf(gameplay, islandId, profile));
+            chunkWindow.useMenuEngine(integration.menuEngine());
+            chunkBlockPanel.useWindow(chunkWindow);
         }
         tree.useChunkBlock(chunkBlockPanel);
         integration.placeholderExpansion().useChunkBlock(chunkBlockPanel);

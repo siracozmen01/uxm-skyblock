@@ -1,6 +1,7 @@
 package com.uxplima.uxmskyblock.bukkit.chunkblock;
 
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
@@ -15,6 +16,7 @@ import net.kyori.adventure.text.minimessage.tag.resolver.Placeholder;
 import net.kyori.adventure.text.minimessage.tag.resolver.TagResolver;
 
 import com.uxplima.uxmskyblock.bukkit.i18n.Messages;
+import com.uxplima.uxmskyblock.bukkit.menu.MenuRow;
 import com.uxplima.uxmskyblock.bukkit.menu.SkyblockMenuEngine;
 import com.uxplima.uxmskyblock.core.application.chunkblock.ChunkBlockService;
 import com.uxplima.uxmskyblock.core.application.island.IslandStoragePort;
@@ -47,6 +49,7 @@ public final class ChunkBlockPanel {
     private final BiFunction<IslandId, ProfileId, Long> levelOf;
     private @Nullable SkyblockMenuEngine engine;
     private @Nullable ChunkPurchase purchase;
+    private @Nullable ChunkWindow window;
 
     /**
      * @param levelOf the island's level as the level command works it out, read off the main thread
@@ -79,6 +82,11 @@ public final class ChunkBlockPanel {
         return purchase;
     }
 
+    /** The window of one chunk, which the panel lists the chunks the island can open next for. */
+    public void useWindow(@Nullable ChunkWindow window) {
+        this.window = window;
+    }
+
     /** Shows how far the player's island has opened, or says why there is nothing to show. */
     public void open(Player player) {
         withIsland(player, (islandId, profile) -> {
@@ -89,7 +97,12 @@ public final class ChunkBlockPanel {
             }
             long level = levelOf.apply(islandId, profile);
             Map<String, String> values = values(territory.get(), level);
-            scheduler.onEntity(new PlayerUuid(player.getUniqueId()), () -> show(player, values));
+            ChunkWindow chunks = this.window;
+            Optional<Island> island = chunks == null ? Optional.empty() : islands.findIslandById(islandId);
+            List<MenuRow> frontier = chunks == null || island.isEmpty()
+                    ? List.of()
+                    : chunks.frontierRows(player, islandId, island.get().bounds());
+            scheduler.onEntity(new PlayerUuid(player.getUniqueId()), () -> show(player, values, frontier));
         });
     }
 
@@ -188,8 +201,13 @@ public final class ChunkBlockPanel {
     }
 
     void show(Player player, Map<String, String> values) {
+        show(player, values, List.of());
+    }
+
+    /** The panel, with a tile per closed chunk the island can open next. */
+    void show(Player player, Map<String, String> values, List<MenuRow> frontier) {
         SkyblockMenuEngine menus = this.engine;
-        if (menus != null && menus.open(player, MENU, values)) {
+        if (menus != null && menus.open(player, MENU, values, Map.of(ChunkWindow.FRONTIER, frontier))) {
             return;
         }
         TagResolver.Builder tags = TagResolver.builder();
