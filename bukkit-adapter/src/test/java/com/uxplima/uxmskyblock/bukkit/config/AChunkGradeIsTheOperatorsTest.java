@@ -170,6 +170,19 @@ class AChunkGradeIsTheOperatorsTest {
     }
 
     @Test
+    @DisplayName("The signs over closed chunks float unless the file turns them off")
+    void theSignsAreTheOperators() throws Exception {
+        assertThat(ChunkBlockConfiguration.load(
+                                HoconConfigurationLoader.builder().buildAndLoadString("enabled = true"))
+                        .signs())
+                .isTrue();
+        assertThat(ChunkBlockConfiguration.load(
+                                HoconConfigurationLoader.builder().buildAndLoadString("signs = false"))
+                        .signs())
+                .isFalse();
+    }
+
+    @Test
     @DisplayName("Every grade the plugin ships reads, every line of it")
     void theShippedGradesRead() throws Exception {
         String shipped;

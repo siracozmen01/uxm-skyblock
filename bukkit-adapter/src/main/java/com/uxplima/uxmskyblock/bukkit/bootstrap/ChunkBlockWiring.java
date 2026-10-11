@@ -11,6 +11,7 @@ import com.uxplima.uxmskyblock.bukkit.schematic.IslandStart;
 import com.uxplima.uxmskyblock.core.application.chunkblock.ChunkBlockService;
 import com.uxplima.uxmskyblock.core.application.gamemode.CreationActionProvider;
 import com.uxplima.uxmskyblock.core.application.scheduler.SchedulerPort;
+import com.uxplima.uxmskyblock.core.domain.chunkblock.ChunkPos;
 import com.uxplima.uxmskyblock.persistence.bootstrap.PersistenceBootstrap;
 
 /** The ChunkBlock game mode, while the operator lets islands be ChunkBlock islands. */
@@ -22,12 +23,20 @@ public final class ChunkBlockWiring {
     private final ChunkBlockService service;
     private final com.uxplima.uxmskyblock.bukkit.chunkblock.ChunkBlockListener listener;
     private final com.uxplima.uxmskyblock.bukkit.chunkblock.@org.jspecify.annotations.Nullable TerritoryWalls walls;
+    private final com.uxplima.uxmskyblock.bukkit.chunkblock.@org.jspecify.annotations.Nullable ChunkSigns signs;
+
+    /** The window a click on a sign opens, handed over once the commands are wired. */
+    private volatile java.util.function.BiConsumer<org.bukkit.entity.Player, ChunkPos> openWindow =
+            (player, chunk) -> {};
 
     public ChunkBlockWiring(
             ConfigurationWiring configuration,
             PersistenceBootstrap persistence,
             SchedulerPort scheduler,
-            com.uxplima.uxmskyblock.bukkit.listener.IslandProtectionListener islands) {
+            com.uxplima.uxmskyblock.bukkit.listener.IslandProtectionListener islands,
+            java.util.function.Function<
+                            java.util.UUID, java.util.Optional<com.uxplima.uxmskyblock.core.domain.identity.ProfileId>>
+                    activeProfile) {
         this.config = Objects.requireNonNull(configuration.chunkBlockConfig(), "chunkBlockConfig must not be null");
         this.service = new ChunkBlockService(persistence.chunkTerritoryPort(), config.rules());
         this.listener = new com.uxplima.uxmskyblock.bukkit.chunkblock.ChunkBlockListener(
@@ -57,6 +66,23 @@ public final class ChunkBlockWiring {
         if (walls != null) {
             service.whenOpened(walls::opened);
             service.whenClosed(walls::closed);
+        }
+        // A sign over each closed chunk an island can open next, which a member clicks for its price.
+        this.signs = config.signs()
+                ? new com.uxplima.uxmskyblock.bukkit.chunkblock.ChunkSigns(
+                        service,
+                        config.tiers(),
+                        islands,
+                        scheduler,
+                        new com.uxplima.uxmskyblock.bukkit.chunkblock.ChunkSignEntities(),
+                        configuration.messages(),
+                        persistence.islandStoragePort()::findLocationByIslandId,
+                        activeProfile,
+                        (player, chunk) -> openWindow.accept(player, chunk))
+                : null;
+        if (signs != null) {
+            service.whenOpened(signs::opened);
+            service.whenClosed(signs::closed);
         }
         // Every territory into memory before anybody steps near a closed chunk, so no step is a query.
         scheduler.async(() -> {
@@ -157,6 +183,16 @@ public final class ChunkBlockWiring {
                 activeProfile,
                 levelOf,
                 node);
+    }
+
+    /** The signs over closed chunks, while the operator lets them float. */
+    public com.uxplima.uxmskyblock.bukkit.chunkblock.@org.jspecify.annotations.Nullable ChunkSigns signs() {
+        return signs;
+    }
+
+    /** Hands the signs the window a member's click opens. */
+    public void useWindow(com.uxplima.uxmskyblock.bukkit.chunkblock.ChunkWindow window) {
+        this.openWindow = window::show;
     }
 
     /** The edge of every territory, registered while the operator lets islands be ChunkBlock islands. */

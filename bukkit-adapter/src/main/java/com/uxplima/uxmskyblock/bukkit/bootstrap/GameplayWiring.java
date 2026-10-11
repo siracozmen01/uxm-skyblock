@@ -197,7 +197,8 @@ public final class GameplayWiring {
         // Before creation, because a game mode brings the actions that build its islands.
         this.oneBlockWiring = new OneBlockWiring(
                 config, persistence, scheduler, protectionListener, authority.sessionCoordinator()::activeProfile);
-        this.chunkBlockWiring = new ChunkBlockWiring(config, persistence, scheduler, protectionListener);
+        this.chunkBlockWiring = new ChunkBlockWiring(
+                config, persistence, scheduler, protectionListener, authority.sessionCoordinator()::activeProfile);
         this.acidIslandWiring = new AcidIslandWiring(config, persistence, scheduler, protectionListener);
         this.boxedWiring = new BoxedWiring(
                 config, persistence, scheduler, protectionListener, authority.sessionCoordinator()::activeProfile);
@@ -379,6 +380,10 @@ public final class GameplayWiring {
                         this.chunkBlockWiring.service().onLevel(islandId, score.calculatedLevel()));
         this.cacheEviction.whenForgotten(this.economicWiring.worthService()::forgetIsland);
         this.cacheEviction.whenForgotten(this.chunkBlockWiring.service()::forget);
+        var chunkSigns = this.chunkBlockWiring.signs();
+        if (chunkSigns != null) {
+            this.cacheEviction.whenForgotten(chunkSigns::forget);
+        }
         this.cacheEviction.whenForgotten(this.acidIslandWiring.service()::forget);
         this.cacheEviction.whenForgotten(this.boxedWiring.service()::forget);
         // An island is cleared over its border, everywhere its game mode wrote past it, a box grown past it and a

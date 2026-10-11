@@ -22,9 +22,10 @@ import org.spongepowered.configurate.hocon.HoconConfigurationLoader;
  *
  * @param bypassPermission a node whose holder is not stopped at a closed chunk, empty for nobody
  * @param tiers the grades the file names, none when every chunk is priced by the level ladder
+ * @param signs whether a sign floats over each closed chunk an island can open next
  */
 public record ChunkBlockConfiguration(
-        boolean enabled, ChunkUnlockRules rules, String bypassPermission, ChunkTiers tiers) {
+        boolean enabled, ChunkUnlockRules rules, String bypassPermission, ChunkTiers tiers, boolean signs) {
 
     private static final Logger LOGGER = Logger.getLogger(ChunkBlockConfiguration.class.getName());
 
@@ -37,6 +38,11 @@ public record ChunkBlockConfiguration(
     /** A server whose chunks are all priced by the level ladder. */
     public ChunkBlockConfiguration(boolean enabled, ChunkUnlockRules rules, String bypassPermission) {
         this(enabled, rules, bypassPermission, ChunkTiers.ladder());
+    }
+
+    /** A server whose closed chunks carry signs. */
+    public ChunkBlockConfiguration(boolean enabled, ChunkUnlockRules rules, String bypassPermission, ChunkTiers tiers) {
+        this(enabled, rules, bypassPermission, tiers, true);
     }
 
     /**
@@ -87,7 +93,8 @@ public record ChunkBlockConfiguration(
                 root.node("enabled").getBoolean(true),
                 rules,
                 root.node("bypass-permission").getString("").trim(),
-                tiers(root.node("tiers")));
+                tiers(root.node("tiers")),
+                root.node("signs").getBoolean(true));
     }
 
     /**

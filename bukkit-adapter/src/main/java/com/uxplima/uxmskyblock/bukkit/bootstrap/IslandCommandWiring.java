@@ -239,6 +239,7 @@ final class IslandCommandWiring {
                     (islandId, profile) -> levelOf(gameplay, islandId, profile));
             chunkWindow.useMenuEngine(integration.menuEngine());
             chunkBlockPanel.useWindow(chunkWindow);
+            gameplay.chunkBlockWiring().useWindow(chunkWindow);
         }
         tree.useChunkBlock(chunkBlockPanel);
         integration.placeholderExpansion().useChunkBlock(chunkBlockPanel);

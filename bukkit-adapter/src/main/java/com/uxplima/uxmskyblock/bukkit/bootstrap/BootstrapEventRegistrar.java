@@ -38,6 +38,10 @@ public final class BootstrapEventRegistrar {
             if (walls != null) {
                 pm.registerEvents(walls, plugin);
             }
+            var signs = gameplayWiring.chunkBlockWiring().signs();
+            if (signs != null) {
+                pm.registerEvents(signs, plugin);
+            }
             gameplayWiring
                     .arrivalWatch()
                     .admit(gameplayWiring.chunkBlockWiring().listener());
