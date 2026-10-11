@@ -12,7 +12,7 @@ import org.junit.jupiter.api.Test;
 
 /**
  * A client draws a border standing still in blue, one growing in green and one shrinking in red. A coloured border
- * stands at the island's edge and moves by a block over sixty years.
+ * stands at the island's edge and moves by a block over three years.
  */
 class ABorderIsDrawnInItsColourTest extends com.uxplima.uxmskyblock.bukkit.test.MockBukkitHarness {
 
@@ -84,7 +84,10 @@ class ABorderIsDrawnInItsColourTest extends com.uxplima.uxmskyblock.bukkit.test.
         assertThat(BorderColour.of(" red ")).contains(BorderColour.RED);
         assertThat(BorderColour.of("purple")).isEmpty();
         assertThat(BorderColour.FOREVER)
-                .describedAs("decades, so the border never visibly moves")
-                .isGreaterThan(60L * 365 * 24 * 3600);
+                .describedAs("years, so the border never visibly moves")
+                .isGreaterThan(3L * 365 * 24 * 3600);
+        assertThat(BorderColour.FOREVER * 20)
+                .describedAs("in ticks, which the server holds in an int and threw on past it")
+                .isLessThanOrEqualTo(Integer.MAX_VALUE);
     }
 }
