@@ -18,8 +18,32 @@ import org.spongepowered.configurate.ConfigurationNode;
  * @param bottom the height a wall starts at
  * @param top the height a wall ends at, above {@code bottom}
  * @param slice how tall each piece of a wall is: a client draws a piece only while it is near enough
+ * @param bedrock how a Bedrock player, whose client draws no wall, is shown where it stands
  */
-public record WallConfiguration(Map<String, WallStyle> styles, String chunkBlock, int bottom, int top, int slice) {
+public record WallConfiguration(
+        Map<String, WallStyle> styles, String chunkBlock, int bottom, int top, int slice, Bedrock bedrock) {
+
+    /**
+     * The edge as a Bedrock player sees it: a line of dust along every wall near them, shown to them alone.
+     *
+     * @param rgb the colour of the dust
+     * @param spacing how far apart two specks stand along the edge, in blocks
+     * @param reach how far from the player the edge is drawn, in blocks
+     */
+    public record Bedrock(boolean enabled, int rgb, double spacing, int reach) {
+
+        /** The edge out of the box: the mist's grey, a speck a block, twelve blocks around. */
+        public static final Bedrock SHIPPED = new Bedrock(true, 0x8A93A1, 1.0, 12);
+
+        public Bedrock {
+            if (spacing < 0.25) {
+                throw new IllegalArgumentException("two specks stand at least a quarter block apart");
+            }
+            if (reach < 1 || reach > 48) {
+                throw new IllegalArgumentException("the edge is drawn between 1 and 48 blocks around a player");
+            }
+        }
+    }
 
     private static final Logger LOGGER = Logger.getLogger(WallConfiguration.class.getName());
 
@@ -36,6 +60,12 @@ public record WallConfiguration(Map<String, WallStyle> styles, String chunkBlock
         if (slice < 1) {
             throw new IllegalArgumentException("a piece of wall is at least one block tall");
         }
+        Objects.requireNonNull(bedrock, "bedrock must not be null");
+    }
+
+    /** Walls whose Bedrock edge is the shipped one. */
+    public WallConfiguration(Map<String, WallStyle> styles, String chunkBlock, int bottom, int top, int slice) {
+        this(styles, chunkBlock, bottom, top, slice, Bedrock.SHIPPED);
     }
 
     public static WallConfiguration defaultConfiguration() {
@@ -69,11 +99,33 @@ public record WallConfiguration(Map<String, WallStyle> styles, String chunkBlock
         int bottom = walls.node("bottom").getInt(shipped.bottom());
         int top = walls.node("top").getInt(shipped.top());
         int slice = walls.node("slice").getInt(shipped.slice());
+        Bedrock bedrock = bedrockOf(walls.node("bedrock"));
         try {
-            return new WallConfiguration(styles, chunkBlock, bottom, top, slice);
+            return new WallConfiguration(styles, chunkBlock, bottom, top, slice, bedrock);
         } catch (IllegalArgumentException wrong) {
             LOGGER.warning(() -> "modules/walls.conf: " + wrong.getMessage() + ". The shipped heights are used.");
-            return new WallConfiguration(styles, chunkBlock, shipped.bottom(), shipped.top(), shipped.slice());
+            return new WallConfiguration(styles, chunkBlock, shipped.bottom(), shipped.top(), shipped.slice(), bedrock);
+        }
+    }
+
+    /** The Bedrock edge the file writes, the shipped one where it writes none or gets one wrong. */
+    static Bedrock bedrockOf(ConfigurationNode node) {
+        Bedrock shipped = Bedrock.SHIPPED;
+        String written = node.node("colour").getString("#8A93A1");
+        Optional<Integer> rgb = rgbOf(written);
+        if (rgb.isEmpty()) {
+            LOGGER.warning(() -> "modules/walls.conf: the Bedrock edge has the colour '" + written
+                    + "', which is no #RRGGBB, so the shipped grey is used.");
+        }
+        try {
+            return new Bedrock(
+                    node.node("enabled").getBoolean(shipped.enabled()),
+                    rgb.orElse(shipped.rgb()),
+                    node.node("spacing").getDouble(shipped.spacing()),
+                    node.node("reach").getInt(shipped.reach()));
+        } catch (IllegalArgumentException wrong) {
+            LOGGER.warning(() -> "modules/walls.conf: " + wrong.getMessage() + ". The shipped Bedrock edge is used.");
+            return shipped;
         }
     }
 

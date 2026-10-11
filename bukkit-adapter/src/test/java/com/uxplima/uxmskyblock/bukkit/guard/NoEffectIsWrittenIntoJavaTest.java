@@ -33,10 +33,14 @@ class NoEffectIsWrittenIntoJavaTest {
      *
      * <p>The island edge is not an interaction. It is a continuous outline drawn while a player
      * stands near it, with its own colour and its own switch, and a list of effects is the wrong
-     * shape for a thing that is drawn every tick rather than fired once.
+     * shape for a thing that is drawn every tick rather than fired once. So is the edge of a
+     * ChunkBlock island's open ground drawn for a Bedrock player, whose client draws no wall: its
+     * colour, spacing, reach and switch are in walls.conf.
      */
-    private static final List<String> ALLOWED =
-            List.of("effect/InteractionEffectPlayer.java", "boundary/IslandBoundaryListener.java");
+    private static final List<String> ALLOWED = List.of(
+            "effect/InteractionEffectPlayer.java",
+            "boundary/IslandBoundaryListener.java",
+            "chunkblock/BedrockEdges.java");
 
     @Test
     @DisplayName("No sound and no particle is named in this plugin at all")

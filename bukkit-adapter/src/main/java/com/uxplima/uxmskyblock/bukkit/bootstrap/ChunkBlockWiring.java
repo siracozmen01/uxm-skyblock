@@ -15,7 +15,7 @@ import com.uxplima.uxmskyblock.core.domain.chunkblock.ChunkPos;
 import com.uxplima.uxmskyblock.persistence.bootstrap.PersistenceBootstrap;
 
 /** The ChunkBlock game mode, while the operator lets islands be ChunkBlock islands. */
-public final class ChunkBlockWiring {
+public final class ChunkBlockWiring implements AutoCloseable {
 
     private static final Logger LOGGER = Logger.getLogger(ChunkBlockWiring.class.getName());
 
@@ -24,6 +24,9 @@ public final class ChunkBlockWiring {
     private final com.uxplima.uxmskyblock.bukkit.chunkblock.ChunkBlockListener listener;
     private final com.uxplima.uxmskyblock.bukkit.chunkblock.@org.jspecify.annotations.Nullable TerritoryWalls walls;
     private final com.uxplima.uxmskyblock.bukkit.chunkblock.@org.jspecify.annotations.Nullable ChunkSigns signs;
+
+    /** The beat that shows Bedrock players the edge, while it runs. */
+    private volatile @org.jspecify.annotations.Nullable AutoCloseable bedrockEdges;
 
     /** The window a click on a sign opens, handed over once the commands are wired. */
     private volatile java.util.function.BiConsumer<org.bukkit.entity.Player, ChunkPos> openWindow =
@@ -83,6 +86,20 @@ public final class ChunkBlockWiring {
         if (signs != null) {
             service.whenOpened(signs::opened);
             service.whenClosed(signs::closed);
+        }
+        // A Bedrock client draws no wall, so a Bedrock player is shown the edge as dust.
+        var bedrock = wallConfig.bedrock();
+        if (config.enabled()
+                && bedrock.enabled()
+                && wallConfig.chunkBlockStyle().isPresent()) {
+            this.bedrockEdges = new com.uxplima.uxmskyblock.bukkit.chunkblock.BedrockEdges(
+                            service,
+                            islands,
+                            scheduler,
+                            bedrockPlayers(),
+                            bedrock,
+                            com.uxplima.uxmskyblock.bukkit.chunkblock.BedrockEdges.dust(bedrock))
+                    .start();
         }
         // Every territory into memory before anybody steps near a closed chunk, so no step is a query.
         scheduler.async(() -> {
@@ -219,5 +236,34 @@ public final class ChunkBlockWiring {
      */
     public List<CreationActionProvider<IslandStart>> startActions() {
         return config.enabled() ? List.of(new ChunkBlockStart(service)) : List.of();
+    }
+
+    /** Whether a player plays on Bedrock, asked of Floodgate the first time a beat runs, once the server is up. */
+    private static java.util.function.Predicate<java.util.UUID> bedrockPlayers() {
+        var detector = new java.util.concurrent.atomic.AtomicReference<
+                com.uxplima.uxmskyblock.bukkit.bedrock.@org.jspecify.annotations.Nullable LateBedrockDetector>();
+        return player -> {
+            var known = detector.get();
+            if (known == null) {
+                known = com.uxplima.uxmskyblock.bukkit.bedrock.LateBedrockDetector.forServer(
+                        org.bukkit.Bukkit.getServer());
+                detector.set(known);
+            }
+            return known.isBedrock(player);
+        };
+    }
+
+    /** Stops showing Bedrock players the edge, before the server stops. */
+    @Override
+    public void close() {
+        AutoCloseable running = bedrockEdges;
+        bedrockEdges = null;
+        if (running != null) {
+            try {
+                running.close();
+            } catch (Exception e) {
+                LOGGER.log(Level.WARNING, "Stopping the Bedrock edges failed.", e);
+            }
+        }
     }
 }

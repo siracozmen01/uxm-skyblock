@@ -32,6 +32,28 @@ class TheWallsAreTheOperatorsTest {
         assertThat(config.bottom()).isEqualTo(-64);
         assertThat(config.top()).isEqualTo(320);
         assertThat(config.slice()).isEqualTo(64);
+        assertThat(config.bedrock()).isEqualTo(WallConfiguration.Bedrock.SHIPPED);
+    }
+
+    @Test
+    @DisplayName("The Bedrock edge is the operator's colour, spacing and reach, and a wrong one falls back")
+    void theBedrockEdge() throws Exception {
+        WallConfiguration.Bedrock edge = read("""
+                walls { bedrock { enabled = false, colour = "#FF0000", spacing = 0.5, reach = 20 } }
+                """).bedrock();
+        assertThat(edge).isEqualTo(new WallConfiguration.Bedrock(false, 0xFF0000, 0.5, 20));
+
+        assertThat(read("walls { bedrock { colour = \"red\", reach = 30 } }").bedrock())
+                .describedAs("a colour that is no #RRGGBB keeps the shipped grey, and the rest still reads")
+                .isEqualTo(new WallConfiguration.Bedrock(true, 0x8A93A1, 1.0, 30));
+        assertThat(read("walls { bedrock { spacing = 0.1 } }").bedrock()).isEqualTo(WallConfiguration.Bedrock.SHIPPED);
+        assertThat(read("walls { bedrock { reach = 49 } }").bedrock()).isEqualTo(WallConfiguration.Bedrock.SHIPPED);
+        assertThat(read("walls { bedrock { reach = 0 } }").bedrock()).isEqualTo(WallConfiguration.Bedrock.SHIPPED);
+        assertThat(read("walls { bedrock { reach = 48, spacing = 0.25 } }")
+                        .bedrock()
+                        .reach())
+                .isEqualTo(48);
+        assertThat(read("walls {}").bedrock()).isEqualTo(WallConfiguration.Bedrock.SHIPPED);
     }
 
     @Test
