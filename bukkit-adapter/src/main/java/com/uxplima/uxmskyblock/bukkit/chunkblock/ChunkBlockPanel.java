@@ -85,6 +85,10 @@ public final class ChunkBlockPanel {
     /** The window of one chunk, which the panel lists the chunks the island can open next for. */
     public void useWindow(@Nullable ChunkWindow window) {
         this.window = window;
+        if (window != null) {
+            // A chunk opened from its window leaves the player on this panel, the chunks that are left in it.
+            window.afterOpening(this::open);
+        }
     }
 
     /** Shows how far the player's island has opened, or says why there is nothing to show. */

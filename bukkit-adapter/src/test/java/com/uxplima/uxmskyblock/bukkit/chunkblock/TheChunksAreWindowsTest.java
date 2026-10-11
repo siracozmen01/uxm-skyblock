@@ -77,12 +77,15 @@ class TheChunksAreWindowsTest extends MockBukkitHarness {
     @SuppressWarnings("NullAway.Init")
     private ChunkBlockPanel panel;
 
+    @SuppressWarnings("NullAway.Init")
+    private Island island;
+
     @BeforeEach
     void setUp() {
         ada = createPlayer("Ada");
         ada.setLocation(new Location(server.addSimpleWorld("skyblock"), 8, 100, 8));
         ProfileId profile = new ProfileId(ada.getUniqueId());
-        Island island = Island.create(
+        island = Island.create(
                 IslandId.of(UUID.randomUUID()),
                 IslandBounds.fromCenterAndRadius(8, 8, 24),
                 new PlayerUuid(ada.getUniqueId()),
@@ -215,6 +218,28 @@ class TheChunksAreWindowsTest extends MockBukkitHarness {
         assertThat(PlainTextComponentSerializer.plainText()
                         .serialize(Objects.requireNonNull(ada.nextComponentMessage())))
                 .contains("Paid toward the Rare chunk");
+    }
+
+    @Test
+    @DisplayName("A payment that opens the chunk leaves the player on the chunks window, that chunk gone from it")
+    void anOpenedChunkGoesBackToTheList() {
+        ada.getInventory().addItem(new ItemStack(Material.OAK_LOG, 16));
+        payments.addPoints(island.id(), 2);
+        panel.open(ada);
+        settle(() -> titleOf().equals("ChunkBlock"));
+        click(ChunkWindow.OPEN, rowAt(19));
+        settle(() -> titleOf().equals("Rare chunk"));
+
+        click(ChunkWindow.PAY_ALL, null);
+        settle(() -> titleOf().equals("ChunkBlock"));
+
+        assertThat(PlainTextComponentSerializer.plainText()
+                        .serialize(Objects.requireNonNull(ada.nextComponentMessage())))
+                .contains("The Rare chunk is open");
+        assertThat(ada.nextComponentMessage())
+                .describedAs("and nothing says it is open twice")
+                .isNull();
+        assertThat(rowAt(19).handle()).isNotEqualTo(new ChunkPos(-1, 0));
     }
 
     private void click(String verb, @org.jspecify.annotations.Nullable MenuRow row) {

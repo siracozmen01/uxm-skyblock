@@ -12,6 +12,7 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.BiFunction;
+import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
@@ -79,6 +80,7 @@ public final class ChunkWindow {
     private final BiFunction<IslandId, ProfileId, Long> levelOf;
     private final Map<UUID, ChunkPos> viewing = new ConcurrentHashMap<>();
     private volatile @Nullable SkyblockMenuEngine engine;
+    private volatile Consumer<Player> afterOpening = player -> {};
 
     /**
      * @param currencies the currency of {@code modules/bank.conf} kept under an id, for its name and icon
@@ -144,8 +146,21 @@ public final class ChunkWindow {
         return Optional.ofNullable(viewing.get(player.getUniqueId()));
     }
 
+    /** What a player whose window just opened its chunk is shown next: the chunks window, with that chunk gone. */
+    public void afterOpening(Consumer<Player> next) {
+        this.afterOpening = Objects.requireNonNull(next, "next must not be null");
+    }
+
     /** Opens the window of {@code chunk} of the player's island, once its price is read off the main thread. */
     public void show(Player player, ChunkPos chunk) {
+        show(player, chunk, false);
+    }
+
+    /**
+     * Opens the window of {@code chunk}. Drawn again after a payment, a chunk that payment opened has no price left to
+     * show, and the player is shown what comes after it rather than told it is open twice.
+     */
+    private void show(Player player, ChunkPos chunk, boolean again) {
         Objects.requireNonNull(chunk, "chunk must not be null");
         Optional<ProfileId> profile = activeProfile.apply(player.getUniqueId());
         if (profile.isEmpty()) {
@@ -166,7 +181,12 @@ public final class ChunkWindow {
                 return;
             }
             if (offer.get().place() == ChunkTerritory.Unlock.ALREADY_OPEN) {
-                tell(player, "chunkblock.already_open");
+                viewing.remove(player.getUniqueId());
+                if (again) {
+                    scheduler.onEntity(new PlayerUuid(player.getUniqueId()), () -> afterOpening.accept(player));
+                } else {
+                    tell(player, "chunkblock.already_open");
+                }
                 return;
             }
             long level = levelOf.apply(island.get().id(), profile.get());
@@ -191,7 +211,7 @@ public final class ChunkWindow {
         SkyblockMenuEngine menus = this.engine;
         Optional<ChunkPos> chunk = chunkOf(player);
         if (menus != null && chunk.isPresent() && menus.showing(player, FILE)) {
-            show(player, chunk.get());
+            show(player, chunk.get(), true);
         }
     }
 
