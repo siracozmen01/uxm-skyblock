@@ -16,9 +16,16 @@ import com.uxplima.uxmskyblock.core.domain.identity.PlayerUuid;
 public final class WorldBorderPacketAdapter implements WorldBorderPacketPort {
 
     private final SchedulerPort schedulerPort;
+    private final java.util.function.Supplier<WorldBorder> borders;
 
     public WorldBorderPacketAdapter(SchedulerPort schedulerPort) {
+        this(schedulerPort, Bukkit::createWorldBorder);
+    }
+
+    /** An adapter that makes each player's border with {@code borders}, as a test hands it one. */
+    WorldBorderPacketAdapter(SchedulerPort schedulerPort, java.util.function.Supplier<WorldBorder> borders) {
         this.schedulerPort = Objects.requireNonNull(schedulerPort, "schedulerPort must not be null");
+        this.borders = Objects.requireNonNull(borders, "borders must not be null");
     }
 
     @Override
@@ -36,13 +43,13 @@ public final class WorldBorderPacketAdapter implements WorldBorderPacketPort {
             if (player == null || !player.isOnline()) {
                 return;
             }
-            WorldBorder border = Bukkit.createWorldBorder();
+            WorldBorder border = borders.get();
             border.setCenter(centerX + 0.5, centerZ + 0.5);
             if (oldRadius > 0.0 && transitionDurationMs > 0L) {
                 border.setSize(widthOf(oldRadius));
                 border.setSize(widthOf(radius), Math.max(1L, transitionDurationMs / 1000L));
             } else {
-                border.setSize(widthOf(radius));
+                BorderChoice.colour(player).paint(border, widthOf(radius));
             }
             player.setWorldBorder(border);
         });

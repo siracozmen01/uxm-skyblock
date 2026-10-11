@@ -440,6 +440,13 @@ public final class IslandCommandTree {
     }
 
     /** The windows the feed, the guestbook, the bookmarks and the alliances are shown in. */
+    volatile com.uxplima.uxmskyblock.bukkit.menu.@Nullable BorderWindow borderWindow;
+
+    /** Hands {@code /is border} the window it opens. */
+    public void useBorderWindow(com.uxplima.uxmskyblock.bukkit.menu.@Nullable BorderWindow window) {
+        this.borderWindow = window;
+    }
+
     public void useSocialWindows(com.uxplima.uxmskyblock.bukkit.menu.@Nullable SocialWindows windows) {
         this.socialWindows = windows;
     }

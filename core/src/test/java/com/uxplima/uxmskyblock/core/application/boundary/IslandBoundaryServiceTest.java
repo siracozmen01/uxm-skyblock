@@ -73,6 +73,22 @@ class IslandBoundaryServiceTest {
     }
 
     @Test
+    @DisplayName("A border drawn again is drawn where the player stands, and not at all while hidden or off an island")
+    void theBorderIsDrawnAgain() {
+        PlayerUuid player = new PlayerUuid(UUID.randomUUID());
+        boundaryService.redrawBorder(player);
+        org.mockito.Mockito.verifyNoInteractions(worldBorderPort);
+
+        boundaryService.handlePlayerEnterIsland(player, IslandBounds.fromCenterAndRadius(0, 0, 50));
+        boundaryService.redrawBorder(player);
+        verify(worldBorderPort, org.mockito.Mockito.times(2)).sendWorldBorder(player, 0, 0, 50, 0.0, 0L);
+
+        boundaryService.toggleBorder(player);
+        boundaryService.redrawBorder(player);
+        verify(worldBorderPort, org.mockito.Mockito.times(2)).sendWorldBorder(player, 0, 0, 50, 0.0, 0L);
+    }
+
+    @Test
     @DisplayName("A player marked hidden as they join is drawn no border, and one who left is forgotten")
     void aHiddenBorderOutlivesNothingButTheSession() {
         PlayerUuid player = new PlayerUuid(UUID.randomUUID());

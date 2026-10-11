@@ -213,6 +213,7 @@ final class CommandGroupBuilder {
                 () -> tree.features.boundaryService(),
                 tree.messages);
         mechanicsCommands.useActivityFeed(tree.activityFeedService);
+        mechanicsCommands.useBorderWindow(() -> tree.borderWindow);
 
         lifecycleCommands.useMarkerSynchroniser(tree.markerSynchroniser);
 

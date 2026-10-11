@@ -133,6 +133,11 @@ final class IslandCommandWiring {
         bankCurrencies.register(integration.menuEngine());
         integration.controlMenu().useCarried(bankCurrencies::carriedBy);
         tree.useBankMoved(bankCurrencies::moved);
+        // The border is a window: shown or hidden, and the colour it is drawn in.
+        var borderWindow =
+                new com.uxplima.uxmskyblock.bukkit.menu.BorderWindow(integration.messages(), gameplay::boundaryService);
+        borderWindow.useMenuEngine(integration.menuEngine());
+        tree.useBorderWindow(borderWindow);
         // The homes and every leaderboard are windows, one tile each, rather than lines in chat.
         var homeList = new com.uxplima.uxmskyblock.bukkit.menu.HomeList(tree::typed);
         homeList.useMenuEngine(integration.menuEngine());

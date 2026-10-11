@@ -64,6 +64,7 @@ class IslandMechanicsCommandsTest {
     private IslandBoosterService boosters;
     private IslandBoundaryService boundaries;
     private CommandDispatcher<CommandSourceStack> dispatcher;
+    private IslandMechanicsCommands commands;
 
     private static SchedulerPort inlineScheduler() {
         SchedulerPort scheduler = mock(SchedulerPort.class);
@@ -108,7 +109,7 @@ class IslandMechanicsCommandsTest {
         PlayerSessionCoordinator sessions = mock(PlayerSessionCoordinator.class);
         when(sessions.activeProfile(player.getUniqueId())).thenReturn(Optional.of(PROFILE));
 
-        IslandMechanicsCommands commands = new IslandMechanicsCommands(
+        commands = new IslandMechanicsCommands(
                 locations,
                 sessions,
                 inlineScheduler(),
@@ -189,6 +190,20 @@ class IslandMechanicsCommandsTest {
         run("quarantine", player);
 
         verify(antiAbuse).getQuarantineRemaining(eq(ISLAND), any(Instant.class));
+    }
+
+    @Test
+    @DisplayName("/is border opens the window of the border when its file is there, and switches nothing")
+    void theBorderOpensItsWindow() throws Exception {
+        com.uxplima.uxmskyblock.bukkit.menu.BorderWindow window =
+                mock(com.uxplima.uxmskyblock.bukkit.menu.BorderWindow.class);
+        when(window.show(player)).thenReturn(true);
+        commands.useBorderWindow(() -> window);
+
+        run("border", player);
+
+        verify(window).show(player);
+        verify(boundaries, never()).toggleBorder(any());
     }
 
     @Test

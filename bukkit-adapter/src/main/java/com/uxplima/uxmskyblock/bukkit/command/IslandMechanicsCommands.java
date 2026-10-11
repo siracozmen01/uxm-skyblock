@@ -353,10 +353,23 @@ public final class IslandMechanicsCommands {
         return Cmd.OK;
     }
 
+    /** The window of the border, when the operator kept its file. */
+    private Supplier<com.uxplima.uxmskyblock.bukkit.menu.@Nullable BorderWindow> borderWindow = () -> null;
+
+    /** Hands {@code /is border} the window it opens. */
+    public void useBorderWindow(Supplier<com.uxplima.uxmskyblock.bukkit.menu.@Nullable BorderWindow> window) {
+        this.borderWindow = java.util.Objects.requireNonNull(window, "window must not be null");
+    }
+
     private int executeBorder(CommandContext<CommandSourceStack> ctx) {
         Audience sender = ctx.getSource().getSender();
         if (!(sender instanceof Player player)) {
             send(sender, "error.players_only");
+            return Cmd.OK;
+        }
+        // The window shows the border, hides it and picks its colour. Without its file the command switches it.
+        com.uxplima.uxmskyblock.bukkit.menu.BorderWindow window = borderWindow.get();
+        if (window != null && window.show(player)) {
             return Cmd.OK;
         }
         IslandBoundaryService boundaryService = boundaryServiceProvider.get();

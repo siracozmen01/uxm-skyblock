@@ -139,6 +139,15 @@ public final class IslandBoundaryService {
         return false;
     }
 
+    /** Draws the border again where the player stands, as one who changed how it looks sees it at once. */
+    public void redrawBorder(PlayerUuid playerUuid) {
+        Objects.requireNonNull(playerUuid, "playerUuid must not be null");
+        IslandBounds bounds = standingIn.get(playerUuid);
+        if (bounds != null && !hiddenBorders.contains(playerUuid)) {
+            send(playerUuid, bounds);
+        }
+    }
+
     /** Marks the border hidden for a player who hid it before, as they join, and draws nothing. */
     public void hideBorder(PlayerUuid playerUuid) {
         hiddenBorders.add(Objects.requireNonNull(playerUuid, "playerUuid must not be null"));
