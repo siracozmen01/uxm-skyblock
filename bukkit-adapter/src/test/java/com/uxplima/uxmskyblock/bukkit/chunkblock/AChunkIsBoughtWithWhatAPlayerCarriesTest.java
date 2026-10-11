@@ -336,6 +336,15 @@ class AChunkIsBoughtWithWhatAPlayerCarriesTest extends MockBukkitHarness {
         assertThat(bought.getOrDefault(island.id(), List.of()))
                 .describedAs("a chunk held by the level alone is not bought")
                 .isEmpty();
+        assertThat(rewarded).containsExactly("Buyer:rare");
+
+        service.onLevel(island.id(), 0);
+        assertThat(service.isOpen(island.id(), EAST)).contains(false);
+        purchase.payAll(player, EAST, () -> {});
+        assertThat(said()).singleElement().asString().contains("is open");
+        assertThat(rewarded)
+                .describedAs("opened again, it rewards nobody again")
+                .containsExactly("Buyer:rare");
     }
 
     @Test

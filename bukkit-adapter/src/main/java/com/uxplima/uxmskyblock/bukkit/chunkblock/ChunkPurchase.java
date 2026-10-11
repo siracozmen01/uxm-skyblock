@@ -36,8 +36,8 @@ import com.uxplima.uxmskyblock.core.domain.session.ServerNodeId;
  *
  * <p>What the player hands in is taken on their own thread and recorded off it, and what the chunk did not need by
  * then goes back to them on their thread again. What the island pays comes out of its bank, which only a member
- * whose role may take from the bank can spend. When a payment opens the chunk, the player hears it and its grade's
- * rewards fire for them.
+ * whose role may take from the bank can spend. When a payment opens the chunk, the player hears it, and the first time
+ * it opens its grade's rewards fire for them.
  */
 public final class ChunkPurchase {
 
@@ -244,7 +244,9 @@ public final class ChunkPurchase {
             TagResolver named = Placeholder.unparsed("tier", tier == null ? "" : messages.words(player, tier.name()));
             if (round.opened.isPresent()) {
                 messages.send(player, "chunkblock.opened", named);
-                rewards.accept(player, round.opened.get());
+                if (round.rewards) {
+                    rewards.accept(player, round.opened.get());
+                }
             } else if (round.levelShort) {
                 messages.send(
                         player,
@@ -319,6 +321,7 @@ public final class ChunkPurchase {
         private Optional<ChunkTier> opened = Optional.empty();
         private Optional<Outcome> refusal = Optional.empty();
         private boolean paid;
+        private boolean rewards;
         private boolean levelShort;
         private boolean unpermitted;
         private long needed;
@@ -336,6 +339,7 @@ public final class ChunkPurchase {
         synchronized void add(ChunkUnlocks.Result result) {
             if (result.opened().isPresent()) {
                 opened = result.opened();
+                rewards |= result.rewards();
             }
             switch (result.outcome()) {
                 case PAID, OPENED -> paid = true;

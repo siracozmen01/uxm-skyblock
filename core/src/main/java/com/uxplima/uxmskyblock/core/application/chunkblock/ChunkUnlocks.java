@@ -93,14 +93,27 @@ public final class ChunkUnlocks {
      *
      * @param taken how much of the line counts toward the chunk now
      * @param excess how much was taken that the chunk did not need, to go back to the payer
-     * @param opened the grade of the chunk when this payment opened it, for its rewards
+     * @param opened the grade of the chunk when this payment opened it
+     * @param rewards whether its rewards are due: only the first time the chunk opens, since a chunk held by the level
+     *     closes when the level falls and would pay out again each time it rose
      */
-    public record Result(Outcome outcome, long taken, long excess, Optional<ChunkTier> opened) {
+    public record Result(Outcome outcome, long taken, long excess, Optional<ChunkTier> opened, boolean rewards) {
+
+        /** A result whose rewards are due whenever it opened a chunk. */
+        public Result(Outcome outcome, long taken, long excess, Optional<ChunkTier> opened) {
+            this(outcome, taken, excess, opened, opened.isPresent());
+        }
 
         static Result of(Outcome outcome) {
             return new Result(outcome, 0, 0, Optional.empty());
         }
     }
+
+    /**
+     * The mark a chunk keeps once it has opened, among what was paid toward it, so its rewards and points are given
+     * once. It is no line of any price.
+     */
+    static final String REWARDED = "rewarded";
 
     /** Who pays out of the island's bank: the member, and the node the bank checks holds the island. */
     public record IslandPayer(UUID actor, ServerNodeId node) {
@@ -361,13 +374,16 @@ public final class ChunkUnlocks {
             boolean held,
             long counted,
             long excess) {
+        // A chunk held by the level closes when the level falls. Opened again, it gives nothing again.
+        boolean rewardedBefore = payments.find(islandId, chunk).paid().containsKey(REWARDED);
         ChunkBlockService.UnlockResult opened = service.open(islandId, chunk, bounds, held);
         if (opened.outcome() != ChunkBlockService.Outcome.UNLOCKED) {
             return new Result(Outcome.valueOf(opened.outcome().name()), counted, excess, Optional.empty());
         }
         try {
             payments.clear(islandId, chunk);
-            if (tier.points() > 0) {
+            payments.add(islandId, chunk, REWARDED, 1);
+            if (!rewardedBefore && tier.points() > 0) {
                 payments.addPoints(islandId, tier.points());
             }
         } catch (RuntimeException failed) {
@@ -378,7 +394,7 @@ public final class ChunkUnlocks {
                     () -> "A chunk of island " + islandId
                             + " opened, and what was paid toward it or the points it gives could not be written.");
         }
-        return new Result(Outcome.OPENED, counted, excess, Optional.of(tier));
+        return new Result(Outcome.OPENED, counted, excess, Optional.of(tier), !rewardedBefore);
     }
 
     /** Spends up to {@code wanted} chunk points, and records them toward {@code chunk} when there is one. */

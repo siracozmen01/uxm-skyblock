@@ -113,8 +113,8 @@ class AChunkIsPaidForAndOpensTest {
         assertThat(service.isOpen(island, NEXT)).contains(true);
         assertThat(service.inMemory(island).orElseThrow().isBought(NEXT)).isTrue();
         assertThat(payments.find(island, NEXT))
-                .describedAs("forgotten once open")
-                .isEqualTo(ChunkPayments.none());
+                .describedAs("forgotten once open, all but the mark that it gave its rewards")
+                .isEqualTo(new ChunkPayments(java.util.Map.of(ChunkUnlocks.REWARDED, 1L)));
         assertThat(payments.points(island)).describedAs("the grade's points").isEqualTo(2);
     }
 
@@ -273,6 +273,27 @@ class AChunkIsPaidForAndOpensTest {
         assertThat(unlocks.open(island, NEXT, BOUNDS, 5).outcome()).isEqualTo(ChunkUnlocks.Outcome.OPENED);
         assertThat(service.inMemory(island).orElseThrow().isBought(NEXT)).isFalse();
         assertThat(service.onLevel(island, 0)).containsExactly(NEXT);
+    }
+
+    @Test
+    @DisplayName("A held chunk that closes and opens again gives its rewards and points the first time only")
+    void aChunkRewardsOnce() {
+        ChunkUnlocks unlocks = with(tier(List.of(new ChunkRequirement.Level(5)), List.of(), 4));
+
+        ChunkUnlocks.Result first = unlocks.open(island, NEXT, BOUNDS, 5);
+        assertThat(first.outcome()).isEqualTo(ChunkUnlocks.Outcome.OPENED);
+        assertThat(first.rewards()).isTrue();
+        assertThat(payments.points(island)).isEqualTo(4);
+
+        assertThat(service.onLevel(island, 0)).containsExactly(NEXT);
+        ChunkUnlocks.Result again = unlocks.open(island, NEXT, BOUNDS, 5);
+        assertThat(again.outcome()).describedAs("it opens again").isEqualTo(ChunkUnlocks.Outcome.OPENED);
+        assertThat(again.opened()).isPresent();
+        assertThat(again.rewards()).describedAs("and gives nothing again").isFalse();
+        assertThat(payments.points(island)).isEqualTo(4);
+        assertThat(unlocks.offer(island, NEXT, BOUNDS).orElseThrow().met(5))
+                .describedAs("the mark is no line of its price")
+                .isTrue();
     }
 
     @Test
