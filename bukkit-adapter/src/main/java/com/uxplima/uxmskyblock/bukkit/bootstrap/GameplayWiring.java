@@ -380,6 +380,12 @@ public final class GameplayWiring {
                         this.chunkBlockWiring.service().onLevel(islandId, score.calculatedLevel()));
         this.cacheEviction.whenForgotten(this.economicWiring.worthService()::forgetIsland);
         this.cacheEviction.whenForgotten(this.chunkBlockWiring.service()::forget);
+        // A ChunkBlock island is edged by the wall around its open ground, never by the client's square border.
+        var edges = environmentWiring.boundaryListener();
+        if (edges != null) {
+            var chunkBlock = this.chunkBlockWiring.service();
+            edges.useBorderFor(island -> chunkBlock.inMemory(island).isEmpty());
+        }
         var chunkSigns = this.chunkBlockWiring.signs();
         if (chunkSigns != null) {
             this.cacheEviction.whenForgotten(chunkSigns::forget);

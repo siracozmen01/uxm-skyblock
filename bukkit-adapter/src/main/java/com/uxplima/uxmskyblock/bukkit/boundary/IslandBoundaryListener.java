@@ -55,6 +55,14 @@ public final class IslandBoundaryListener implements Listener, ArrivalGate, Arri
 
     private record Shown(IslandId island, java.util.UUID world) {}
 
+    /** Whether an island is edged by the border a client draws. One that is not shows its edge some other way. */
+    private volatile java.util.function.Predicate<IslandId> drawsBorder = island -> true;
+
+    /** Tells the listener which islands the client's border edges, and which show their edge some other way. */
+    public void useBorderFor(java.util.function.Predicate<IslandId> drawsBorder) {
+        this.drawsBorder = Objects.requireNonNull(drawsBorder, "drawsBorder must not be null");
+    }
+
     public IslandBoundaryListener(
             IslandBoundaryService boundaryService, IslandProtectionListener protectionListener, Messages messages) {
         this.boundaryService = Objects.requireNonNull(boundaryService, "boundaryService must not be null");
@@ -171,7 +179,9 @@ public final class IslandBoundaryListener implements Listener, ArrivalGate, Arri
     private void showBorder(Player player, Location at, Optional<Island> island) {
         java.util.UUID id = player.getUniqueId();
         PlayerUuid playerUuid = new PlayerUuid(id);
-        if (island.isPresent() && at.getWorld() != null) {
+        if (island.isPresent()
+                && at.getWorld() != null
+                && drawsBorder.test(island.get().id())) {
             Shown shown = new Shown(island.get().id(), at.getWorld().getUID());
             if (!shown.equals(bordered.put(id, shown))) {
                 boundaryService.handlePlayerEnterIsland(playerUuid, island.get().bounds());

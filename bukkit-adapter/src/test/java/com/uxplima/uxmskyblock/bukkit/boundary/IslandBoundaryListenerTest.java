@@ -166,6 +166,28 @@ class IslandBoundaryListenerTest extends MockBukkitHarness {
     }
 
     @Test
+    @DisplayName("An island that shows its edge another way, as a ChunkBlock island, is drawn no client border")
+    void anIslandWithItsOwnEdgeIsDrawnNoBorder() {
+        Location inside = new Location(world, 0, 101, 0);
+        Location outside = new Location(world, 500, 64, 500);
+        boundaryListener.useBorderFor(id -> !id.equals(island.id()));
+
+        boundaryListener.arrived(new com.uxplima.uxmskyblock.bukkit.arrival.Arrival(
+                player, outside, inside, com.uxplima.uxmskyblock.bukkit.arrival.ArrivalCause.TELEPORT, false));
+        boundaryListener.onPlayerMove(new PlayerMoveEvent(player, inside, new Location(world, 1, 101, 0)));
+        org.mockito.Mockito.verifyNoInteractions(worldBorderPort);
+
+        boundaryListener.useBorderFor(id -> true);
+        boundaryListener.onPlayerMove(new PlayerMoveEvent(player, inside, new Location(world, 2, 101, 0)));
+        PlayerUuid uuid = new PlayerUuid(player.getUniqueId());
+        verify(worldBorderPort).sendWorldBorder(eq(uuid), eq(0), eq(0), eq(10.0), eq(0.0), eq(0L));
+
+        boundaryListener.useBorderFor(id -> false);
+        boundaryListener.onPlayerMove(new PlayerMoveEvent(player, inside, new Location(world, 3, 101, 0)));
+        verify(worldBorderPort).resetWorldBorder(uuid);
+    }
+
+    @Test
     @DisplayName("A player who hid the border logs in on an island and is drawn none")
     void aHiddenBorderStaysHiddenAtLogin() {
         BorderChoice.keep(player, false);
