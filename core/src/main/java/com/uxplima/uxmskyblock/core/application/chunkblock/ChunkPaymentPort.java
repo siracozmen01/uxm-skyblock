@@ -30,4 +30,14 @@ public interface ChunkPaymentPort {
      * fewer loses none.
      */
     boolean spendPoints(IslandId islandId, long amount);
+
+    /**
+     * Charges the island's bank and records the payment toward the chunk in one transaction, so neither happens
+     * without the other. A store that can do both at once answers the bank's outcome; one that cannot answers empty,
+     * and the caller charges and records in two steps, giving the charge back when the record fails.
+     */
+    default java.util.Optional<com.uxplima.uxmskyblock.core.domain.bank.BankTransactionOutcome> chargeIslandAndRecord(
+            ChunkIslandCharge charge) {
+        return java.util.Optional.empty();
+    }
 }

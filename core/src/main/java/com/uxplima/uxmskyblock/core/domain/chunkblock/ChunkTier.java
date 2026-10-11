@@ -15,6 +15,7 @@ import java.util.Objects;
  * @param cost what opening a chunk of it costs, every line of it
  * @param bypass what opens a chunk of it at once instead, none when nothing does
  * @param rewards what opening a chunk of it fires, as action lines
+ * @param points the chunk points opening a chunk of it gives the island
  */
 public record ChunkTier(
         String id,
@@ -24,7 +25,8 @@ public record ChunkTier(
         int weight,
         List<ChunkRequirement> cost,
         List<ChunkRequirement> bypass,
-        List<String> rewards) {
+        List<String> rewards,
+        long points) {
 
     public ChunkTier {
         Objects.requireNonNull(id, "id must not be null");
@@ -45,6 +47,22 @@ public record ChunkTier(
         if (bypass.stream().anyMatch(line -> !line.paid())) {
             throw new IllegalArgumentException("the grade " + id + " is skipped by paying, not by a level");
         }
+        if (points < 0) {
+            throw new IllegalArgumentException("the grade " + id + " gives no fewer than no points");
+        }
+    }
+
+    /** A grade that gives no chunk points. */
+    public ChunkTier(
+            String id,
+            String name,
+            int nearest,
+            int farthest,
+            int weight,
+            List<ChunkRequirement> cost,
+            List<ChunkRequirement> bypass,
+            List<String> rewards) {
+        this(id, name, nearest, farthest, weight, cost, bypass, rewards, 0);
     }
 
     /** Whether a chunk of this grade is held by the level alone, and closes again when the level falls. */

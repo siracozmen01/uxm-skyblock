@@ -215,8 +215,7 @@ public final class PersistenceBootstrap implements AutoCloseable {
         this.clusterNodesAdapter = new com.uxplima.uxmskyblock.persistence.network.SqlClusterNodesAdapter(database);
         this.chunkTerritoryAdapter =
                 new com.uxplima.uxmskyblock.persistence.chunkblock.SqlChunkTerritoryAdapter(database.dataSource());
-        this.chunkPaymentAdapter =
-                new com.uxplima.uxmskyblock.persistence.chunkblock.SqlChunkPaymentAdapter(database.dataSource());
+        this.chunkPaymentAdapter = new com.uxplima.uxmskyblock.persistence.chunkblock.SqlChunkPaymentAdapter(database);
         this.acidIslandsAdapter =
                 new com.uxplima.uxmskyblock.persistence.acid.SqlAcidIslandsAdapter(database.dataSource());
         this.boxedIslandsAdapter =

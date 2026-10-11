@@ -26,6 +26,104 @@ final class ChunkBlockStorageScenario {
         seedIsland(database, other);
         territory(database, island);
         payments(database, island, other);
+        charges(database, island);
+    }
+
+    /**
+     * A payment out of the island's bank is charged and recorded together, adds to what was paid on every engine,
+     * and a charge the bank refuses records nothing.
+     */
+    private static void charges(Database database, IslandId island) throws SQLException {
+        String node = "node-chunk";
+        long epoch = 7;
+        claimAuthority(database, island, node, epoch);
+        com.uxplima.uxmskyblock.persistence.bank.PlayerIslandBankAdapter bank =
+                new com.uxplima.uxmskyblock.persistence.bank.PlayerIslandBankAdapter(database);
+        bank.createBank(island);
+        UUID actor = UUID.randomUUID();
+        assertThat(bank.executeTransaction(
+                        island,
+                        actor,
+                        "PRIMARY",
+                        2,
+                        10_000,
+                        "seed",
+                        node,
+                        epoch,
+                        bank.findBankByIslandId(island).orElseThrow().version(),
+                        UUID.randomUUID(),
+                        "seed-1"))
+                .isInstanceOf(com.uxplima.uxmskyblock.core.domain.bank.BankTransactionOutcome.Success.class);
+        SqlChunkPaymentAdapter payments = new SqlChunkPaymentAdapter(database);
+        ChunkPos chunk = new ChunkPos(-1, 0);
+
+        for (long amount : new long[] {3_000, 4_000}) {
+            UUID operation = UUID.randomUUID();
+            var outcome = payments.chargeIslandAndRecord(
+                            new com.uxplima.uxmskyblock.core.application.chunkblock.ChunkIslandCharge(
+                                    island,
+                                    chunk,
+                                    "money:island",
+                                    actor,
+                                    "PRIMARY",
+                                    2,
+                                    amount,
+                                    "Chunk -1,0",
+                                    node,
+                                    epoch,
+                                    bank.findBankByIslandId(island)
+                                            .orElseThrow()
+                                            .version(),
+                                    operation,
+                                    "chunk-" + operation))
+                    .orElseThrow();
+            assertThat(outcome)
+                    .isInstanceOf(com.uxplima.uxmskyblock.core.domain.bank.BankTransactionOutcome.Success.class);
+        }
+
+        assertThat(payments.find(island, chunk).paid()).containsOnly(java.util.Map.entry("money:island", 7_000L));
+        assertThat(bank.findBankByIslandId(island).orElseThrow().primaryBalanceMinorUnits())
+                .isEqualTo(3_000);
+
+        UUID refused = UUID.randomUUID();
+        var outcome = payments.chargeIslandAndRecord(
+                        new com.uxplima.uxmskyblock.core.application.chunkblock.ChunkIslandCharge(
+                                island,
+                                chunk,
+                                "money:island",
+                                actor,
+                                "PRIMARY",
+                                2,
+                                5_000,
+                                "Chunk -1,0",
+                                node,
+                                epoch,
+                                bank.findBankByIslandId(island).orElseThrow().version(),
+                                refused,
+                                "chunk-" + refused))
+                .orElseThrow();
+        assertThat(outcome)
+                .isInstanceOf(com.uxplima.uxmskyblock.core.domain.bank.BankTransactionOutcome.InsufficientFunds.class);
+        assertThat(payments.find(island, chunk).paid())
+                .describedAs("a refused charge records nothing")
+                .containsOnly(java.util.Map.entry("money:island", 7_000L));
+        assertThat(bank.findBankByIslandId(island).orElseThrow().primaryBalanceMinorUnits())
+                .isEqualTo(3_000);
+    }
+
+    private static void claimAuthority(Database database, IslandId island, String node, long epoch)
+            throws SQLException {
+        String later = database.dialect() == com.uxplima.uxmlib.storage.sql.Dialect.POSTGRES
+                ? "CURRENT_TIMESTAMP + INTERVAL '60 seconds'"
+                : database.dialect() == com.uxplima.uxmlib.storage.sql.Dialect.SQLITE
+                        ? "datetime('now', '+60 seconds')"
+                        : "CURRENT_TIMESTAMP + INTERVAL 60 SECOND";
+        try (Connection conn = database.connection();
+                java.sql.Statement stmt = conn.createStatement()) {
+            stmt.execute("INSERT INTO island_authorities (island_id, authoritative_node, authority_epoch,"
+                    + " lease_expires_at, last_heartbeat_at) VALUES ('" + island.value() + "', '" + node + "', "
+                    + epoch + ", " + later + ", CURRENT_TIMESTAMP)");
+        }
     }
 
     /** A chunk paid for is read back as paid for, and closing a held chunk older than it leaves room to open. */
@@ -62,7 +160,7 @@ final class ChunkBlockStorageScenario {
 
     /** Payments add up line by line and chunk by chunk, are forgotten with their chunk, and points never go below. */
     private static void payments(Database database, IslandId island, IslandId other) {
-        SqlChunkPaymentAdapter payments = new SqlChunkPaymentAdapter(database.dataSource());
+        SqlChunkPaymentAdapter payments = new SqlChunkPaymentAdapter(database);
         ChunkPos chunk = new ChunkPos(5, -3);
         ChunkPos beside = new ChunkPos(6, -3);
 

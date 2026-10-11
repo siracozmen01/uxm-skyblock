@@ -97,8 +97,26 @@ public final class ChunkBlockService {
 
     /** Opens {@code chunk} for an island at {@code level}. Off the main thread: it writes a row. */
     public UnlockResult unlock(IslandId islandId, ChunkPos chunk, IslandBounds bounds, long level) {
-        Objects.requireNonNull(chunk, "chunk must not be null");
         Objects.requireNonNull(bounds, "bounds must not be null");
+        return openWith(islandId, chunk, territory -> territory.unlock(chunk, bounds, rules, level), false);
+    }
+
+    /**
+     * Opens {@code chunk}, its cost settled by the caller. Off the main thread: it writes a row.
+     *
+     * @param held whether the level holds it, so it closes again when the level falls; false for a chunk paid for
+     */
+    public UnlockResult open(IslandId islandId, ChunkPos chunk, IslandBounds bounds, boolean held) {
+        Objects.requireNonNull(bounds, "bounds must not be null");
+        return openWith(islandId, chunk, territory -> territory.open(chunk, bounds, held), !held);
+    }
+
+    private UnlockResult openWith(
+            IslandId islandId,
+            ChunkPos chunk,
+            java.util.function.Function<ChunkTerritory, ChunkTerritory.Unlock> step,
+            boolean bought) {
+        Objects.requireNonNull(chunk, "chunk must not be null");
         UnlockResult opened;
         synchronized (lockOf(islandId)) {
             Optional<ChunkTerritory> current = territory(islandId);
@@ -106,14 +124,14 @@ public final class ChunkBlockService {
                 return new UnlockResult(Outcome.NOT_CHUNKBLOCK, 0);
             }
             ChunkTerritory next = current.get();
-            ChunkTerritory.Unlock unlock = next.unlock(chunk, bounds, rules, level);
+            ChunkTerritory.Unlock unlock = step.apply(next);
             if (unlock != ChunkTerritory.Unlock.UNLOCKED) {
                 return new UnlockResult(Outcome.valueOf(unlock.name()), next.nextRequirement(rules));
             }
-            if (!port.open(islandId, chunk, next.opened().size())) {
+            if (!port.open(islandId, chunk, next.opened().size(), bought)) {
                 // Another node opened one first. What the table holds is what stands.
                 port.find(islandId).ifPresent(read -> memory.put(islandId, read));
-                return new UnlockResult(Outcome.TAKEN, rules.requiredFor(size(islandId)));
+                return new UnlockResult(Outcome.TAKEN, nextRequirementOf(islandId));
             }
             memory.put(islandId, next);
             opened = new UnlockResult(Outcome.UNLOCKED, next.nextRequirement(rules));
@@ -180,12 +198,14 @@ public final class ChunkBlockService {
         locks.remove(islandId);
     }
 
-    private int size(IslandId islandId) {
+    /** The level the island's next held chunk needs, as memory holds the island. */
+    private long nextRequirementOf(IslandId islandId) {
         ChunkTerritory held = memory.get(islandId);
-        return held == null ? 1 : held.opened().size() + 1;
+        return held == null ? rules.requiredFor(1) : held.nextRequirement(rules);
     }
 
-    private Object lockOf(IslandId islandId) {
+    /** The lock every change to one island's chunks is made under, on this node. */
+    Object lockOf(IslandId islandId) {
         return locks.computeIfAbsent(Objects.requireNonNull(islandId, "islandId must not be null"), id -> new Object());
     }
 

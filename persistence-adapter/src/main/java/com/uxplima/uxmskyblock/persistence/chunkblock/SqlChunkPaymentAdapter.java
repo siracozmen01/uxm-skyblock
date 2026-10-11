@@ -7,27 +7,92 @@ import java.sql.SQLException;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 
 import javax.sql.DataSource;
 
+import com.uxplima.uxmlib.storage.sql.Database;
+import com.uxplima.uxmlib.storage.sql.Dialect;
+import com.uxplima.uxmskyblock.core.application.chunkblock.ChunkIslandCharge;
 import com.uxplima.uxmskyblock.core.application.chunkblock.ChunkPaymentPort;
+import com.uxplima.uxmskyblock.core.domain.bank.BankTransactionOutcome;
 import com.uxplima.uxmskyblock.core.domain.chunkblock.ChunkPayments;
 import com.uxplima.uxmskyblock.core.domain.chunkblock.ChunkPos;
 import com.uxplima.uxmskyblock.core.domain.identity.IslandId;
+import com.uxplima.uxmskyblock.persistence.bank.PlayerIslandBankAdapter;
 
 /**
  * What has been paid toward each closed chunk, in {@code chunkblock_chunk_payments}, and each island's chunk points,
  * in {@code chunkblock_points}.
  *
  * <p>A payment adds to the row in the database, never to a total read first, so two members paying at once both
- * count. A row that is not there yet is inserted, and an insert another payment won is added to instead.
+ * count. A row that is not there yet is inserted, and an insert another payment won is added to instead. A payment
+ * out of the island's bank is written in the charge's own transaction.
  */
 public final class SqlChunkPaymentAdapter implements ChunkPaymentPort {
 
     private final DataSource dataSource;
+    private final Dialect dialect;
+    private final PlayerIslandBankAdapter bank;
 
-    public SqlChunkPaymentAdapter(DataSource dataSource) {
-        this.dataSource = Objects.requireNonNull(dataSource, "dataSource must not be null");
+    public SqlChunkPaymentAdapter(Database database) {
+        Objects.requireNonNull(database, "database must not be null");
+        this.dataSource = database.dataSource();
+        this.dialect = database.dialect();
+        this.bank = new PlayerIslandBankAdapter(database);
+    }
+
+    @Override
+    public Optional<BankTransactionOutcome> chargeIslandAndRecord(ChunkIslandCharge charge) {
+        Objects.requireNonNull(charge, "charge must not be null");
+        BankTransactionOutcome outcome = bank.executeTransactionWith(
+                charge.islandId(),
+                charge.actorUuid(),
+                charge.currencyColumn(),
+                charge.scale(),
+                -charge.amount(),
+                charge.reason(),
+                charge.currentNode(),
+                charge.expectedEpoch(),
+                charge.expectedVersion(),
+                charge.operationId(),
+                charge.idempotencyKey(),
+                "ISLAND_BANK",
+                null,
+                connection -> record(connection, charge));
+        return Optional.ofNullable(outcome);
+    }
+
+    /**
+     * Adds the charge to what was paid toward the chunk, on the charge's own connection. One statement that inserts
+     * or adds, never an insert caught and retried: on PostgreSQL a failed statement ends the transaction, and this
+     * one carries the bank charge.
+     */
+    private boolean record(Connection connection, ChunkIslandCharge charge) throws SQLException {
+        String upsert =
+                switch (dialect) {
+                    case SQLITE, POSTGRES -> """
+                    INSERT INTO chunkblock_chunk_payments (island_id, chunk_x, chunk_z, line_key, paid)
+                    VALUES (?, ?, ?, ?, ?)
+                    ON CONFLICT (island_id, chunk_x, chunk_z, line_key)
+                    DO UPDATE SET paid = chunkblock_chunk_payments.paid + excluded.paid
+                    """;
+                    case MYSQL -> """
+                    INSERT INTO chunkblock_chunk_payments (island_id, chunk_x, chunk_z, line_key, paid)
+                    VALUES (?, ?, ?, ?, ?)
+                    ON DUPLICATE KEY UPDATE paid = paid + VALUES(paid)
+                    """;
+                    case H2, GENERIC -> throw new UnsupportedOperationException("Unsupported dialect: " + dialect);
+                };
+        try (PreparedStatement ps = connection.prepareStatement(upsert)) {
+            ps.setString(1, charge.islandId().value().toString());
+            ps.setInt(2, charge.chunk().x());
+            ps.setInt(3, charge.chunk().z());
+            ps.setString(4, charge.lineKey());
+            ps.setLong(5, charge.amount());
+            ps.executeUpdate();
+        }
+        return true;
     }
 
     @Override

@@ -181,6 +181,35 @@ public final class IslandBankService {
                 SAGA_SCOPE);
     }
 
+    /**
+     * Moves {@code delta} of {@code currency} in or out of the island's bank, saying what for: the island's own money
+     * under {@link BankCurrencies#PRIMARY_COLUMN}, in minor units, or an operator currency under its id, in whole
+     * units.
+     *
+     * @param delta positive to put in, negative to take out
+     */
+    public BankTransactionOutcome move(
+            IslandId islandId,
+            PlayerUuid playerUuid,
+            String currency,
+            long delta,
+            String reason,
+            ServerNodeId serverNodeId) {
+        Objects.requireNonNull(islandId, "islandId must not be null");
+        Objects.requireNonNull(currency, "currency must not be null");
+        return execute(
+                islandId,
+                playerUuid,
+                BankCurrencies.columnOf(currency),
+                BankCurrencies.scaleOf(currency),
+                delta,
+                reason,
+                serverNodeId,
+                null,
+                null,
+                "ISLAND_BANK");
+    }
+
     /** Whether a keyed bank move has landed, now or on an earlier ask. */
     public static boolean landed(BankTransactionOutcome outcome) {
         return outcome instanceof BankTransactionOutcome.Success
