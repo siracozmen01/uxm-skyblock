@@ -1,4 +1,4 @@
-# uxw-skyblock
+# uxm-skyblock
 
 High-performance, distributed Skyblock core engine for Paper and Folia.
 
