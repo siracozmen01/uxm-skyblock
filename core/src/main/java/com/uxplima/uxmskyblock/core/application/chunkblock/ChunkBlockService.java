@@ -190,6 +190,6 @@ public final class ChunkBlockService {
     }
 
     private static ChunkTerritory copyOf(ChunkTerritory territory) {
-        return new ChunkTerritory(territory.origin(), territory.opened());
+        return new ChunkTerritory(territory.origin(), territory.opened(), territory.bought());
     }
 }

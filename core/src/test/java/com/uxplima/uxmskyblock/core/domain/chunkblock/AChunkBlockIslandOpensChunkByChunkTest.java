@@ -97,6 +97,44 @@ class AChunkBlockIslandOpensChunkByChunkTest {
     }
 
     @Test
+    @DisplayName("A chunk paid for never closes, and the ladder prices only the chunks the level holds")
+    void aBoughtChunkStaysOpen() {
+        ChunkTerritory territory = ChunkTerritory.startingAt(origin);
+
+        assertThat(territory.open(new ChunkPos(1, 0), BOUNDS, false)).isEqualTo(ChunkTerritory.Unlock.UNLOCKED);
+        assertThat(territory.open(new ChunkPos(2, 0), BOUNDS, true)).isEqualTo(ChunkTerritory.Unlock.UNLOCKED);
+        assertThat(territory.open(new ChunkPos(2, 0), BOUNDS, true)).isEqualTo(ChunkTerritory.Unlock.ALREADY_OPEN);
+
+        assertThat(territory.bought()).containsExactly(new ChunkPos(1, 0));
+        assertThat(territory.heldCount()).isEqualTo(1);
+        assertThat(territory.nextRequirement(RULES)).isEqualTo(RULES.requiredFor(2));
+        assertThat(territory.relockFor(0, RULES)).containsExactly(new ChunkPos(2, 0));
+        assertThat(territory.isOpen(new ChunkPos(1, 0))).isTrue();
+        assertThat(territory.relockFor(0, RULES)).isEmpty();
+    }
+
+    @Test
+    @DisplayName("A held chunk whose closing would cut a paid one off stays, and the next newest closes instead")
+    void aPaidChunkIsNeverCutOff() {
+        ChunkPos held = new ChunkPos(1, 0);
+        ChunkPos paid = new ChunkPos(2, 0);
+        ChunkPos side = new ChunkPos(0, 1);
+        ChunkTerritory territory = new ChunkTerritory(origin, List.of(side, held, paid), java.util.Set.of(paid));
+
+        assertThat(territory.relockFor(0, RULES)).containsExactly(side);
+        assertThat(territory.isOpen(held)).isTrue();
+        assertThat(territory.isOpen(paid)).isTrue();
+        assertThat(territory.heldCount()).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("A bought chunk is an opened one")
+    void boughtIsOpened() {
+        assertThatThrownBy(() -> new ChunkTerritory(origin, List.of(), java.util.Set.of(new ChunkPos(1, 0))))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
     @DisplayName("A player shut out of a chunk is put in the nearest one still open")
     void theNearestOpenChunk() {
         ChunkTerritory territory = new ChunkTerritory(origin, List.of(new ChunkPos(1, 0), new ChunkPos(2, 0)));

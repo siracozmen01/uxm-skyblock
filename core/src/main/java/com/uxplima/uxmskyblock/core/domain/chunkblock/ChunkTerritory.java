@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 
 import com.uxplima.uxmskyblock.core.domain.island.IslandBounds;
@@ -27,12 +28,22 @@ public final class ChunkTerritory {
 
     private final ChunkPos origin;
     private final List<ChunkPos> opened;
+    private final Set<ChunkPos> bought;
 
     /**
      * @param origin the chunk the island started with
      * @param opened the chunks opened since, oldest first
      */
     public ChunkTerritory(ChunkPos origin, List<ChunkPos> opened) {
+        this(origin, opened, Set.of());
+    }
+
+    /**
+     * @param origin the chunk the island started with
+     * @param opened the chunks opened since, oldest first
+     * @param bought the opened chunks that were paid for, which stay open whatever the level does
+     */
+    public ChunkTerritory(ChunkPos origin, List<ChunkPos> opened, Set<ChunkPos> bought) {
         this.origin = Objects.requireNonNull(origin, "origin must not be null");
         Objects.requireNonNull(opened, "opened must not be null");
         this.opened = new ArrayList<>(opened.size());
@@ -43,6 +54,10 @@ public final class ChunkTerritory {
                 throw new IllegalArgumentException("the chunk " + chunk + " is opened twice");
             }
             this.opened.add(chunk);
+        }
+        this.bought = new LinkedHashSet<>(Objects.requireNonNull(bought, "bought must not be null"));
+        if (!this.opened.containsAll(this.bought)) {
+            throw new IllegalArgumentException("a bought chunk is an opened one");
         }
     }
 
@@ -75,9 +90,24 @@ public final class ChunkTerritory {
         return origin.equals(chunk) || opened.contains(chunk);
     }
 
-    /** The level the next chunk needs. */
+    /** The opened chunks that were paid for, which no fall of the level closes. */
+    public Set<ChunkPos> bought() {
+        return java.util.Collections.unmodifiableSet(bought);
+    }
+
+    /** Whether {@code chunk} was paid for. */
+    public boolean isBought(ChunkPos chunk) {
+        return bought.contains(chunk);
+    }
+
+    /** How many opened chunks the level holds: every opened one but those paid for. */
+    public int heldCount() {
+        return opened.size() - bought.size();
+    }
+
+    /** The level the next chunk the level holds needs, as the ladder prices it. */
     public long nextRequirement(ChunkUnlockRules rules) {
-        return rules.requiredFor(opened.size() + 1);
+        return rules.requiredFor(heldCount() + 1);
     }
 
     /** Whether {@code chunk} could be opened now, leaving the level aside. */
@@ -109,16 +139,70 @@ public final class ChunkTerritory {
     }
 
     /**
-     * Closes the chunks an island at {@code level} can no longer hold, newest first.
+     * Opens {@code chunk}, its cost settled by the caller, or says why it cannot stand there.
+     *
+     * @param held whether the level holds it, so it closes again when the level falls; false for a chunk paid for
+     */
+    public Unlock open(ChunkPos chunk, IslandBounds bounds, boolean held) {
+        Objects.requireNonNull(chunk, "chunk must not be null");
+        Unlock place = placeFor(chunk, bounds);
+        if (place != Unlock.UNLOCKED) {
+            return place;
+        }
+        opened.add(chunk);
+        if (!held) {
+            bought.add(chunk);
+        }
+        return Unlock.UNLOCKED;
+    }
+
+    /**
+     * Closes the chunks the level holds that an island at {@code level} can no longer hold, newest first. A chunk
+     * paid for never closes, and a held chunk whose closing would cut a paid one off from the rest stays open; the
+     * next newest closes in its place.
      *
      * @return the chunks closed, in the order they were closed
      */
     public List<ChunkPos> relockFor(long level, ChunkUnlockRules rules) {
         List<ChunkPos> closed = new ArrayList<>();
-        while (!opened.isEmpty() && rules.requiredFor(opened.size()) > level) {
-            closed.add(opened.removeLast());
+        while (heldCount() > 0 && rules.requiredFor(heldCount()) > level) {
+            Optional<ChunkPos> next = newestClosable();
+            if (next.isEmpty()) {
+                break;
+            }
+            opened.remove(next.get());
+            closed.add(next.get());
         }
         return List.copyOf(closed);
+    }
+
+    /** The newest held chunk whose closing leaves every other open chunk joined to the first. */
+    private Optional<ChunkPos> newestClosable() {
+        for (int i = opened.size() - 1; i >= 0; i--) {
+            ChunkPos candidate = opened.get(i);
+            if (!bought.contains(candidate) && joinedWithout(candidate)) {
+                return Optional.of(candidate);
+            }
+        }
+        return Optional.empty();
+    }
+
+    /** Whether every open chunk but {@code left} is reached from the first, stepping beside, never across. */
+    private boolean joinedWithout(ChunkPos left) {
+        Set<ChunkPos> open = new LinkedHashSet<>(open());
+        open.remove(left);
+        Set<ChunkPos> reached = new LinkedHashSet<>();
+        java.util.ArrayDeque<ChunkPos> queue = new java.util.ArrayDeque<>();
+        queue.add(origin);
+        reached.add(origin);
+        while (!queue.isEmpty()) {
+            for (ChunkPos next : queue.poll().neighbours()) {
+                if (open.contains(next) && reached.add(next)) {
+                    queue.add(next);
+                }
+            }
+        }
+        return reached.size() == open.size();
     }
 
     /** The open chunk nearest {@code chunk}, where a player shut out of it is put. */
