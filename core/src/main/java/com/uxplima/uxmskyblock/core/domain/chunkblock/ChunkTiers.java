@@ -86,6 +86,21 @@ public final class ChunkTiers {
         return candidates.getLast();
     }
 
+    @Override
+    public boolean equals(Object other) {
+        return other instanceof ChunkTiers that && tiers.equals(that.tiers);
+    }
+
+    @Override
+    public int hashCode() {
+        return tiers.hashCode();
+    }
+
+    @Override
+    public String toString() {
+        return "ChunkTiers" + tiers;
+    }
+
     /** A number of the island and the chunk alone, the same on every node and every start. */
     static long seed(IslandId islandId, ChunkPos chunk) {
         long seed = islandId.value().getMostSignificantBits() ^ islandId.value().getLeastSignificantBits();
