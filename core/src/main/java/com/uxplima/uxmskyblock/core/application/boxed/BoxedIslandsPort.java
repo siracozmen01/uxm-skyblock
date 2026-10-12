@@ -22,4 +22,13 @@ public interface BoxedIslandsPort {
      * earned it already, which changes nothing.
      */
     boolean earn(IslandId islandId, String advancement, int blocks);
+
+    /**
+     * The row an operator's changes to a box are kept under, among the advancements, so every reader that sums
+     * what an island earned counts them. No advancement of the game is in this namespace.
+     */
+    String OPERATOR = "uxmskyblock:operator";
+
+    /** Adds {@code blocks} to the operator's row of the island, or takes them when negative, making the row if absent. */
+    void grant(IslandId islandId, long blocks);
 }

@@ -73,6 +73,40 @@ public final class SqlBoxedIslandsAdapter implements BoxedIslandsPort {
                 blocks);
     }
 
+    @Override
+    public void grant(IslandId islandId, long blocks) {
+        Objects.requireNonNull(islandId, "islandId must not be null");
+        String island = islandId.value().toString();
+        // Two tries: a grant that finds no row inserts one, and one that lost that race adds to the row it lost to.
+        for (int attempt = 0; attempt < 2; attempt++) {
+            try (Connection conn = dataSource.getConnection()) {
+                try (PreparedStatement ps = conn.prepareStatement(
+                        "UPDATE boxed_advancements SET blocks = blocks + ? WHERE island_id = ? AND advancement = ?")) {
+                    ps.setLong(1, blocks);
+                    ps.setString(2, island);
+                    ps.setString(3, OPERATOR);
+                    if (ps.executeUpdate() == 1) {
+                        return;
+                    }
+                }
+                try (PreparedStatement ps = conn.prepareStatement(
+                        "INSERT INTO boxed_advancements (island_id, advancement, blocks) VALUES (?, ?, ?)")) {
+                    ps.setString(1, island);
+                    ps.setString(2, OPERATOR);
+                    ps.setLong(3, blocks);
+                    ps.executeUpdate();
+                    return;
+                }
+            } catch (SQLException e) {
+                String state = e.getSQLState();
+                boolean raced = (state != null && state.startsWith("23")) || (state == null && e.getErrorCode() == 19);
+                if (!raced || attempt == 1) {
+                    throw new IllegalStateException("Could not change the box of island " + islandId, e);
+                }
+            }
+        }
+    }
+
     /** Inserts a row, and says false when it was there already. */
     private boolean insert(
             String sql, IslandId islandId, @org.jspecify.annotations.Nullable String advancement, int blocks) {

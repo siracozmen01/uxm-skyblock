@@ -58,6 +58,8 @@ class AnOperatorChangesAModesIslandsTest extends MockBukkitHarness {
     Path dir;
 
     private final Map<IslandId, Long> stored = new HashMap<>();
+    private final Map<IslandId, Long> boxes = new HashMap<>();
+    private final List<IslandId> edgesMoved = new java.util.ArrayList<>();
     private World world;
     private OneBlockService service;
     private ModeAdminCommands admin;
@@ -127,8 +129,46 @@ class AnOperatorChangesAModesIslandsTest extends MockBukkitHarness {
                 })
                 .when(scheduler)
                 .onRegion(anyString(), anyInt(), anyInt(), any(Runnable.class));
+        boxes.put(ISLAND, 3L);
+        com.uxplima.uxmskyblock.core.application.boxed.BoxedService boxed =
+                new com.uxplima.uxmskyblock.core.application.boxed.BoxedService(
+                        new com.uxplima.uxmskyblock.core.application.boxed.BoxedIslandsPort() {
+                            @Override
+                            public Map<IslandId, Long> findAll() {
+                                return Map.copyOf(boxes);
+                            }
+
+                            @Override
+                            public java.util.OptionalLong find(IslandId islandId) {
+                                Long held = boxes.get(islandId);
+                                return held == null ? java.util.OptionalLong.empty() : java.util.OptionalLong.of(held);
+                            }
+
+                            @Override
+                            public void add(IslandId islandId) {
+                                boxes.putIfAbsent(islandId, 0L);
+                            }
+
+                            @Override
+                            public boolean earn(IslandId islandId, String advancement, int blocks) {
+                                return false;
+                            }
+
+                            @Override
+                            public void grant(IslandId islandId, long blocks) {
+                                boxes.merge(islandId, blocks, Long::sum);
+                            }
+                        },
+                        new com.uxplima.uxmskyblock.core.domain.boxed.BoxRules(5, 1, 50, Map.of(), List.of()));
+        boxed.prime();
         admin = new ModeAdminCommands(
-                List.of(new OneBlockAdmin(service)), locations, null, scheduler, Messages.bundled());
+                List.of(
+                        new OneBlockAdmin(service),
+                        new com.uxplima.uxmskyblock.bukkit.boxed.BoxedAdmin(boxed, edgesMoved::add)),
+                locations,
+                null,
+                scheduler,
+                Messages.bundled());
         operator = server.addPlayer("Op");
         operator.setOp(true);
     }
@@ -208,6 +248,28 @@ class AnOperatorChangesAModesIslandsTest extends MockBukkitHarness {
         assertThat(run("isadmin oneblock check " + ORDINARY.value())).contains("not a OneBlock island");
         assertThat(run("isadmin oneblock respawn " + ORDINARY.value())).contains("not a OneBlock island");
         assertThat(run("isadmin oneblock check Nobody")).contains("No island was found for Nobody");
+    }
+
+    @Test
+    @DisplayName("A box is set across, pushed out, kept between the smallest and the largest, and its edge moved")
+    void boxes() throws Exception {
+        assertThat(run("isadmin boxed setsize " + ISLAND.value() + " 31"))
+                .contains("31×31")
+                .contains("was 17×17");
+        assertThat(boxes).describedAs("fifteen out, ten past the start").containsEntry(ISLAND, 10L);
+        assertThat(edgesMoved).containsExactly(ISLAND);
+
+        assertThat(run("isadmin boxed grow " + ISLAND.value() + " 2")).contains("35×35");
+        assertThat(boxes).containsEntry(ISLAND, 12L);
+
+        assertThat(run("isadmin boxed setsize " + ISLAND.value() + " 9")).contains("from 11 to 101 across, not 9");
+        assertThat(run("isadmin boxed setsize " + ISLAND.value() + " 103")).contains("not 103");
+        assertThat(run("isadmin boxed setsize " + ISLAND.value() + " 101")).contains("101×101");
+        assertThat(run("isadmin boxed setsize " + ISLAND.value() + " 30"))
+                .describedAs("a box is odd across, its middle block and as far each way")
+                .contains("29×29");
+        assertThat(run("isadmin boxed grow " + ORDINARY.value() + " 2")).contains("not a Boxed island");
+        assertThat(edgesMoved).hasSize(4);
     }
 
     @Test

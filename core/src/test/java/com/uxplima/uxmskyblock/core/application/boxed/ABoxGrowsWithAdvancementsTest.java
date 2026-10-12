@@ -50,6 +50,11 @@ class ABoxGrowsWithAdvancementsTest {
             islands.merge(id, (long) blocks, Long::sum);
             return true;
         }
+
+        @Override
+        public void grant(IslandId id, long blocks) {
+            islands.merge(id, blocks, Long::sum);
+        }
     };
     private final BoxRules rules = new BoxRules(
             5,
@@ -105,5 +110,28 @@ class ABoxGrowsWithAdvancementsTest {
         assertThat(restarted.isBoxed(islandId)).isFalse();
         assertThatThrownBy(() -> new BoxRules(5, 1, 4, Map.of(), List.of()))
                 .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    @DisplayName("An operator pushes a box out, or sets how far it reaches, and storage holds what they did")
+    void anOperatorsBox() {
+        service.start(islandId);
+        service.earn(islandId, "minecraft:story/mine_diamond");
+
+        assertThat(service.grant(islandId, 1)).contains(new BoxedService.Grown(islandId, 1, 7, 8));
+        assertThat(islands).containsEntry(islandId, 3L);
+        assertThat(service.resize(islandId, 6)).contains(new BoxedService.Grown(islandId, -2, 8, 6));
+        assertThat(service.radius(islandId)).hasValue(6);
+        assertThat(islands).describedAs("one block earned past the start").containsEntry(islandId, 1L);
+        service.forget(islandId);
+        assertThat(service.radius(islandId))
+                .describedAs("read back from storage")
+                .hasValue(6);
+
+        assertThatThrownBy(() -> service.resize(islandId, 9)).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> service.resize(islandId, 4)).isInstanceOf(IllegalArgumentException.class);
+        IslandId ordinary = IslandId.of(UUID.randomUUID());
+        assertThat(service.grant(ordinary, 1)).isEmpty();
+        assertThat(service.resize(ordinary, 6)).isEmpty();
     }
 }

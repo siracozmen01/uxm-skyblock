@@ -388,6 +388,10 @@ final class IslandCommandWiring {
             modes.add(new com.uxplima.uxmskyblock.bukkit.oneblock.OneBlockAdmin(
                     gameplay.oneBlockWiring().service()));
         }
+        if (gameplay.boxedWiring().enabled()) {
+            modes.add(new com.uxplima.uxmskyblock.bukkit.boxed.BoxedAdmin(
+                    gameplay.boxedWiring().service(), gameplay.boxedWiring().edgeMover()));
+        }
         return new com.uxplima.uxmskyblock.bukkit.command.ModeAdminCommands(
                 modes, gameplay.locationService(), authority.sessionCoordinator(), gameplay.scheduler(), messages);
     }

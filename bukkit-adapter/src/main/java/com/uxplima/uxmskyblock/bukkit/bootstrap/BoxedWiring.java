@@ -87,6 +87,11 @@ public final class BoxedWiring implements AutoCloseable {
         boxChanged.accept(islandId);
     }
 
+    /** What an operator's change to a box asks for: the island's edge moved to it. */
+    public Consumer<IslandId> edgeMover() {
+        return this::boxChanged;
+    }
+
     public BoxedService service() {
         return service;
     }

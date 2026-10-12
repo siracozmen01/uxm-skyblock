@@ -36,6 +36,9 @@ public enum CatalogPermissions {
             PermissionDefault.OP),
     ADMIN_ONEBLOCK_CHECK(
             "uxmskyblock.admin.oneblock.check", "Read where a OneBlock island stands", PermissionDefault.OP),
+    ADMIN_BOXED_SETSIZE(
+            "uxmskyblock.admin.boxed.setsize", "Set how far across a Boxed island's box is", PermissionDefault.OP),
+    ADMIN_BOXED_GROW("uxmskyblock.admin.boxed.grow", "Push a Boxed island's box out", PermissionDefault.OP),
     ADMIN_ONEBLOCK_RESPAWN(
             "uxmskyblock.admin.oneblock.respawn", "Lay a OneBlock island's block again", PermissionDefault.OP),
 

@@ -77,6 +77,40 @@ public final class BoxedService {
     }
 
     /**
+     * An operator pushes the island's box out by {@code blocks}. Off the main thread: it writes a row.
+     *
+     * @return how the box changed, or empty when the island is no Boxed island
+     */
+    public java.util.Optional<Grown> grant(IslandId islandId, int blocks) {
+        Objects.requireNonNull(islandId, "islandId must not be null");
+        if (!isBoxed(islandId)) {
+            return java.util.Optional.empty();
+        }
+        port.grant(islandId, blocks);
+        long before = earned.merge(islandId, (long) blocks, Long::sum) - blocks;
+        return java.util.Optional.of(new Grown(islandId, blocks, rules.radius(before), rules.radius(before + blocks)));
+    }
+
+    /**
+     * An operator sets how far the island's box reaches, between where every box starts and the largest a box can
+     * be. Off the main thread: it writes a row.
+     *
+     * @return how the box changed, or empty when the island is no Boxed island
+     */
+    public java.util.Optional<Grown> resize(IslandId islandId, int radius) {
+        if (radius < rules.startRadius() || radius > rules.maxRadius()) {
+            throw new IllegalArgumentException(
+                    "a box reaches from " + rules.startRadius() + " to " + rules.maxRadius() + ", not " + radius);
+        }
+        Long now = earned.get(islandId);
+        if (now == null) {
+            return java.util.Optional.empty();
+        }
+        // The island is left having earned exactly what that box takes, whatever it had earned past it.
+        return grant(islandId, Math.toIntExact(radius - rules.startRadius() - now));
+    }
+
+    /**
      * Reads the island again after it changed. An island that still has its row keeps what it earned,
      * and one whose row is gone, because it was erased, is dropped. Off the main thread: it reads a row.
      */

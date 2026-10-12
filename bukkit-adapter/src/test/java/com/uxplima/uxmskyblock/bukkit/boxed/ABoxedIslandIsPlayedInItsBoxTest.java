@@ -139,6 +139,11 @@ class ABoxedIslandIsPlayedInItsBoxTest extends MockBukkitHarness {
                         stored.merge(id, (long) blocks, Long::sum);
                         return true;
                     }
+
+                    @Override
+                    public void grant(IslandId id, long blocks) {
+                        stored.merge(id, blocks, Long::sum);
+                    }
                 },
                 new BoxRules(5, 2, 50, Map.of(), List.of("minecraft:recipes/")));
         scheduler = mock(SchedulerPort.class);

@@ -280,6 +280,15 @@ class GameModeSchemaDialectPortabilityTest {
             assertThat(boxed.earn(islandId, "minecraft:story/mine_stone", 1)).isFalse();
             assertThat(boxed.find(islandId)).hasValue(4);
             assertThat(boxed.findAll()).containsEntry(islandId, 4L);
+            // An operator's change is one row of its own: made by the first, added to by the next, and summed in.
+            boxed.grant(islandId, 5);
+            assertThat(boxed.find(islandId)).hasValue(9);
+            boxed.grant(islandId, -5);
+            assertThat(boxed.find(islandId)).hasValue(4);
+            assertThat(boxed.earn(
+                            islandId, com.uxplima.uxmskyblock.core.application.boxed.BoxedIslandsPort.OPERATOR, 1))
+                    .describedAs("the operator's row is there, once")
+                    .isFalse();
 
             // A Poseidon island: recorded once, found, gone with the island.
             com.uxplima.uxmskyblock.persistence.poseidon.SqlPoseidonIslandsAdapter poseidon =
