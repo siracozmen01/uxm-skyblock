@@ -39,6 +39,14 @@ public enum CatalogPermissions {
     ADMIN_BOXED_SETSIZE(
             "uxmskyblock.admin.boxed.setsize", "Set how far across a Boxed island's box is", PermissionDefault.OP),
     ADMIN_BOXED_GROW("uxmskyblock.admin.boxed.grow", "Push a Boxed island's box out", PermissionDefault.OP),
+    ADMIN_CHUNKBLOCK_OPEN(
+            "uxmskyblock.admin.chunkblock.open", "Open a chunk of a ChunkBlock island", PermissionDefault.OP),
+    ADMIN_CHUNKBLOCK_CLOSE(
+            "uxmskyblock.admin.chunkblock.close", "Close a chunk of a ChunkBlock island", PermissionDefault.OP),
+    ADMIN_CHUNKBLOCK_RESET(
+            "uxmskyblock.admin.chunkblock.reset",
+            "Close every chunk of a ChunkBlock island but the first",
+            PermissionDefault.OP),
     ADMIN_ONEBLOCK_RESPAWN(
             "uxmskyblock.admin.oneblock.respawn", "Lay a OneBlock island's block again", PermissionDefault.OP),
 

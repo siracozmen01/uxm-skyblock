@@ -26,6 +26,15 @@ public final class ChunkTerritory {
         LEVEL_TOO_LOW
     }
 
+    /** What an operator's closing came to. */
+    public enum Close {
+        CLOSED,
+        /** The chunk is not open, or is the one the island started with, which never closes. */
+        NOT_OPEN,
+        /** Closing it would cut another open chunk off from the first; close that one first. */
+        CUTS_OFF
+    }
+
     private final ChunkPos origin;
     private final List<ChunkPos> opened;
     private final Set<ChunkPos> bought;
@@ -173,6 +182,31 @@ public final class ChunkTerritory {
             opened.remove(next.get());
             closed.add(next.get());
         }
+        return List.copyOf(closed);
+    }
+
+    /**
+     * Closes {@code chunk}, as an operator does, paid for or not. The chunk the island started with never closes,
+     * and neither does one whose closing would leave another open chunk cut off from it.
+     */
+    public Close close(ChunkPos chunk) {
+        Objects.requireNonNull(chunk, "chunk must not be null");
+        if (!opened.contains(chunk)) {
+            return Close.NOT_OPEN;
+        }
+        if (!joinedWithout(chunk)) {
+            return Close.CUTS_OFF;
+        }
+        opened.remove(chunk);
+        bought.remove(chunk);
+        return Close.CLOSED;
+    }
+
+    /** Closes every chunk but the first, newest first, as an operator's reset does, and says which. */
+    public List<ChunkPos> closeAll() {
+        List<ChunkPos> closed = new ArrayList<>(opened.reversed());
+        opened.clear();
+        bought.clear();
         return List.copyOf(closed);
     }
 

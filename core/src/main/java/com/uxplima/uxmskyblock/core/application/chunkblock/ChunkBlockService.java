@@ -162,10 +162,66 @@ public final class ChunkBlockService {
             port.close(islandId, closed);
             memory.put(islandId, next);
         }
+        tellClosed(islandId, closed);
+        return closed;
+    }
+
+    /**
+     * Closes {@code chunk} of the island, as an operator does, and tells the listeners. Off the main thread: it
+     * writes rows.
+     *
+     * @return what the closing came to, or empty for an island that is not a ChunkBlock island
+     */
+    public Optional<ChunkTerritory.Close> close(IslandId islandId, ChunkPos chunk) {
+        Objects.requireNonNull(chunk, "chunk must not be null");
+        ChunkTerritory.Close outcome;
+        synchronized (lockOf(islandId)) {
+            Optional<ChunkTerritory> current = territory(islandId);
+            if (current.isEmpty()) {
+                return Optional.empty();
+            }
+            ChunkTerritory next = current.get();
+            outcome = next.close(chunk);
+            if (outcome != ChunkTerritory.Close.CLOSED) {
+                return Optional.of(outcome);
+            }
+            port.close(islandId, List.of(chunk));
+            memory.put(islandId, next);
+        }
+        tellClosed(islandId, List.of(chunk));
+        return Optional.of(outcome);
+    }
+
+    /**
+     * Closes every chunk of the island but the first, as an operator's reset does, and tells the listeners. Off the
+     * main thread: it writes rows.
+     *
+     * @return the chunks closed, or empty for an island that is not a ChunkBlock island
+     */
+    public Optional<List<ChunkPos>> reset(IslandId islandId) {
+        List<ChunkPos> closed;
+        synchronized (lockOf(islandId)) {
+            Optional<ChunkTerritory> current = territory(islandId);
+            if (current.isEmpty()) {
+                return Optional.empty();
+            }
+            ChunkTerritory next = current.get();
+            closed = next.closeAll();
+            if (!closed.isEmpty()) {
+                port.close(islandId, closed);
+                memory.put(islandId, next);
+            }
+        }
+        if (!closed.isEmpty()) {
+            tellClosed(islandId, closed);
+        }
+        return Optional.of(closed);
+    }
+
+    private void tellClosed(IslandId islandId, List<ChunkPos> closed) {
         for (BiConsumer<IslandId, List<ChunkPos>> listener : closedListeners) {
             listener.accept(islandId, closed);
         }
-        return closed;
     }
 
     /** Told which chunk an island opened, after it is open. */

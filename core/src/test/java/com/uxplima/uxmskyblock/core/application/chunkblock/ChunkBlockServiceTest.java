@@ -29,6 +29,46 @@ class ChunkBlockServiceTest {
     private final ChunkBlockService service = new ChunkBlockService(table, RULES);
 
     @Test
+    @DisplayName(
+            "An operator closes one chunk, never the first nor one that would cut another off, and resets the rest")
+    void anOperatorCloses() {
+        service.start(islandId, 8, 8);
+        List<List<ChunkPos>> told = new java.util.ArrayList<>();
+        service.whenClosed((island, closed) -> told.add(closed));
+        service.open(islandId, new ChunkPos(1, 0), BOUNDS, false);
+        service.open(islandId, new ChunkPos(2, 0), BOUNDS, false);
+        service.open(islandId, new ChunkPos(0, 1), BOUNDS, true);
+
+        assertThat(service.close(islandId, new ChunkPos(1, 0))).contains(ChunkTerritory.Close.CUTS_OFF);
+        assertThat(service.close(islandId, new ChunkPos(0, 0))).contains(ChunkTerritory.Close.NOT_OPEN);
+        assertThat(service.close(islandId, new ChunkPos(5, 5))).contains(ChunkTerritory.Close.NOT_OPEN);
+        assertThat(told).isEmpty();
+
+        assertThat(service.close(islandId, new ChunkPos(2, 0))).contains(ChunkTerritory.Close.CLOSED);
+        assertThat(table.find(islandId).orElseThrow().opened()).containsExactly(new ChunkPos(1, 0), new ChunkPos(0, 1));
+        assertThat(service.isOpen(islandId, new ChunkPos(2, 0))).contains(false);
+        assertThat(told).containsExactly(List.of(new ChunkPos(2, 0)));
+
+        assertThat(service.close(islandId, new ChunkPos(0, 1)))
+                .describedAs("a chunk paid for closes too, when an operator closes it")
+                .contains(ChunkTerritory.Close.CLOSED);
+        assertThat(service.inMemory(islandId).orElseThrow().bought()).containsExactly(new ChunkPos(1, 0));
+        service.open(islandId, new ChunkPos(0, 1), BOUNDS, true);
+        assertThat(service.reset(islandId)).contains(List.of(new ChunkPos(0, 1), new ChunkPos(1, 0)));
+        assertThat(table.find(islandId).orElseThrow().opened()).isEmpty();
+        assertThat(service.isOpen(islandId, new ChunkPos(0, 0))).contains(true);
+        assertThat(service.isOpen(islandId, new ChunkPos(1, 0))).contains(false);
+        assertThat(told).hasSize(3);
+        assertThat(service.inMemory(islandId).orElseThrow().bought()).isEmpty();
+        assertThat(service.reset(islandId)).describedAs("nothing left to close").contains(List.of());
+        assertThat(told).describedAs("and nobody told of nothing").hasSize(3);
+
+        IslandId ordinary = IslandId.of(UUID.randomUUID());
+        assertThat(service.close(ordinary, new ChunkPos(0, 0))).isEmpty();
+        assertThat(service.reset(ordinary)).isEmpty();
+    }
+
+    @Test
     @DisplayName("An island that is no ChunkBlock island is left alone")
     void otherIslandsAreLeftAlone() {
         assertThat(service.isOpen(islandId, new ChunkPos(9, 9))).isEmpty();

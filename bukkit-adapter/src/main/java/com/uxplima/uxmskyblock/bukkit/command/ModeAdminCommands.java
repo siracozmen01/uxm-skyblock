@@ -70,8 +70,11 @@ public final class ModeAdminCommands {
         return Cmd.literal(verb).requires(Cmd.permission(permission.node()));
     }
 
-    /** The whole command under the names the file gives, or nothing when no mode runs or the file turns it off. */
-    Optional<LiteralArgumentBuilder<CommandSourceStack>> build(
+    /**
+     * The whole command under the names the file gives, or nothing when no mode runs or the file turns it off.
+     * Assembled but not registered, so a test can hand it to Brigadier.
+     */
+    public Optional<LiteralArgumentBuilder<CommandSourceStack>> build(
             @Nullable ConfiguredCommands names, BiPredicate<CommandSourceStack, String> reads) {
         ConfiguredCommandTree<CommandSourceStack> tree =
                 new ConfiguredCommandTree<>(names, reads, ROOT, ROOT, List.of());
