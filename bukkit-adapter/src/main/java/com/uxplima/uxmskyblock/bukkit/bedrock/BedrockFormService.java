@@ -65,16 +65,28 @@ public final class BedrockFormService {
      * nothing but how they are drawn.
      */
     public void openChoiceForm(Player player, String titleKey, String bodyKey, List<Choice> choices) {
+        openChoiceForm(player, titleKey, bodyKey, List.of(), choices);
+    }
+
+    /** The same form, its body read with {@code said} for the placeholders it writes. */
+    public void openChoiceForm(
+            Player player, String titleKey, String bodyKey, List<TagResolver> said, List<Choice> choices) {
         Objects.requireNonNull(player, "player must not be null");
         Objects.requireNonNull(choices, "choices must not be null");
+        Objects.requireNonNull(said, "said must not be null");
         List<BedrockButton> buttons = choices.stream()
                 .map(choice -> new BedrockButton(choice.label(), null))
                 .toList();
-        screen.sendSimpleForm(player, text(player, titleKey), text(player, bodyKey), buttons, index -> {
-            if (index >= 0 && index < choices.size()) {
-                choices.get(index).action().run();
-            }
-        });
+        screen.sendSimpleForm(
+                player,
+                text(player, titleKey),
+                text(player, bodyKey, said.toArray(TagResolver[]::new)),
+                buttons,
+                index -> {
+                    if (index >= 0 && index < choices.size()) {
+                        choices.get(index).action().run();
+                    }
+                });
     }
 
     public boolean isBedrock(Player player) {

@@ -197,6 +197,33 @@ final class IslandCommandWiring {
                 tree::typed);
         tree.usePlayableKinds(offered);
         presetList.useMenuEngine(integration.menuEngine());
+        // A look at a kind before choosing it, from a showroom of its own laid the first time anybody looks.
+        com.uxplima.uxmskyblock.bukkit.schematic.StarterSchematicEngine starts = gameplay.schematicEngine();
+        var previews = new com.uxplima.uxmskyblock.bukkit.preview.PresetPreviews(
+                choices::preview,
+                () -> gameplay.presetCatalog().allPresets().stream()
+                        .filter(offered)
+                        .toList(),
+                org.bukkit.Bukkit::getWorld,
+                () -> worldName,
+                (preset, world, x, y, z) -> starts.build(
+                        new com.uxplima.uxmskyblock.bukkit.schematic.IslandStart(
+                                world,
+                                com.uxplima.uxmskyblock.core.domain.identity.IslandId.of(
+                                        java.util.UUID.nameUUIDFromBytes(("preview:" + preset.id())
+                                                .getBytes(java.nio.charset.StandardCharsets.UTF_8))),
+                                x,
+                                y,
+                                z,
+                                preset),
+                        java.util.List.of(com.uxplima.uxmskyblock.core.domain.preset.StarterPreset.PLATFORM)),
+                gameplay.scheduler(),
+                integration.messages(),
+                java.time.Clock.systemUTC());
+        presetList.usePreviews(previews, integration.bedrockFormService(), gameplay.scheduler());
+        if (plugin.getServer() != null) {
+            plugin.getServer().getPluginManager().registerEvents(previews, plugin);
+        }
         tree.usePresets(choices, presetList);
         integration.controlMenu().useNoIsland(player -> {
             switch (choices.whenNoIsland()) {

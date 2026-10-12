@@ -128,4 +128,98 @@ class TheKindsOfIslandAreAWindowTest extends MockBukkitHarness {
 
         assertThat(one.show(ada)).isFalse();
     }
+
+    @Test
+    @DisplayName("A right click looks at a kind before choosing it")
+    void aRightClickLooks() {
+        PresetList list = list();
+        com.uxplima.uxmskyblock.bukkit.preview.PresetPreviews previews =
+                org.mockito.Mockito.mock(com.uxplima.uxmskyblock.bukkit.preview.PresetPreviews.class);
+        list.usePreviews(
+                previews,
+                null,
+                org.mockito.Mockito.mock(com.uxplima.uxmskyblock.core.application.scheduler.SchedulerPort.class));
+        MenuRow desert = list.rows(ada).get(0);
+
+        ShippedTemplates.click(
+                engine, PresetList.PREVIEW, MenuContext.of(ada, null, 0).withEntry(desert), ada, ClickKind.RIGHT, "");
+
+        org.mockito.Mockito.verify(previews)
+                .show(ada, (com.uxplima.uxmskyblock.core.domain.preset.StarterPreset) desert.handle());
+        assertThat(typed).isEmpty();
+    }
+
+    @Test
+    @DisplayName(
+            "A Bedrock player taps a kind in a form of the kinds, reads what it is, then starts, looks or goes back")
+    void aBedrockPlayerReadsTheKind() {
+        engine.install();
+        PresetList list = list();
+        com.uxplima.uxmskyblock.bukkit.preview.PresetPreviews previews =
+                org.mockito.Mockito.mock(com.uxplima.uxmskyblock.bukkit.preview.PresetPreviews.class);
+        org.mockito.Mockito.when(previews.enabled()).thenReturn(true);
+        com.uxplima.uxmskyblock.bukkit.bedrock.BedrockFormService forms =
+                org.mockito.Mockito.mock(com.uxplima.uxmskyblock.bukkit.bedrock.BedrockFormService.class);
+        org.mockito.Mockito.when(forms.isBedrock(ada)).thenReturn(true);
+        com.uxplima.uxmskyblock.core.application.scheduler.SchedulerPort scheduler =
+                org.mockito.Mockito.mock(com.uxplima.uxmskyblock.core.application.scheduler.SchedulerPort.class);
+        org.mockito.Mockito.doAnswer(call -> {
+                    call.getArgument(1, Runnable.class).run();
+                    return null;
+                })
+                .when(scheduler)
+                .onEntity(
+                        org.mockito.ArgumentMatchers.any(com.uxplima.uxmskyblock.core.domain.identity.PlayerUuid.class),
+                        org.mockito.ArgumentMatchers.any(Runnable.class));
+        list.usePreviews(previews, forms, scheduler);
+        List<List<com.uxplima.uxmskyblock.bukkit.bedrock.BedrockFormService.Choice>> asked = new ArrayList<>();
+        List<String> bodies = new ArrayList<>();
+        org.mockito.Mockito.doAnswer(call -> {
+                    bodies.add(call.getArgument(2, String.class));
+                    asked.add(call.getArgument(4));
+                    return null;
+                })
+                .when(forms)
+                .openChoiceForm(
+                        org.mockito.ArgumentMatchers.eq(ada),
+                        org.mockito.ArgumentMatchers.anyString(),
+                        org.mockito.ArgumentMatchers.anyString(),
+                        org.mockito.ArgumentMatchers.anyList(),
+                        org.mockito.ArgumentMatchers.anyList());
+
+        assertThat(list.show(ada)).isTrue();
+        assertThat(bodies).containsExactly("menu.create.form_kinds");
+        assertThat(asked.getFirst()).hasSize(list.rows(ada).size());
+
+        asked.getFirst().get(0).action().run();
+        assertThat(bodies).containsExactly("menu.create.form_kinds", "menu.create.form_body");
+        List<com.uxplima.uxmskyblock.bukkit.bedrock.BedrockFormService.Choice> kind = asked.get(1);
+        assertThat(kind).hasSize(3);
+
+        kind.get(1).action().run();
+        org.mockito.Mockito.verify(previews)
+                .show(org.mockito.ArgumentMatchers.eq(ada), org.mockito.ArgumentMatchers.any());
+        kind.get(0).action().run();
+        assertThat(typed).containsExactly("create desert");
+        kind.get(2).action().run();
+        assertThat(bodies).describedAs("back to the kinds").endsWith("menu.create.form_kinds");
+
+        org.mockito.Mockito.when(previews.enabled()).thenReturn(false);
+        asked.getFirst().get(0).action().run();
+        assertThat(asked.getLast())
+                .describedAs("no look offered while looks are off")
+                .hasSize(2);
+
+        // Reached another way, through the window drawn as a form by the engine, a tap reads the kind first too.
+        int typedBefore = typed.size();
+        ShippedTemplates.click(
+                engine,
+                PresetList.CREATE,
+                MenuContext.of(ada, null, 0).withEntry(list.rows(ada).get(0)),
+                ada,
+                ClickKind.LEFT,
+                "");
+        assertThat(bodies).last().isEqualTo("menu.create.form_body");
+        assertThat(typed).hasSize(typedBefore);
+    }
 }

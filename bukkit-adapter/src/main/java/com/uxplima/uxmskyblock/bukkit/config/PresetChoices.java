@@ -31,9 +31,14 @@ import org.spongepowered.configurate.serialize.SerializationException;
  * @param whenNoIsland what {@code /is} does for a player with no island
  * @param createAsks whether {@code /is create} with no kind written opens the window rather than making the default
  * @param modes the game modes whose kinds are offered, every mode when empty
+ * @param preview how a player looks at a kind before choosing it
  */
 public record PresetChoices(
-        Map<String, Look> looks, WhenNoIsland whenNoIsland, boolean createAsks, Set<GameModeType> modes) {
+        Map<String, Look> looks,
+        WhenNoIsland whenNoIsland,
+        boolean createAsks,
+        Set<GameModeType> modes,
+        PresetPreview preview) {
 
     /** The window for both, every kind open to everyone, each wearing the item its id suggests. */
     public static final PresetChoices DEFAULT = new PresetChoices(Map.of(), WhenNoIsland.MENU, true);
@@ -81,6 +86,13 @@ public record PresetChoices(
         looks = Map.copyOf(Objects.requireNonNull(looks, "looks must not be null"));
         Objects.requireNonNull(whenNoIsland, "whenNoIsland must not be null");
         modes = Set.copyOf(Objects.requireNonNull(modes, "modes must not be null"));
+        Objects.requireNonNull(preview, "preview must not be null");
+    }
+
+    /** Choices with the shipped look before choosing. */
+    public PresetChoices(
+            Map<String, Look> looks, WhenNoIsland whenNoIsland, boolean createAsks, Set<GameModeType> modes) {
+        this(looks, whenNoIsland, createAsks, modes, PresetPreview.SHIPPED);
     }
 
     /** Choices that offer the kinds of every game mode. */
@@ -95,7 +107,7 @@ public record PresetChoices(
 
     /** These choices, offering the kinds of every game mode. */
     PresetChoices offeringEvery() {
-        return new PresetChoices(looks, whenNoIsland, createAsks, Set.of());
+        return new PresetChoices(looks, whenNoIsland, createAsks, Set.of(), preview);
     }
 
     /** How the kind {@code presetId} is drawn: as the file says, or with the item its id suggests. */
@@ -150,7 +162,12 @@ public record PresetChoices(
             LOGGER.warning(() -> "presets.create-without-type is '" + create
                     + "', which is neither menu nor default. /is create opens the window.");
         }
-        return new PresetChoices(looks, whenNoIsland, !create.equalsIgnoreCase("default"), modesOf(presets));
+        return new PresetChoices(
+                looks,
+                whenNoIsland,
+                !create.equalsIgnoreCase("default"),
+                modesOf(presets),
+                PresetPreview.load(presets.node("preview")));
     }
 
     /**

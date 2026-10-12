@@ -34,11 +34,17 @@ public final class PresetList {
     /** The verb a kind's tile runs to start that island. */
     static final String CREATE = "skyblock:preset-create";
 
+    /** The verb a kind's tile runs to look at that island before choosing it. */
+    static final String PREVIEW = "skyblock:preset-preview";
+
     private final Messages messages;
     private final Supplier<List<StarterPreset>> presets;
     private final Supplier<PresetChoices> choices;
     private final UnaryOperator<String> typed;
     private volatile @Nullable SkyblockMenuEngine engine;
+    private volatile com.uxplima.uxmskyblock.bukkit.preview.@Nullable PresetPreviews previews;
+    private volatile com.uxplima.uxmskyblock.bukkit.bedrock.@Nullable BedrockFormService forms;
+    private volatile com.uxplima.uxmskyblock.core.application.scheduler.@Nullable SchedulerPort scheduler;
 
     /**
      * @param presets the kinds this server can start, in the operator's order
@@ -66,16 +72,116 @@ public final class PresetList {
                 CREATE,
                 ctx -> MenuRow.handle(ctx.context(), StarterPreset.class).ifPresent(preset -> {
                     Player player = ctx.player();
-                    if (!choices.get().allows(player, preset.id())) {
-                        player.sendMessage(messages.render(
-                                player,
-                                "create.preset_locked",
-                                Placeholder.unparsed("preset", messages.words(player, preset.displayName()))));
+                    com.uxplima.uxmskyblock.bukkit.bedrock.BedrockFormService bedrock = forms;
+                    if (bedrock != null && bedrock.isBedrock(player)) {
+                        // A form button holds a title and a line: what the kind is waits on a form of its own.
+                        askBedrock(bedrock, player, preset);
                         return;
                     }
-                    player.closeInventory();
-                    player.performCommand(typed.apply("create " + preset.id()));
+                    create(player, preset);
                 }));
+        engine.action(
+                PREVIEW,
+                ctx -> MenuRow.handle(ctx.context(), StarterPreset.class)
+                        .ifPresent(preset -> preview(ctx.player(), preset)));
+    }
+
+    /** Hands this window the looks before choosing, and the forms a Bedrock player is asked in. */
+    public void usePreviews(
+            com.uxplima.uxmskyblock.bukkit.preview.PresetPreviews previews,
+            com.uxplima.uxmskyblock.bukkit.bedrock.@Nullable BedrockFormService forms,
+            com.uxplima.uxmskyblock.core.application.scheduler.SchedulerPort scheduler) {
+        this.previews = Objects.requireNonNull(previews, "previews must not be null");
+        this.forms = forms;
+        this.scheduler = Objects.requireNonNull(scheduler, "scheduler must not be null");
+    }
+
+    /** Starts the kind for {@code player}, when it is open to them. */
+    void create(Player player, StarterPreset preset) {
+        if (!choices.get().allows(player, preset.id())) {
+            player.sendMessage(messages.render(
+                    player,
+                    "create.preset_locked",
+                    Placeholder.unparsed("preset", messages.words(player, preset.displayName()))));
+            return;
+        }
+        player.closeInventory();
+        player.performCommand(typed.apply("create " + preset.id()));
+    }
+
+    /** Shows {@code player} the start island of the kind, when looks are on. */
+    void preview(Player player, StarterPreset preset) {
+        com.uxplima.uxmskyblock.bukkit.preview.PresetPreviews shown = previews;
+        if (shown == null) {
+            return;
+        }
+        player.closeInventory();
+        shown.show(player, preset);
+    }
+
+    /** What the kind is, then start it, look at it, or go back to the kinds. */
+    private void askBedrock(
+            com.uxplima.uxmskyblock.bukkit.bedrock.BedrockFormService bedrock, Player player, StarterPreset preset) {
+        List<com.uxplima.uxmskyblock.bukkit.bedrock.BedrockFormService.Choice> asked = new ArrayList<>();
+        asked.add(new com.uxplima.uxmskyblock.bukkit.bedrock.BedrockFormService.Choice(
+                label(player, "menu.create.form_create"), () -> onThread(player, () -> create(player, preset))));
+        com.uxplima.uxmskyblock.bukkit.preview.PresetPreviews shown = previews;
+        if (shown != null && shown.enabled()) {
+            asked.add(new com.uxplima.uxmskyblock.bukkit.bedrock.BedrockFormService.Choice(
+                    label(player, "menu.create.form_preview"), () -> onThread(player, () -> preview(player, preset))));
+        }
+        asked.add(new com.uxplima.uxmskyblock.bukkit.bedrock.BedrockFormService.Choice(
+                label(player, "menu.create.form_back"), () -> onThread(player, () -> show(player))));
+        bedrock.openChoiceForm(
+                player,
+                "menu.create.form_title",
+                "menu.create.form_body",
+                List.of(
+                        Placeholder.unparsed("preset", messages.words(player, preset.displayName())),
+                        Placeholder.unparsed("description", messages.words(player, preset.description())),
+                        Placeholder.unparsed(
+                                "access",
+                                messages.words(
+                                        player,
+                                        choices.get().allows(player, preset.id())
+                                                ? "@menu.create.access_open"
+                                                : "@menu.create.access_locked"))),
+                asked);
+    }
+
+    /** The kinds as a form of their own, each its name and whether it is open to the player. */
+    private void showBedrock(com.uxplima.uxmskyblock.bukkit.bedrock.BedrockFormService bedrock, Player player) {
+        List<com.uxplima.uxmskyblock.bukkit.bedrock.BedrockFormService.Choice> kinds = new ArrayList<>();
+        for (MenuRow row : rows(player)) {
+            StarterPreset preset = (StarterPreset) Objects.requireNonNull(row.handle());
+            kinds.add(new com.uxplima.uxmskyblock.bukkit.bedrock.BedrockFormService.Choice(
+                    com.uxplima.uxmskyblock.bukkit.bedrock.FormText.of(messages.renderPlain(
+                            player,
+                            "menu.create.form_kind",
+                            Placeholder.unparsed("preset", row.words().getOrDefault("name", "")),
+                            Placeholder.unparsed("access", row.words().getOrDefault("access", "")))),
+                    () -> onThread(player, () -> askBedrock(bedrock, player, preset))));
+        }
+        bedrock.openChoiceForm(
+                player,
+                "menu.create.title",
+                "menu.create.form_kinds",
+                List.of(Placeholder.unparsed("count", Integer.toString(kinds.size()))),
+                kinds);
+    }
+
+    private String label(Player player, String key) {
+        return com.uxplima.uxmskyblock.bukkit.bedrock.FormText.of(messages.renderPlain(player, key));
+    }
+
+    /** A form answers off the player's thread; what it does is done on it. */
+    private void onThread(Player player, Runnable task) {
+        com.uxplima.uxmskyblock.core.application.scheduler.SchedulerPort hop = scheduler;
+        if (hop == null) {
+            task.run();
+            return;
+        }
+        hop.onEntity(com.uxplima.uxmskyblock.core.domain.identity.PlayerUuid.of(player.getUniqueId()), task);
     }
 
     /** One row per kind: its name, what it is, the item it wears, and whether this player may start it. */
@@ -108,6 +214,12 @@ public final class PresetList {
         Objects.requireNonNull(player, "player must not be null");
         SkyblockMenuEngine current = this.engine;
         int count = presets.get().size();
+        com.uxplima.uxmskyblock.bukkit.bedrock.BedrockFormService bedrock = forms;
+        if (current != null && count > 1 && bedrock != null && bedrock.isBedrock(player)) {
+            // A kind is tapped once to read what it is, and that form starts it or shows it.
+            showBedrock(bedrock, player);
+            return true;
+        }
         return current != null && count > 1 && current.open(player, FILE, Map.of("count", Integer.toString(count)));
     }
 }
