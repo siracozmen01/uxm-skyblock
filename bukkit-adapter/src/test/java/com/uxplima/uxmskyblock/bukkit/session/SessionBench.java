@@ -51,6 +51,21 @@ final class SessionBench implements AutoCloseable {
                 true);
     }
 
+    /** The same, with the scheduler the coordinator runs on passed through {@code schedulers} as well. */
+    SessionBench(
+            ServerMock server,
+            UnaryOperator<ProfileInventoryCheckpointPort> checkpoints,
+            UnaryOperator<com.uxplima.uxmskyblock.core.application.scheduler.SchedulerPort> schedulers)
+            throws Exception {
+        this(
+                server,
+                PersistenceBootstrap.createSqlite(
+                        Files.createTempDirectory("bench_").resolve("bench.db")),
+                checkpoints,
+                schedulers,
+                true);
+    }
+
     /** A second server on the same database, as a restart after a crash finds it; it leaves the database open. */
     SessionBench(ServerMock server, PersistenceBootstrap shared) {
         this(server, shared, UnaryOperator.identity(), false);
@@ -60,6 +75,15 @@ final class SessionBench implements AutoCloseable {
             ServerMock server,
             PersistenceBootstrap persistence,
             UnaryOperator<ProfileInventoryCheckpointPort> checkpoints,
+            boolean ownsPersistence) {
+        this(server, persistence, checkpoints, UnaryOperator.identity(), ownsPersistence);
+    }
+
+    private SessionBench(
+            ServerMock server,
+            PersistenceBootstrap persistence,
+            UnaryOperator<ProfileInventoryCheckpointPort> checkpoints,
+            UnaryOperator<com.uxplima.uxmskyblock.core.application.scheduler.SchedulerPort> schedulers,
             boolean ownsPersistence) {
         this.server = server;
         this.persistence = persistence;
@@ -71,7 +95,7 @@ final class SessionBench implements AutoCloseable {
                 persistence.handoffFinalizationPort(),
                 new SwitchProfileUseCase(persistence.profileSwitchPort(), persistence.inventoryPort()),
                 new InventoryJournalRecovery(persistence.mutationJournalPort(), persistence.inventoryPort()),
-                new FoliaSchedulerAdapter(MockBukkit.createMockPlugin()),
+                schedulers.apply(new FoliaSchedulerAdapter(MockBukkit.createMockPlugin())),
                 new IslandProtectionListener(persistence.islandStoragePort(), new IslandAccessService()),
                 Duration.ofHours(1),
                 Duration.ofHours(1),

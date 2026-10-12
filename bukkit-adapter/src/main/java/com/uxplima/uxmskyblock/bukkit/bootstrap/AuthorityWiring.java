@@ -31,6 +31,7 @@ public final class AuthorityWiring implements AutoCloseable {
     private final PlayerSessionCoordinator sessionCoordinator;
     private final PlayerSessionListener sessionListener;
     private final com.uxplima.uxmskyblock.core.application.profile.ProfileTypes profileTypes;
+    private final com.uxplima.uxmskyblock.core.application.inventory.CarriedStatePort carriedStates;
 
     private AuthorityWiring(
             ServerNodeId serverNodeId,
@@ -38,7 +39,8 @@ public final class AuthorityWiring implements AutoCloseable {
             SwitchProfileUseCase switchProfileUseCase,
             PlayerSessionCoordinator sessionCoordinator,
             PlayerSessionListener sessionListener,
-            com.uxplima.uxmskyblock.core.application.profile.ProfileTypes profileTypes) {
+            com.uxplima.uxmskyblock.core.application.profile.ProfileTypes profileTypes,
+            com.uxplima.uxmskyblock.core.application.inventory.CarriedStatePort carriedStates) {
         this.serverNodeId = Objects.requireNonNull(serverNodeId, "serverNodeId must not be null");
         this.nodeProcessIdentity = Objects.requireNonNull(nodeProcessIdentity, "nodeProcessIdentity must not be null");
         this.switchProfileUseCase =
@@ -46,6 +48,12 @@ public final class AuthorityWiring implements AutoCloseable {
         this.sessionCoordinator = Objects.requireNonNull(sessionCoordinator, "sessionCoordinator must not be null");
         this.sessionListener = Objects.requireNonNull(sessionListener, "sessionListener must not be null");
         this.profileTypes = Objects.requireNonNull(profileTypes, "profileTypes must not be null");
+        this.carriedStates = Objects.requireNonNull(carriedStates, "carriedStates must not be null");
+    }
+
+    /** What each profile put down in each group of worlds, written with its inventory. */
+    public com.uxplima.uxmskyblock.core.application.inventory.CarriedStatePort carriedStates() {
+        return carriedStates;
     }
 
     /** Which ruleset a profile plays under, read once per profile and remembered. */
@@ -113,7 +121,14 @@ public final class AuthorityWiring implements AutoCloseable {
             return persistenceBootstrap.sessionAuthorityPort().findSession(uuid);
         });
 
-        return new AuthorityWiring(serverNodeId, identity, switchProfile, coordinator, listener, profileTypes);
+        return new AuthorityWiring(
+                serverNodeId,
+                identity,
+                switchProfile,
+                coordinator,
+                listener,
+                profileTypes,
+                persistenceBootstrap.carriedStatePort());
     }
 
     public ServerNodeId serverNodeId() {

@@ -412,12 +412,15 @@ public final class PlayerSessionCoordinator {
     private void checkpointNow(PlayerUuid playerUuid, ActiveSession session, ProfileInventoryRecord snapshot) {
         ProfileInventoryMutationOutcome outcome;
         try {
+            // Written over the version the snapshot was taken at. A write that landed between the two, a vault
+            // save or a crossing between groups of worlds, holds what came after the snapshot, and the snapshot
+            // written over it would hand back what the player had before.
             outcome = inventoryCheckpointPort.checkpointInventory(
                     playerUuid,
                     session.activeProfileId(),
                     nodeId,
                     session.sessionEpoch(),
-                    session.lastDurableVersion(),
+                    snapshot.version(),
                     snapshot);
         } catch (RuntimeException e) {
             // A database that did not answer loses nothing: the session keeps the version it

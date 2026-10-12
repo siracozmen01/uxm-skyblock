@@ -102,6 +102,7 @@ public final class PersistenceBootstrap implements AutoCloseable {
     private final ConsumerInboxAdapter consumerInboxAdapter;
     private final PlayerSessionAuthorityAdapter sessionAuthorityAdapter;
     private final PlayerProfileInventoryAdapter inventoryAdapter;
+    private final com.uxplima.uxmskyblock.persistence.inventory.SqlCarriedStateAdapter carriedStateAdapter;
     private final PlayerInventoryMutationJournalAdapter mutationJournalAdapter;
     private final com.uxplima.uxmskyblock.persistence.inventory.PlayerTradeJournalAdapter tradeJournalAdapter;
     private final PlayerProfileHandoffFinalizationAdapter handoffFinalizationAdapter;
@@ -176,6 +177,7 @@ public final class PersistenceBootstrap implements AutoCloseable {
         this.consumerInboxAdapter = new ConsumerInboxAdapter(database);
         this.sessionAuthorityAdapter = new PlayerSessionAuthorityAdapter(database);
         this.inventoryAdapter = new PlayerProfileInventoryAdapter(database);
+        this.carriedStateAdapter = new com.uxplima.uxmskyblock.persistence.inventory.SqlCarriedStateAdapter(database);
         this.mutationJournalAdapter = new PlayerInventoryMutationJournalAdapter(database);
         this.tradeJournalAdapter =
                 new com.uxplima.uxmskyblock.persistence.inventory.PlayerTradeJournalAdapter(database);
@@ -341,6 +343,11 @@ public final class PersistenceBootstrap implements AutoCloseable {
 
     public ProfileInventoryCheckpointPort inventoryPort() {
         return inventoryAdapter;
+    }
+
+    /** What each profile put down in each group of worlds, and the group it carries for. */
+    public com.uxplima.uxmskyblock.core.application.inventory.CarriedStatePort carriedStatePort() {
+        return carriedStateAdapter;
     }
 
     public InventoryMutationJournalPort mutationJournalPort() {

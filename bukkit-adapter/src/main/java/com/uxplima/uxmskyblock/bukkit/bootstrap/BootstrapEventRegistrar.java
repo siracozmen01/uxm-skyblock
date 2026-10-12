@@ -24,12 +24,35 @@ public final class BootstrapEventRegistrar {
         var scheduler = gameplayWiring.scheduler();
         java.util.concurrent.atomic.AtomicReference<com.uxplima.uxmskyblock.bukkit.state.PlayerStateListener> carried =
                 new java.util.concurrent.atomic.AtomicReference<>();
-        carried.set(new com.uxplima.uxmskyblock.bukkit.state.PlayerStateListener(
+        var coordinator = authorityWiring.sessionCoordinator();
+        com.uxplima.uxmskyblock.bukkit.state.PlayerStates states =
                 new com.uxplima.uxmskyblock.bukkit.state.PlayerStates(
                         configWiring::carriedStateConfig,
                         () -> presetWorlds(configWiring),
                         new com.uxplima.uxmskyblock.bukkit.creative.ServerInventoryCodec(),
-                        new com.uxplima.uxmskyblock.bukkit.state.ServerAdvancements()),
+                        new com.uxplima.uxmskyblock.bukkit.state.ServerAdvancements(),
+                        authorityWiring.carriedStates(),
+                        new com.uxplima.uxmskyblock.bukkit.state.PlayerStates.Sessions() {
+                            @Override
+                            public com.uxplima.uxmskyblock.bukkit.session.@org.jspecify.annotations.Nullable ActiveSession session(java.util.UUID player) {
+                                return coordinator.getActiveSession(player);
+                            }
+
+                            @Override
+                            public boolean inPlay(java.util.UUID player) {
+                                return coordinator.inPlay(player);
+                            }
+
+                            @Override
+                            public com.uxplima.uxmskyblock.core.domain.session.ServerNodeId node() {
+                                return coordinator.nodeId();
+                            }
+                        },
+                        scheduler);
+        coordinator.whenSessionActive(states::sessionActive);
+        coordinator.whenProfileLeft((player, profile) -> states.left(player));
+        carried.set(new com.uxplima.uxmskyblock.bukkit.state.PlayerStateListener(
+                states,
                 player -> scheduler.onEntity(
                         player.getUniqueId(),
                         () -> java.util.Objects.requireNonNull(carried.get()).arrive(player))));

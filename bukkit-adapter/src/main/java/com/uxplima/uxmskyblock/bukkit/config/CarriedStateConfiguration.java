@@ -42,6 +42,12 @@ public record CarriedStateConfiguration(boolean enabled, Map<String, List<String
             boolean advancements) {
 
         public static final Keeps ALL = new Keeps(true, true, true, true, true, true, true);
+
+        /** The same parts, as a crossing keeps them apart. */
+        public com.uxplima.uxmskyblock.core.domain.inventory.CarriedParts parts() {
+            return new com.uxplima.uxmskyblock.core.domain.inventory.CarriedParts(
+                    inventory, enderChest, experience, health, hunger, effects, advancements);
+        }
     }
 
     public static final CarriedStateConfiguration SHIPPED = new CarriedStateConfiguration(true, Map.of(), Keeps.ALL);

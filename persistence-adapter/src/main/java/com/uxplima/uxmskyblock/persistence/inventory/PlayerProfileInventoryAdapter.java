@@ -61,7 +61,7 @@ public final class PlayerProfileInventoryAdapter implements ProfileInventoryChec
         this.insertInventorySql = buildInsertInventorySql();
     }
 
-    private static String buildSelectSessionAuthoritySql(Dialect dialect) {
+    static String buildSelectSessionAuthoritySql(Dialect dialect) {
         String base = "SELECT active_profile_id, authoritative_node, session_epoch, state, "
                 + "(CASE WHEN lease_expires_at >= CURRENT_TIMESTAMP THEN 1 ELSE 0 END) AS lease_valid "
                 + "FROM player_sessions "
@@ -69,7 +69,7 @@ public final class PlayerProfileInventoryAdapter implements ProfileInventoryChec
         return dialect == Dialect.SQLITE ? base : base + " FOR UPDATE";
     }
 
-    private static String buildUpdateInventoryOccSql() {
+    static String buildUpdateInventoryOccSql() {
         return "UPDATE profile_inventories "
                 + "SET profile_inventory_version = profile_inventory_version + 1, "
                 + PlayerStateColumns.ASSIGNMENTS + ", "
@@ -196,7 +196,22 @@ public final class PlayerProfileInventoryAdapter implements ProfileInventoryChec
     private boolean validateAuthority(
             Connection conn, PlayerUuid playerUuid, ProfileId profileId, ServerNodeId currentNode, long expectedEpoch)
             throws SQLException {
-        try (PreparedStatement ps = conn.prepareStatement(selectSessionAuthoritySql)) {
+        return authorityHolds(conn, selectSessionAuthoritySql, playerUuid, profileId, currentNode, expectedEpoch);
+    }
+
+    /**
+     * Whether {@code currentNode} holds {@code playerUuid}'s session at {@code expectedEpoch}, active, leased and
+     * playing {@code profileId}, read with {@code sql} from {@link #buildSelectSessionAuthoritySql}.
+     */
+    static boolean authorityHolds(
+            Connection conn,
+            String sql,
+            PlayerUuid playerUuid,
+            ProfileId profileId,
+            ServerNodeId currentNode,
+            long expectedEpoch)
+            throws SQLException {
+        try (PreparedStatement ps = conn.prepareStatement(sql)) {
             ps.setString(1, playerUuid.value().toString());
             try (ResultSet rs = ps.executeQuery()) {
                 if (!rs.next()) {
@@ -231,7 +246,7 @@ public final class PlayerProfileInventoryAdapter implements ProfileInventoryChec
      * <p>A side of a trade that recovery already put back is the player's again, though the trade
      * stays open until its other side is put back too.
      */
-    private static boolean journalOwns(Connection conn, ProfileId profileId) throws SQLException {
+    static boolean journalOwns(Connection conn, ProfileId profileId) throws SQLException {
         try (PreparedStatement ps = conn.prepareStatement("SELECT 1 FROM inventory_mutation_journals j "
                 + "JOIN inventory_mutation_participants p ON p.operation_id = j.operation_id "
                 + "WHERE p.owner_root_id = ? AND j.state = 'INTENT' AND p.durable_apply_state <> 'REVERTED'")) {
@@ -252,7 +267,7 @@ public final class PlayerProfileInventoryAdapter implements ProfileInventoryChec
         }
     }
 
-    private static void rollbackSqlite(Connection conn) {
+    static void rollbackSqlite(Connection conn) {
         try (Statement stmt = conn.createStatement()) {
             stmt.execute("ROLLBACK");
         } catch (SQLException ignored) {

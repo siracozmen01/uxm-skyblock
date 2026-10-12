@@ -45,6 +45,7 @@ final class OperationsSchemaMigrations {
         list.add(ChunkBlockSchemaMigrationsV50.migration(dialect));
         list.add(IslandEdgeSchemaMigrationsV51.migration(dialect));
         list.add(ActivityFeedSchemaMigrationsV52.migration(dialect));
+        list.add(CarriedStateSchemaMigrationsV53.migration(dialect));
         return List.copyOf(list);
     }
 }
