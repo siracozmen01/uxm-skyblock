@@ -64,10 +64,12 @@ class TheModesShipTheirMissionPacksTest {
     @Test
     @DisplayName("A phase a OneBlock mission names is one the shipped OneBlock file has")
     void everyPhaseIsShipped() throws Exception {
-        Set<String> phases = OneBlockConfiguration.load(HoconConfigurationLoader.builder()
-                        .path(Path.of("src/main/resources/modules/oneblock.conf"))
-                        .build()
-                        .load())
+        Set<String> phases = OneBlockConfiguration.load(
+                        HoconConfigurationLoader.builder()
+                                .path(Path.of("src/main/resources/modules/oneblock.conf"))
+                                .build()
+                                .load(),
+                        Path.of("src/main/resources/oneblock/phases"))
                 .phases()
                 .phases()
                 .stream()

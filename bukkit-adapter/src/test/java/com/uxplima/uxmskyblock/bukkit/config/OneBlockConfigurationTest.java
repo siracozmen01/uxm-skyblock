@@ -26,17 +26,24 @@ class OneBlockConfigurationTest extends MockBukkitHarness {
             shipped = new String(in.readAllBytes(), StandardCharsets.UTF_8);
         }
         ConfigurationNode root = root(shipped);
+        java.nio.file.Path folder = java.nio.file.Path.of("src/main/resources/oneblock/phases");
 
-        OneBlockConfiguration config = OneBlockConfiguration.load(root);
+        OneBlockConfiguration config = OneBlockConfiguration.load(root, folder);
 
         assertThat(config.enabled()).isTrue();
         assertThat(config.phases().afterTheLast()).isEqualTo(OneBlockPhases.AfterTheLast.REPEAT);
         assertThat(config.phases().phases())
                 .extracting(OneBlockPhase::key)
                 .containsExactly("plains", "underground", "snow", "ocean", "jungle", "nether", "end");
-        for (int index = 0; index < config.phases().phases().size(); index++) {
-            OneBlockPhase phase = config.phases().phases().get(index);
-            ConfigurationNode written = root.node("phases").childrenList().get(index);
+        assertThat(config.phases().phases())
+                .extracting(OneBlockPhase::key)
+                .describedAs("every shipped phase file is one the plugin unpacks")
+                .containsExactlyElementsOf(OneBlockPhaseFiles.SHIPPED);
+        for (OneBlockPhase phase : config.phases().phases()) {
+            ConfigurationNode written = org.spongepowered.configurate.hocon.HoconConfigurationLoader.builder()
+                    .path(folder.resolve(phase.key() + ".conf"))
+                    .build()
+                    .load();
             assertThat(phase.blockPool().weights())
                     .describedAs("%s: every block written is one the server knows", phase.key())
                     .hasSameSizeAs(written.node("blocks").childrenMap());
@@ -44,7 +51,13 @@ class OneBlockConfigurationTest extends MockBukkitHarness {
                     .describedAs("%s: every creature written is one the server can spawn", phase.key())
                     .hasSameSizeAs(written.node("creatures").childrenMap());
             assertThat(phase.blocks()).isEqualTo(written.node("length").getLong());
+            assertThat(config.iconOf(phase.key()))
+                    .describedAs("%s: its icon is the one written", phase.key())
+                    .isEqualTo(written.node("icon").getString());
         }
+        assertThat(config.phases().phases().stream().map(phase -> config.iconOf(phase.key())))
+                .describedAs("each shipped phase has an icon of its own")
+                .doesNotHaveDuplicates();
     }
 
     @Test

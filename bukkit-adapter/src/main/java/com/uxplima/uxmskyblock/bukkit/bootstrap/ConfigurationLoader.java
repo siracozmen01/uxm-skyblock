@@ -317,11 +317,13 @@ public final class ConfigurationLoader {
                 GeneratorsConfiguration::load,
                 GeneratorsConfiguration.defaultConfiguration());
 
+        Path phasesFolder = dataDir.resolve("oneblock").resolve("phases");
+        oneBlockPhaseFiles(plugin, dataDir, phasesFolder);
         com.uxplima.uxmskyblock.bukkit.config.OneBlockConfiguration oneBlockConfig = loadConfig(
                 plugin,
                 dataDir,
                 "oneblock.conf",
-                com.uxplima.uxmskyblock.bukkit.config.OneBlockConfiguration::load,
+                node -> com.uxplima.uxmskyblock.bukkit.config.OneBlockConfiguration.load(node, phasesFolder),
                 com.uxplima.uxmskyblock.bukkit.config.OneBlockConfiguration.defaultConfiguration());
         com.uxplima.uxmskyblock.bukkit.config.LifecycleConfiguration lifecycleConfig = loadConfig(
                 plugin,
@@ -535,6 +537,28 @@ public final class ConfigurationLoader {
                     + ". It loads as it is.");
         }
         return false;
+    }
+
+    /**
+     * Moves phases still written inside the OneBlock file into a file each, then ships the phase files a fresh
+     * server lacks. Moved first, so a phase the operator wrote is never shadowed by the shipped file of its name.
+     */
+    private static void oneBlockPhaseFiles(JavaPlugin plugin, Path dataDir, Path phasesFolder) {
+        for (Path file :
+                List.of(dataDir.resolve("modules").resolve("oneblock.conf"), dataDir.resolve("oneblock.conf"))) {
+            if (!Files.exists(file)) {
+                continue;
+            }
+            try {
+                com.uxplima.uxmskyblock.bukkit.config.OneBlockPhaseFiles.moveIntoFiles(file, phasesFolder);
+            } catch (java.io.IOException | RuntimeException e) {
+                LOGGER.warning("The OneBlock phases written in " + file + " could not be moved into files ("
+                        + e.getMessage() + "). They are read from the list as they stand.");
+            }
+        }
+        for (String phase : com.uxplima.uxmskyblock.bukkit.config.OneBlockPhaseFiles.SHIPPED) {
+            unpackResource(plugin, "oneblock/phases/" + phase + ".conf", phasesFolder.resolve(phase + ".conf"));
+        }
     }
 
     /**
