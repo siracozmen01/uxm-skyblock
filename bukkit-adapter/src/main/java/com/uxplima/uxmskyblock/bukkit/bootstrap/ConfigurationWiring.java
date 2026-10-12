@@ -627,6 +627,19 @@ public final class ConfigurationWiring {
         this.carriedStateConfig = Objects.requireNonNull(config, "config must not be null");
     }
 
+    /** The loot tables under {@code loot/}, none until handed over. */
+    private volatile com.uxplima.uxmskyblock.bukkit.loot.LootTables lootTables =
+            com.uxplima.uxmskyblock.bukkit.loot.LootTables.none();
+
+    public com.uxplima.uxmskyblock.bukkit.loot.LootTables lootTables() {
+        return lootTables;
+    }
+
+    /** Hands over the loot tables as the server read them. */
+    public void useLootTables(com.uxplima.uxmskyblock.bukkit.loot.LootTables tables) {
+        this.lootTables = Objects.requireNonNull(tables, "tables must not be null");
+    }
+
     /** Whether islands can be ChunkBlock islands, and what each chunk costs in level. */
     public com.uxplima.uxmskyblock.bukkit.config.ChunkBlockConfiguration chunkBlockConfig() {
         return chunkBlockConfig;

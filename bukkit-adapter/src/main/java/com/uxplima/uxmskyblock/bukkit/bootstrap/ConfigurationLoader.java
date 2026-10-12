@@ -74,6 +74,9 @@ public final class ConfigurationLoader {
 
     private static final Logger LOGGER = Logger.getLogger(ConfigurationLoader.class.getName());
 
+    /** The loot tables a server is shipped with, under {@code loot/}. */
+    private static final List<String> SHIPPED_LOOT = List.of("treasure.conf");
+
     /**
      * The menu files this plugin ships, written next to the server once and never over an edit.
      *
@@ -136,6 +139,7 @@ public final class ConfigurationLoader {
             Files.createDirectories(dataDir.resolve("modules"));
             Files.createDirectories(dataDir.resolve("menus"));
             Files.createDirectories(dataDir.resolve("messages"));
+            Files.createDirectories(dataDir.resolve("loot"));
         } catch (IOException e) {
             throw new IllegalStateException("Failed to initialize plugin directories at: " + dataDir, e);
         }
@@ -459,6 +463,14 @@ public final class ConfigurationLoader {
                 "player-state.conf",
                 com.uxplima.uxmskyblock.bukkit.config.CarriedStateConfiguration::load,
                 com.uxplima.uxmskyblock.bukkit.config.CarriedStateConfiguration.defaultConfiguration()));
+        // A loot table is the operator's once written: shipped once, never brought up to date over their edits.
+        for (String table : SHIPPED_LOOT) {
+            unpackResource(plugin, "loot/" + table, dataDir.resolve("loot").resolve(table));
+        }
+        com.uxplima.uxmskyblock.bukkit.loot.LootTables loot =
+                com.uxplima.uxmskyblock.bukkit.loot.LootTables.read(dataDir.resolve("loot"));
+        loot.problems().forEach(LOGGER::warning);
+        wiring.useLootTables(loot);
         wiring.validate();
         return wiring;
     }

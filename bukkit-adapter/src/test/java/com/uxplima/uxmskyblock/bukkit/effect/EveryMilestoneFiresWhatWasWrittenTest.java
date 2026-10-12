@@ -28,9 +28,13 @@ class EveryMilestoneFiresWhatWasWrittenTest {
 
     private static final Path SOURCES = Path.of("src/main/java");
     private static final Path SHIPPED = Path.of("src/main/resources/modules/effects.conf");
+    private static final Path LOOT = Path.of("src/main/resources/loot");
 
     /** {@code fire(written, "kinetic-ward", ...)} and {@code fireMilestone("island-created", ...)}. */
     private static final Pattern FIRED = Pattern.compile("fire(?:Milestone)?\\([^\"]*\"([a-z-]+)\"");
+
+    /** A shipped loot table's rarity names the entry fired for whoever finds it: {@code effects = "loot-rare"}. */
+    private static final Pattern NAMED_BY_LOOT = Pattern.compile("effects\\s*=\\s*\"([a-z-]+)\"");
 
     @Test
     @DisplayName("Every interaction the code fires is one the shipped file names")
@@ -102,7 +106,9 @@ class EveryMilestoneFiresWhatWasWrittenTest {
                         "parkour-run-started",
                         "parkour-checkpoint",
                         "parkour-finished",
-                        "parkour-record"));
+                        "parkour-record",
+                        "loot-rare",
+                        "loot-legendary"));
     }
 
     private static Set<String> firedInteractions() throws IOException {
@@ -117,6 +123,15 @@ class EveryMilestoneFiresWhatWasWrittenTest {
             }
         }
         assertThat(fired).describedAs("the scan really found the calls").isNotEmpty();
+        try (Stream<Path> files = Files.list(LOOT)) {
+            for (Path file :
+                    files.filter(path -> path.toString().endsWith(".conf")).toList()) {
+                Matcher matcher = NAMED_BY_LOOT.matcher(Files.readString(file, StandardCharsets.UTF_8));
+                while (matcher.find()) {
+                    fired.add(matcher.group(1));
+                }
+            }
+        }
         return fired;
     }
 }

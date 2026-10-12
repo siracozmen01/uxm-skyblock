@@ -108,6 +108,16 @@ public final class EffectsConfiguration {
                 parseAll(
                         "poseidon-still-drowns",
                         List.of("[sound] entity.player.hurt_drown 0.8 1.0", "[particle] BUBBLE 10 0.4")));
+        defaults.put(
+                "loot-rare",
+                parseAll(
+                        "loot-rare",
+                        List.of("[sound] entity.experience_orb.pickup 1.0 1.2", "[particle] HAPPY_VILLAGER 12 0.5")));
+        defaults.put(
+                "loot-legendary",
+                parseAll(
+                        "loot-legendary",
+                        List.of("[sound] ui.toast.challenge_complete 1.0 1.4", "[particle] TOTEM_OF_UNDYING 30 0.6")));
         return new InteractionEffects(defaults);
     }
 

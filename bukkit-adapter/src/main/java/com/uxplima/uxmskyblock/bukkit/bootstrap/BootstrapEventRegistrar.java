@@ -59,6 +59,16 @@ public final class BootstrapEventRegistrar {
                         player.getUniqueId(),
                         () -> java.util.Objects.requireNonNull(carried.get()).arrive(player))));
         pm.registerEvents(carried.get(), plugin);
+        // A container given a loot table is filled the first time a player opens it.
+        pm.registerEvents(
+                new com.uxplima.uxmskyblock.bukkit.loot.LootContainers(
+                        configWiring::lootTables,
+                        new com.uxplima.uxmskyblock.bukkit.loot.LootFiller(
+                                new com.uxplima.uxmskyblock.bukkit.effect.InteractionEffectPlayer(
+                                        scheduler, configWiring.messages()),
+                                configWiring::effectsConfig,
+                                com.uxplima.uxmskyblock.bukkit.loot.LootFiller.SERVER)),
+                plugin);
         // Folia moves players between worlds without telling, so every player is looked at once a second.
         scheduler.repeatGlobal(
                 () -> {
