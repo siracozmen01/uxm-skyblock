@@ -393,6 +393,23 @@ public final class GameplayWiring {
         if (missions != null) {
             this.oneBlockWiring.listener().useMissions(missions);
             this.boxedWiring.listener().useMissions(missions);
+            // A level and a bank balance are reached rather than counted one at a time.
+            missions.useMembers(this.membershipService()::members, org.bukkit.Bukkit::getPlayer);
+            this.economicWiring
+                    .worthService()
+                    .whenScored((islandId, score) -> missions.reached(
+                            islandId,
+                            com.uxplima.uxmskyblock.core.domain.mission.MissionTriggerType.LEVEL_REACH,
+                            score.calculatedLevel()));
+            this.economicWiring
+                    .bankService()
+                    .whenBalanced((islandId, minor) -> missions.reached(
+                            islandId,
+                            com.uxplima.uxmskyblock.core.domain.mission.MissionTriggerType.BANK_BALANCE,
+                            java.math.BigDecimal.valueOf(minor)
+                                    .movePointLeft(
+                                            com.uxplima.uxmskyblock.core.application.bank.BankCurrencies.PRIMARY_SCALE)
+                                    .longValue()));
         }
         // Each island's edge is drawn the way its members chose: the client's border, a wall, or nothing. A ChunkBlock
         // island is edged by the wall around its open ground instead.

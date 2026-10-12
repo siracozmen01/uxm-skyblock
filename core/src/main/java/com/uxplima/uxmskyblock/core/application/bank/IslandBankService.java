@@ -24,6 +24,9 @@ import org.jspecify.annotations.Nullable;
  */
 public final class IslandBankService {
 
+    private static final java.util.logging.Logger LOGGER =
+            java.util.logging.Logger.getLogger(IslandBankService.class.getName());
+
     private final IslandBankPort islandBankPort;
     private final IslandStoragePort islandStoragePort;
     private final IslandAuthorityPort islandAuthorityPort;
@@ -57,6 +60,17 @@ public final class IslandBankService {
     }
 
     /** The bank of the profile's island, everything it holds included, or nothing without an island or a bank. */
+    private final java.util.List<java.util.function.BiConsumer<IslandId, Long>> balanceListeners =
+            new java.util.concurrent.CopyOnWriteArrayList<>();
+
+    /**
+     * Told the island's balance of the main currency, in minor units, each time a move of it lands. A listener
+     * that fails is said in the console and the move stands.
+     */
+    public void whenBalanced(java.util.function.BiConsumer<IslandId, Long> listener) {
+        balanceListeners.add(Objects.requireNonNull(listener, "listener must not be null"));
+    }
+
     public Optional<IslandBank> findBank(ProfileId profileId) {
         Objects.requireNonNull(profileId, "profileId must not be null");
         return islandStoragePort.findIslandIdByProfileId(profileId).flatMap(islandBankPort::findBankByIslandId);
@@ -314,7 +328,7 @@ public final class IslandBankService {
                                 JsonText.escaped(reason)))
                 : null;
 
-        return islandBankPort.executeTransaction(
+        BankTransactionOutcome outcome = islandBankPort.executeTransaction(
                 islandId,
                 playerUuid.value(),
                 column,
@@ -328,5 +342,16 @@ public final class IslandBankService {
                 idempotencyKey,
                 operationScope,
                 outboxEvent);
+        if (outcome instanceof BankTransactionOutcome.Success done && BankCurrencies.PRIMARY_COLUMN.equals(column)) {
+            long balance = done.updatedBank().primaryBalanceMinorUnits();
+            for (java.util.function.BiConsumer<IslandId, Long> listener : balanceListeners) {
+                try {
+                    listener.accept(islandId, balance);
+                } catch (RuntimeException e) {
+                    LOGGER.log(java.util.logging.Level.WARNING, "A listener to the bank's balance failed", e);
+                }
+            }
+        }
+        return outcome;
     }
 }

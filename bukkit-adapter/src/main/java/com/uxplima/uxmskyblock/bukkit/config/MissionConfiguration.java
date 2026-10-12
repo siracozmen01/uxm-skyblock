@@ -179,6 +179,12 @@ public record MissionConfiguration(boolean enabled, List<MissionDefinition> miss
                 triggerType = MissionTriggerType.BLOCK_BREAK;
             }
 
+            if (triggerType == MissionTriggerType.CUSTOM_MOB_KILL) {
+                LOGGER.warning(() -> "The mission " + missionKey + " counts CUSTOM_MOB_KILL, which nothing on this"
+                        + " server gives: no plugin here makes custom creatures, and a creature named with a name tag"
+                        + " is anybody's. It is left out.");
+                continue;
+            }
             String targetFilter = mNode.node("target-filter").getString("");
             long requiredAmount = Math.max(1L, mNode.node("required-amount").getLong(10L));
 

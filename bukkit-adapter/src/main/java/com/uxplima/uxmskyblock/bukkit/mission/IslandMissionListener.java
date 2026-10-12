@@ -127,6 +127,45 @@ public final class IslandMissionListener implements Listener, ModeMissions {
         }
     }
 
+    private volatile java.util.function.Function<
+                    IslandId, List<com.uxplima.uxmskyblock.core.domain.island.IslandMember>>
+            members = island -> List.of();
+    private volatile java.util.function.Function<UUID, @org.jspecify.annotations.Nullable Player> online = uuid -> null;
+
+    /** Tells it who is on an island, and which of them is on this server, for the missions an island reaches. */
+    public void useMembers(
+            java.util.function.Function<IslandId, List<com.uxplima.uxmskyblock.core.domain.island.IslandMember>>
+                    members,
+            java.util.function.Function<UUID, @org.jspecify.annotations.Nullable Player> online) {
+        this.members = Objects.requireNonNull(members, "members must not be null");
+        this.online = Objects.requireNonNull(online, "online must not be null");
+    }
+
+    /**
+     * The island stands at {@code reached} of what {@code trigger} counts, a level or a balance: every member's
+     * missions that count it move up to it, and a member here is told of one it finished.
+     */
+    public void reached(IslandId islandId, MissionTriggerType trigger, long reached) {
+        schedulerPort.async(() -> {
+            for (com.uxplima.uxmskyblock.core.domain.island.IslandMember member : members.apply(islandId)) {
+                List<MissionProgress> updated =
+                        missionService.handleReach(islandId, member.profileId(), trigger, reached, Instant.now());
+                UUID uuid = member.playerUuid().value();
+                for (MissionProgress progress : updated) {
+                    if (progress.completed()) {
+                        // The player is looked up on their own thread, where they may be touched.
+                        schedulerPort.onEntity(new PlayerUuid(uuid), () -> {
+                            Player player = online.apply(uuid);
+                            if (player != null) {
+                                notifyCompletion(player, uuid, progress);
+                            }
+                        });
+                    }
+                }
+            }
+        });
+    }
+
     /** A mode's own event, counted as any other trigger is. */
     @Override
     public void counted(Player player, MissionTriggerType trigger, String target, long amount) {

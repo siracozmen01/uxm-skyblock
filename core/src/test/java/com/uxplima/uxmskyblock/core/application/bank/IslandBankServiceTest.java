@@ -75,6 +75,24 @@ class IslandBankServiceTest {
     }
 
     @Test
+    @DisplayName("A move of the money that lands tells the balance; another currency, a refused move or a failing"
+            + " listener does not stop it")
+    void aBalanceIsTold() {
+        List<String> told = new java.util.ArrayList<>();
+        bankService.whenBalanced((island, balance) -> {
+            throw new IllegalStateException("a listener that fails");
+        });
+        bankService.whenBalanced((island, balance) -> told.add(island.equals(islandId) + " " + balance));
+
+        BankTransactionOutcome landed = bankService.deposit(profileId, playerUuid, 2000L, nodeId);
+        bankService.moveOnce(profileId, playerUuid, "experience", 40L, "In", nodeId, "k-experience");
+        bankService.deposit(new ProfileId(UUID.randomUUID()), playerUuid, 1L, nodeId);
+
+        assertThat(landed).isInstanceOf(BankTransactionOutcome.Success.class);
+        assertThat(told).containsExactly("true 7000");
+    }
+
+    @Test
     @DisplayName("The bank of a profile is read with everything it holds, and nothing without an island")
     void theBankOfAProfile() {
         bankPort.banks.put(

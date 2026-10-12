@@ -133,6 +133,77 @@ class IslandMissionListenerTest {
                         any());
     }
 
+    @Test
+    @DisplayName("A level reached moves every member's missions, and a member on this server hears of one finished")
+    void aLevelReachedMovesEveryMember() {
+        ProfileId otherProfile = new ProfileId(UUID.randomUUID());
+        UUID otherUuid = UUID.randomUUID();
+        com.uxplima.uxmskyblock.core.domain.mission.MissionDefinition levelTen =
+                new com.uxplima.uxmskyblock.core.domain.mission.MissionDefinition(
+                        com.uxplima.uxmskyblock.core.domain.mission.MissionId.of("level_ten"),
+                        com.uxplima.uxmskyblock.core.domain.mission.MissionBranch.ECONOMY,
+                        "Level ten",
+                        "",
+                        MissionTriggerType.LEVEL_REACH,
+                        "",
+                        10L,
+                        com.uxplima.uxmskyblock.core.domain.mission.MissionReward.empty());
+        com.uxplima.uxmskyblock.core.domain.mission.MissionProgress done =
+                new com.uxplima.uxmskyblock.core.domain.mission.MissionProgress(
+                        levelTen.id(), 10L, true, java.time.Instant.now(), java.time.Instant.now());
+        when(missionService.findMission(levelTen.id())).thenReturn(Optional.of(levelTen));
+        when(missionService.handleReach(
+                        org.mockito.ArgumentMatchers.eq(islandId),
+                        org.mockito.ArgumentMatchers.eq(profileId),
+                        any(),
+                        org.mockito.ArgumentMatchers.anyLong(),
+                        any()))
+                .thenReturn(java.util.List.of(
+                        done,
+                        new com.uxplima.uxmskyblock.core.domain.mission.MissionProgress(
+                                levelTen.id(), 4L, false, null, java.time.Instant.now())));
+        when(missionService.handleReach(
+                        org.mockito.ArgumentMatchers.eq(islandId),
+                        org.mockito.ArgumentMatchers.eq(otherProfile),
+                        any(),
+                        org.mockito.ArgumentMatchers.anyLong(),
+                        any()))
+                .thenReturn(java.util.List.of(done));
+        listener.useMembers(
+                island -> island.equals(islandId)
+                        ? java.util.List.of(
+                                new com.uxplima.uxmskyblock.core.domain.island.IslandMember(
+                                        new PlayerUuid(playerUuid),
+                                        profileId,
+                                        com.uxplima.uxmskyblock.core.domain.island.IslandRole.OWNER,
+                                        java.time.Instant.now()),
+                                new com.uxplima.uxmskyblock.core.domain.island.IslandMember(
+                                        new PlayerUuid(otherUuid),
+                                        otherProfile,
+                                        com.uxplima.uxmskyblock.core.domain.island.IslandRole.OWNER,
+                                        java.time.Instant.now()))
+                        : java.util.List.of(),
+                uuid -> uuid.equals(playerUuid) ? player : null);
+
+        listener.reached(islandId, MissionTriggerType.LEVEL_REACH, 12L);
+
+        verify(missionService)
+                .handleReach(
+                        org.mockito.ArgumentMatchers.eq(islandId),
+                        org.mockito.ArgumentMatchers.eq(profileId),
+                        org.mockito.ArgumentMatchers.eq(MissionTriggerType.LEVEL_REACH),
+                        org.mockito.ArgumentMatchers.eq(12L),
+                        any());
+        verify(missionService)
+                .handleReach(
+                        org.mockito.ArgumentMatchers.eq(islandId),
+                        org.mockito.ArgumentMatchers.eq(otherProfile),
+                        org.mockito.ArgumentMatchers.eq(MissionTriggerType.LEVEL_REACH),
+                        org.mockito.ArgumentMatchers.eq(12L),
+                        any());
+        verify(player, times(1)).sendMessage(any(net.kyori.adventure.text.Component.class));
+    }
+
     private static class ImmediateScheduler implements SchedulerPort {
         @Override
         public void onGlobal(Runnable task) {

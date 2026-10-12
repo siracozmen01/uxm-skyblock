@@ -252,39 +252,69 @@ public final class IslandMissionService {
         List<MissionProgress> updated = new ArrayList<>();
 
         for (MissionDefinition def : missionCatalog.values()) {
-            if (def.triggerType() != triggerType) {
+            if (def.triggerType() != triggerType
+                    || !matchesFilter(def.targetFilter(), target)
+                    || !offered(islandId, def, playerProgress, now)) {
                 continue;
             }
-            if (!matchesFilter(def.targetFilter(), target)) {
-                continue;
-            }
-            if (!offered(islandId, def, playerProgress, now)) {
-                continue;
-            }
+            move(islandId, profileId, def, amount, playerProgress, now, updated);
+        }
+        return updated;
+    }
 
-            Advance advance = advance(playerProgress, def, amount, now);
-            if (advance == null) {
+    /**
+     * Moves the missions that count {@code triggerType} up to {@code reached}, a level or a balance the island
+     * stands at now rather than one more of something. A mission already further on stays where it is.
+     */
+    public List<MissionProgress> handleReach(
+            IslandId islandId, ProfileId profileId, MissionTriggerType triggerType, long reached, Instant now) {
+        Objects.requireNonNull(islandId, "islandId must not be null");
+        Objects.requireNonNull(profileId, "profileId must not be null");
+        Objects.requireNonNull(triggerType, "triggerType must not be null");
+        Objects.requireNonNull(now, "now must not be null");
+        Map<MissionId, MissionProgress> playerProgress = findAllProgress(islandId, profileId);
+        List<MissionProgress> updated = new ArrayList<>();
+        for (MissionDefinition def : missionCatalog.values()) {
+            if (def.triggerType() != triggerType || !offered(islandId, def, playerProgress, now)) {
                 continue;
             }
-
-            MissionProgress next = advance.progress();
-            if (next.completed()) {
-                dirtyEntries.remove(dirtyKey(islandId, profileId, def.id()));
-                storagePort.saveProgress(islandId, profileId, next);
-            } else {
-                dirtyEntries.put(
-                        dirtyKey(islandId, profileId, def.id()), new DirtyProgressEntry(islandId, profileId, next));
-            }
-            updated.add(next);
-
-            if (advance.finishedItNow()) {
-                if (rewardPort != null) {
-                    rewardPort.dispatchReward(islandId, profileId, def);
-                }
-                tellSomebodyItFinished(islandId, profileId, def);
+            MissionProgress stands = playerProgress.get(def.id());
+            long counted = stands == null ? 0L : current(def, stands, now).progressCount();
+            if (reached > counted) {
+                move(islandId, profileId, def, reached - counted, playerProgress, now, updated);
             }
         }
         return updated;
+    }
+
+    /** Moves one mission on by {@code amount}, writes where it stands, and pays it when this finished it. */
+    private void move(
+            IslandId islandId,
+            ProfileId profileId,
+            MissionDefinition def,
+            long amount,
+            Map<MissionId, MissionProgress> playerProgress,
+            Instant now,
+            List<MissionProgress> updated) {
+        Advance advance = advance(playerProgress, def, amount, now);
+        if (advance == null) {
+            return;
+        }
+        MissionProgress next = advance.progress();
+        if (next.completed()) {
+            dirtyEntries.remove(dirtyKey(islandId, profileId, def.id()));
+            storagePort.saveProgress(islandId, profileId, next);
+        } else {
+            dirtyEntries.put(
+                    dirtyKey(islandId, profileId, def.id()), new DirtyProgressEntry(islandId, profileId, next));
+        }
+        updated.add(next);
+        if (advance.finishedItNow()) {
+            if (rewardPort != null) {
+                rewardPort.dispatchReward(islandId, profileId, def);
+            }
+            tellSomebodyItFinished(islandId, profileId, def);
+        }
     }
 
     /**

@@ -18,7 +18,9 @@ import org.spongepowered.configurate.hocon.HoconConfigurationLoader;
 class AMissionNamesItsModesTest {
 
     @Test
-    @DisplayName("Modes in a list or one alone, a mission it follows, and one naming no mode there is, left out")
+    @DisplayName(
+            "Modes in a list or one alone, a mission it follows; one naming no mode there is, or counting what nothing"
+                    + " gives, left out")
     void modesAndAfter() throws Exception {
         Map<String, MissionDefinition> read =
                 MissionConfiguration.load(HoconConfigurationLoader.builder().buildAndLoadString("""
@@ -27,6 +29,7 @@ class AMissionNamesItsModesTest {
                                   second { trigger-type = BLOCK_BREAK, modes = "oneblock", after = "first" }
                                   plain { trigger-type = BLOCK_BREAK, after = "plain" }
                                   misspelt { trigger-type = BLOCK_BREAK, modes = ["oneblok"] }
+                                  named { trigger-type = CUSTOM_MOB_KILL, target-filter = "Boss" }
                                 }
                                 """))
                         .missions()
