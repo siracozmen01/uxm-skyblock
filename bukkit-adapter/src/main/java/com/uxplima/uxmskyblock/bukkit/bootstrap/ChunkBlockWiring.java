@@ -239,7 +239,7 @@ public final class ChunkBlockWiring implements AutoCloseable {
     }
 
     /** Whether a player plays on Bedrock, asked of Floodgate the first time a beat runs, once the server is up. */
-    private static java.util.function.Predicate<java.util.UUID> bedrockPlayers() {
+    static java.util.function.Predicate<java.util.UUID> bedrockPlayers() {
         var detector = new java.util.concurrent.atomic.AtomicReference<
                 com.uxplima.uxmskyblock.bukkit.bedrock.@org.jspecify.annotations.Nullable LateBedrockDetector>();
         return player -> {

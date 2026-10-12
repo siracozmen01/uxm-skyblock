@@ -46,6 +46,8 @@ public final class OneBlockWiring implements AutoCloseable {
         this.draws =
                 new com.uxplima.uxmskyblock.bukkit.oneblock.OneBlockDraws(config::entries, configuration.messages());
         listener.useDraws(draws);
+        listener.useMoments(new com.uxplima.uxmskyblock.bukkit.oneblock.OneBlockMoments(
+                () -> config, scheduler, configuration.messages(), bedrockPlayer()));
         this.panel = new com.uxplima.uxmskyblock.bukkit.oneblock.OneBlockPanel(
                 service, persistence.islandStoragePort(), scheduler, configuration.messages(), activeProfile);
         // Every OneBlock island into memory before players break anything, so no break is a query on
@@ -58,6 +60,12 @@ public final class OneBlockWiring implements AutoCloseable {
                 LOGGER.log(Level.WARNING, "The OneBlock islands could not be read ahead; each is read when needed.", e);
             }
         });
+    }
+
+    /** Whether a player plays on Bedrock, asked of Floodgate once the server is up. */
+    private static java.util.function.Predicate<org.bukkit.entity.Player> bedrockPlayer() {
+        java.util.function.Predicate<java.util.UUID> bedrock = ChunkBlockWiring.bedrockPlayers();
+        return player -> bedrock.test(player.getUniqueId());
     }
 
     public OneBlockService service() {

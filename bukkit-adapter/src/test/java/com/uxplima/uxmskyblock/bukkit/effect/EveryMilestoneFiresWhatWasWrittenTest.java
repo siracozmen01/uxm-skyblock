@@ -110,6 +110,7 @@ class EveryMilestoneFiresWhatWasWrittenTest {
                         "loot-rare",
                         "loot-legendary",
                         "oneblock-phase-finished",
+                        "oneblock-moment",
                         "vessel-sailed",
                         "upside-down-mirrored"));
     }

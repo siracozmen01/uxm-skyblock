@@ -49,6 +49,7 @@ public final class OneBlockListener implements Listener {
     private final InteractionEffectPlayer effectPlayer;
     private volatile ModeMissions missions = ModeMissions.NONE;
     private volatile OneBlockDraws draws = OneBlockDraws.PLAIN;
+    private volatile @org.jspecify.annotations.Nullable OneBlockMoments moments;
 
     public OneBlockListener(
             OneBlockService service,
@@ -63,6 +64,11 @@ public final class OneBlockListener implements Listener {
         this.messages = Objects.requireNonNull(messages, "messages must not be null");
         this.effects = Objects.requireNonNull(effects, "effects must not be null");
         this.effectPlayer = Objects.requireNonNull(effectPlayer, "effectPlayer must not be null");
+    }
+
+    /** Tells it what happens at the exact breaks the phase files write. */
+    public void useMoments(OneBlockMoments moments) {
+        this.moments = Objects.requireNonNull(moments, "moments must not be null");
     }
 
     /** Tells it how the operator's pool entries are put into the world: states, spawners and creatures. */
@@ -99,7 +105,36 @@ public final class OneBlockListener implements Listener {
         OneBlockService.Broken next = broken.get();
         // Set once the break has finished: set now, the break would clear it again.
         OneBlockDraws drawn = draws;
-        scheduler.onRegion(world.getName(), x >> 4, z >> 4, () -> comeBack(drawn, world, x, y, z, next, player));
+        OneBlockMoments happens = moments;
+        java.util.Optional<com.uxplima.uxmskyblock.bukkit.config.OneBlockMoment> moment = happens == null
+                ? java.util.Optional.empty()
+                : happens.at(next.position().phase().key(), next.position().intoPhase());
+        scheduler.onRegion(world.getName(), x >> 4, z >> 4, () -> {
+            comeBack(
+                    drawn,
+                    world,
+                    x,
+                    y,
+                    z,
+                    next,
+                    player,
+                    moment.map(m -> m.block()).orElse(null));
+            if (happens != null) {
+                moment.ifPresent(m -> happens.inTheWorld(drawn, m, world, x, y, z, player));
+            }
+        });
+        if (happens != null) {
+            moment.ifPresent(m -> happens.forTheBreaker(
+                    effectPlayer,
+                    effects,
+                    m,
+                    player,
+                    Map.of(
+                            "phase",
+                            next.position().phase().key(),
+                            "break",
+                            Long.toString(next.position().intoPhase()))));
+        }
         ModeMissions counts = missions;
         // The block broken belonged to the phase it finished, when it finished one.
         counts.counted(
@@ -140,8 +175,16 @@ public final class OneBlockListener implements Listener {
     static final double CAUGHT_WITHIN = 3.0;
 
     private static void comeBack(
-            OneBlockDraws draws, World world, int x, int y, int z, OneBlockService.Broken next, Player breaker) {
-        lay(draws, world, x, y, z, next.nextBlock());
+            OneBlockDraws draws,
+            World world,
+            int x,
+            int y,
+            int z,
+            OneBlockService.Broken next,
+            Player breaker,
+            @org.jspecify.annotations.Nullable String instead) {
+        // A moment's block stands in for the one drawn.
+        lay(draws, world, x, y, z, instead != null ? instead : next.nextBlock());
         next.creature()
                 .ifPresent(creature -> draws.spawn(new Location(world, x + 0.5, y + 1, z + 0.5), creature, breaker));
     }

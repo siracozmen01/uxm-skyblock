@@ -33,16 +33,90 @@ import org.spongepowered.configurate.ConfigurationNode;
  * @param saveInterval how often the breaks counted in memory are added to the stored count
  * @param icons each phase's icon, a block or item name, by the phase's name
  * @param entries the pool entries written as more than a name
+ * @param moments what happens at exact breaks, by phase, then by how many of the phase's blocks were broken
  */
 public record OneBlockConfiguration(
         boolean enabled,
         OneBlockPhases phases,
         java.time.Duration saveInterval,
         Map<String, String> icons,
-        OneBlockEntries entries) {
+        OneBlockEntries entries,
+        Map<String, Map<Long, OneBlockMoment>> moments) {
 
     /** The icon of a phase whose file names none. */
     public static final String DEFAULT_ICON = "GRASS_BLOCK";
+
+    /**
+     * The moments under {@code node}, each keyed by how many of the phase's blocks are broken when it happens, from 0,
+     * the phase's first block, to one short of its length. A block or a creature is a name a pool could draw, or an
+     * entry of this phase. A moment that cannot be is left out with the reason.
+     */
+    private static Map<Long, OneBlockMoment> moments(
+            String phase,
+            long length,
+            ConfigurationNode node,
+            Map<String, OneBlockEntries.Block> blocks,
+            Map<String, OneBlockEntries.Creature> creatures) {
+        Map<Long, OneBlockMoment> moments = new LinkedHashMap<>();
+        for (Map.Entry<Object, ? extends ConfigurationNode> entry :
+                node.childrenMap().entrySet()) {
+            String written = String.valueOf(entry.getKey());
+            ConfigurationNode value = entry.getValue();
+            long at;
+            try {
+                at = Long.parseLong(written.strip());
+            } catch (NumberFormatException notANumber) {
+                at = -1;
+            }
+            if (at < 0 || at >= length) {
+                LOGGER.warning(() -> "OneBlock phase '" + phase + "' has a moment at '" + written
+                        + "', which is no break" + " from 0 to " + (length - 1) + ". It is left out.");
+                continue;
+            }
+            String block = value.node("block").getString();
+            String drawnBlock = block == null
+                    ? null
+                    : blocks.containsKey(phase + "/" + block) ? phase + "/" + block : blockData(block);
+            String creature = value.node("creature").getString();
+            String drawnCreature = creature == null
+                    ? null
+                    : creatures.containsKey(phase + "/" + creature) ? phase + "/" + creature : creatureName(creature);
+            if ((block != null && drawnBlock == null) || (creature != null && drawnCreature == null)) {
+                LOGGER.warning(() -> "OneBlock phase '" + phase + "', moment " + written + ": "
+                        + (block != null && drawnBlock == null
+                                ? "the block '" + block + "'"
+                                : "the creature '" + creature + "'")
+                        + " is not one the server or the phase knows. The moment is left out.");
+                continue;
+            }
+            java.time.Duration textTime = OneBlockMoment.TEXT_TIME;
+            String writtenTime = value.node("text-time").getString();
+            if (writtenTime != null) {
+                try {
+                    textTime = com.uxplima.uxmlib.common.Durations.parse(writtenTime.strip());
+                } catch (RuntimeException unreadable) {
+                    LOGGER.warning(() -> "OneBlock phase '" + phase + "', moment " + written + ": text-time '"
+                            + writtenTime + "' is no time, so " + OneBlockMoment.TEXT_TIME.toSeconds() + "s is used.");
+                }
+            }
+            try {
+                List<String> lines = value.node("actions").getList(String.class, List.of());
+                moments.put(
+                        at,
+                        new OneBlockMoment(
+                                drawnBlock,
+                                drawnCreature,
+                                value.node("loot").getString(),
+                                EffectsConfiguration.parseAll("oneblock phase " + phase + ", moment " + written, lines),
+                                value.node("text").getString(),
+                                textTime));
+            } catch (org.spongepowered.configurate.serialize.SerializationException | IllegalArgumentException wrong) {
+                LOGGER.warning(() -> "OneBlock phase '" + phase + "', moment " + written + " cannot be: "
+                        + wrong.getMessage() + ". It is left out.");
+            }
+        }
+        return moments;
+    }
 
     /** The slots a creature's equipment is written by. */
     public static final List<String> SLOTS = List.of("head", "chest", "legs", "feet", "hand", "off-hand");
@@ -51,7 +125,7 @@ public record OneBlockConfiguration(
     static final java.util.regex.Pattern NAME = java.util.regex.Pattern.compile("[a-z0-9_-]{1,64}");
 
     public OneBlockConfiguration(boolean enabled, OneBlockPhases phases, java.time.Duration saveInterval) {
-        this(enabled, phases, saveInterval, Map.of(), OneBlockEntries.NONE);
+        this(enabled, phases, saveInterval, Map.of(), OneBlockEntries.NONE, Map.of());
     }
 
     /** How often counted breaks are written, when the file names no interval. */
@@ -67,6 +141,15 @@ public record OneBlockConfiguration(
         }
         icons = Map.copyOf(icons);
         Objects.requireNonNull(entries, "entries");
+        Map<String, Map<Long, OneBlockMoment>> copied = new LinkedHashMap<>();
+        moments.forEach((phase, at) -> copied.put(phase, Map.copyOf(at)));
+        moments = java.util.Collections.unmodifiableMap(copied);
+    }
+
+    /** What happens once {@code broken} blocks of the phase {@code phase} are broken, if anything. */
+    public java.util.Optional<OneBlockMoment> momentAt(String phase, long broken) {
+        return java.util.Optional.ofNullable(
+                moments.getOrDefault(phase, Map.of()).get(broken));
     }
 
     /** The icon of the phase called {@code key}. */
@@ -112,6 +195,7 @@ public record OneBlockConfiguration(
         Map<String, String> icons = new LinkedHashMap<>();
         Map<String, OneBlockEntries.Block> blockEntries = new LinkedHashMap<>();
         Map<String, OneBlockEntries.Creature> creatureEntries = new LinkedHashMap<>();
+        Map<String, Map<Long, OneBlockMoment>> moments = new LinkedHashMap<>();
         // A list, because the phases are gone through in order and a HOCON object keeps none.
         for (ConfigurationNode listed : root.node("phases").childrenList()) {
             ConfigurationNode phase = listed.isMap() ? listed : phaseFile(listed.getString(""), phasesFolder);
@@ -132,6 +216,14 @@ public record OneBlockConfiguration(
                         new WeightedPool(blocks),
                         new WeightedPool(creatures(key, phase.node("creatures"), creatureEntries)),
                         phase.node("creature-chance").getDouble(0)));
+                moments.put(
+                        key,
+                        moments(
+                                key,
+                                phase.node("length").getLong(0),
+                                phase.node("moments"),
+                                blockEntries,
+                                creatureEntries));
             } catch (IllegalArgumentException unusable) {
                 LOGGER.warning(() -> "OneBlock phase '" + key + "' is left out: " + unusable.getMessage());
             }
@@ -145,7 +237,8 @@ public record OneBlockConfiguration(
                 new OneBlockPhases(phases, after),
                 saveInterval,
                 icons,
-                new OneBlockEntries(blockEntries, creatureEntries));
+                new OneBlockEntries(blockEntries, creatureEntries),
+                moments);
     }
 
     /** The phase file of {@code name}, or nothing, said in the console, when there is none to read. */
