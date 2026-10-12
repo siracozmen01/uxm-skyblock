@@ -122,7 +122,7 @@ public final class OneBlockListener implements Listener {
                 : happens.at(phase, next.position().intoPhase())
                         .filter(m -> service.claim(islandId, phase, momentKey, next.nextCycle()));
         scheduler.onRegion(world.getName(), x >> 4, z >> 4, () -> {
-            comeBack(
+            String rarity = comeBack(
                     drawn,
                     world,
                     x,
@@ -131,6 +131,9 @@ public final class OneBlockListener implements Listener {
                     next,
                     player,
                     moment.map(m -> m.block()).orElse(null));
+            if (rarity != null) {
+                scheduler.onEntity(player.getUniqueId(), () -> effectPlayer.fire(effects, rarity, player));
+            }
             if (happens != null) {
                 moment.ifPresent(m -> happens.inTheWorld(drawn, m, world, x, y, z, player));
             }
@@ -231,7 +234,13 @@ public final class OneBlockListener implements Listener {
      */
     static final double CAUGHT_WITHIN = 3.0;
 
-    private static void comeBack(
+    /**
+     * Lays what the break drew, or the moment's block in its place, and brings what appears on it. A container drawn
+     * from the pool is given its loot table.
+     *
+     * @return the entry of modules/effects.conf the drawn entry's rarity fires for the breaker, or none
+     */
+    private static @org.jspecify.annotations.Nullable String comeBack(
             OneBlockDraws draws,
             World world,
             int x,
@@ -240,10 +249,19 @@ public final class OneBlockListener implements Listener {
             OneBlockService.Broken next,
             Player breaker,
             @org.jspecify.annotations.Nullable String instead) {
-        // A moment's block stands in for the one drawn.
+        // A moment's block stands in for the one drawn, and fills from the moment's own table.
         lay(draws, world, x, y, z, instead != null ? instead : next.nextBlock());
         next.creature()
                 .ifPresent(creature -> draws.spawn(new Location(world, x + 0.5, y + 1, z + 0.5), creature, breaker));
+        return instead != null
+                ? null
+                : draws.fill(
+                        world,
+                        x,
+                        y,
+                        z,
+                        next.nextBlock(),
+                        next.position().phase().key());
     }
 
     /** Lays the block as {@code block} and puts whoever dropped while it was gone back on top. On the block's region. */

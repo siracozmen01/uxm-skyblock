@@ -232,6 +232,7 @@ public record OneBlockConfiguration(
         Map<String, String> icons = new LinkedHashMap<>();
         Map<String, OneBlockEntries.Block> blockEntries = new LinkedHashMap<>();
         Map<String, OneBlockEntries.Creature> creatureEntries = new LinkedHashMap<>();
+        Map<String, String> tables = new LinkedHashMap<>();
         Map<String, Map<Long, OneBlockMoment>> moments = new LinkedHashMap<>();
         Map<String, Map<String, OneBlockLists>> lists = new LinkedHashMap<>();
         // A list, because the phases are gone through in order and a HOCON object keeps none.
@@ -255,6 +256,10 @@ public record OneBlockConfiguration(
                         new WeightedPool(creatures(key, phase.node("creatures"), creatureEntries)),
                         phase.node("creature-chance").getDouble(0)));
                 lists.put(key, lists(key, phase));
+                String table = phase.node("loot").getString("").strip();
+                if (!table.isEmpty()) {
+                    tables.put(key, table);
+                }
                 moments.put(
                         key,
                         moments(
@@ -276,7 +281,7 @@ public record OneBlockConfiguration(
                 new OneBlockPhases(phases, after),
                 saveInterval,
                 icons,
-                new OneBlockEntries(blockEntries, creatureEntries),
+                new OneBlockEntries(blockEntries, creatureEntries, tables),
                 moments,
                 lists);
     }
@@ -368,7 +373,13 @@ public record OneBlockConfiguration(
                     continue;
                 }
                 String drawn = phase + "/" + written;
-                entries.put(drawn, new OneBlockEntries.Block(known, spawns == null ? null : creatureName(spawns)));
+                entries.put(
+                        drawn,
+                        new OneBlockEntries.Block(
+                                known,
+                                spawns == null ? null : creatureName(spawns),
+                                value.node("loot").getString(),
+                                value.node("rarity").getString()));
                 weights.merge(drawn, value.node("weight").getDouble(1), Double::sum);
                 continue;
             }

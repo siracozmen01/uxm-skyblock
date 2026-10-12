@@ -47,8 +47,8 @@ public final class OneBlockWiring implements AutoCloseable {
                 configuration.messages(),
                 configuration.effectsConfig(),
                 new com.uxplima.uxmskyblock.bukkit.effect.InteractionEffectPlayer(scheduler, configuration.messages()));
-        this.draws =
-                new com.uxplima.uxmskyblock.bukkit.oneblock.OneBlockDraws(config::entries, configuration.messages());
+        this.draws = new com.uxplima.uxmskyblock.bukkit.oneblock.OneBlockDraws(
+                config::entries, configuration.messages(), configuration::lootTables);
         listener.useDraws(draws);
         listener.usePhaseLists(new com.uxplima.uxmskyblock.bukkit.oneblock.OneBlockPhaseLists(
                 () -> config, scheduler, org.bukkit.Bukkit::getPlayer));

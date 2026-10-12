@@ -29,6 +29,9 @@ import net.kyori.adventure.text.minimessage.MiniMessage;
 
 import com.uxplima.uxmskyblock.bukkit.config.OneBlockEntries;
 import com.uxplima.uxmskyblock.bukkit.i18n.Messages;
+import com.uxplima.uxmskyblock.bukkit.loot.LootContainers;
+import com.uxplima.uxmskyblock.bukkit.loot.LootTables;
+import com.uxplima.uxmskyblock.bukkit.loot.Rarity;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -48,13 +51,55 @@ public final class OneBlockDraws {
     /** Plain names only, as before entries could be written. */
     public static final OneBlockDraws PLAIN = new OneBlockDraws(() -> OneBlockEntries.NONE, null);
 
+    private static final java.util.logging.Logger LOGGER =
+            java.util.logging.Logger.getLogger(OneBlockDraws.class.getName());
+
     private final Supplier<OneBlockEntries> entries;
     private final @Nullable Messages messages;
+    private final Supplier<LootTables> tables;
 
     /** @param messages reads a creature's {@code @key} name in the breaker's language, or none for plain names only */
     public OneBlockDraws(Supplier<OneBlockEntries> entries, @Nullable Messages messages) {
+        this(entries, messages, LootTables::none);
+    }
+
+    /** @param tables the loot tables of loot/, which a drawn entry's rarity is read from */
+    public OneBlockDraws(Supplier<OneBlockEntries> entries, @Nullable Messages messages, Supplier<LootTables> tables) {
         this.entries = Objects.requireNonNull(entries, "entries must not be null");
         this.messages = messages;
+        this.tables = Objects.requireNonNull(tables, "tables must not be null");
+    }
+
+    /**
+     * Gives the container laid at x, y, z as {@code drawn} in {@code phase} the loot table it is drawn with, filled
+     * when a player first opens it. A block that holds nothing is given nothing.
+     *
+     * @return the entry of modules/effects.conf the drawn entry's rarity fires for the breaker, or none
+     */
+    public @Nullable String fill(World world, int x, int y, int z, String drawn, String phase) {
+        String table = entries.get().tableFor(drawn, phase);
+        if (table == null
+                || !LootContainers.give(
+                        world.getBlockAt(x, y, z),
+                        table,
+                        java.util.concurrent.ThreadLocalRandom.current().nextLong())) {
+            return null;
+        }
+        OneBlockEntries.Block entry = entries.get().blocks().get(drawn);
+        String rarity = entry == null ? null : entry.rarity();
+        if (rarity == null || rarity.isBlank()) {
+            return null;
+        }
+        Rarity found = tables.get()
+                .named(table)
+                .map(read -> read.rarities().get(rarity))
+                .orElse(null);
+        if (found == null) {
+            LOGGER.warning(() -> "OneBlock draws '" + drawn + "' with the rarity '" + rarity
+                    + "', which the loot table '" + table + "' does not name, so nothing fires.");
+            return null;
+        }
+        return found.effects().isBlank() ? null : found.effects();
     }
 
     /** Sets the block at x, y, z to what was drawn: an entry, a block with its states, or a plain name. */

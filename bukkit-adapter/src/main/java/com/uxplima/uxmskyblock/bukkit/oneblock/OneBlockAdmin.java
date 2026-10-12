@@ -173,6 +173,7 @@ public final class OneBlockAdmin implements ModeAdminCommands.Mode {
     private void layAgain(ModeAdminCommands admin, Audience sender, String target, IslandId island, boolean say) {
         Optional<OneBlockProgressPort.OneBlockIsland> read = service.island(island);
         Optional<String> block = service.blockNow(island);
+        String phase = service.position(island).map(at -> at.phase().key()).orElse("");
         Optional<String> world = admin.locations().findLocation(island).map(found -> found.worldName());
         if (read.isEmpty() || block.isEmpty() || world.isEmpty()) {
             if (say) {
@@ -189,6 +190,7 @@ public final class OneBlockAdmin implements ModeAdminCommands.Mode {
                 return;
             }
             OneBlockListener.lay(draws, loaded, x, y, z, block.get());
+            var unused = draws.fill(loaded, x, y, z, block.get(), phase);
             if (say) {
                 admin.send(
                         sender,

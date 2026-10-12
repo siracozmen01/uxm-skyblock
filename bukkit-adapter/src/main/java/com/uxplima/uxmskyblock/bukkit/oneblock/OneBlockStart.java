@@ -41,6 +41,14 @@ public final class OneBlockStart implements CreationActionProvider<IslandStart> 
     public void apply(IslandStart start) {
         String first = service.start(start.islandId(), start.centerX(), start.y(), start.centerZ());
         draws.lay(start.world(), start.centerX(), start.y(), start.centerZ(), first);
+        // Nobody broke anything yet, so a rarity has nobody to fire for.
+        var unused = draws.fill(
+                start.world(),
+                start.centerX(),
+                start.y(),
+                start.centerZ(),
+                first,
+                service.phases().phases().getFirst().key());
     }
 
     /** The block a phase drew, or dirt when the operator wrote something that is not a block. */

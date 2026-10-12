@@ -12,8 +12,9 @@ import org.jspecify.annotations.Nullable;
  *
  * @param blocks the block entries, by the name drawn
  * @param creatures the creature entries, by the name drawn
+ * @param tables the loot table a container drawn in each phase is filled from, by phase, for a phase that names one
  */
-public record OneBlockEntries(Map<String, Block> blocks, Map<String, Creature> creatures) {
+public record OneBlockEntries(Map<String, Block> blocks, Map<String, Creature> creatures, Map<String, String> tables) {
 
     /** No entry but plain names. */
     public static final OneBlockEntries NONE = new OneBlockEntries(Map.of(), Map.of());
@@ -21,6 +22,21 @@ public record OneBlockEntries(Map<String, Block> blocks, Map<String, Creature> c
     public OneBlockEntries {
         blocks = Map.copyOf(blocks);
         creatures = Map.copyOf(creatures);
+        tables = Map.copyOf(tables);
+    }
+
+    public OneBlockEntries(Map<String, Block> blocks, Map<String, Creature> creatures) {
+        this(blocks, creatures, Map.of());
+    }
+
+    /**
+     * The loot table a container drawn as {@code drawn} in {@code phase} is filled from: the entry's own, else the
+     * phase's, and none when the one that applies is blank.
+     */
+    public @Nullable String tableFor(String drawn, String phase) {
+        Block entry = blocks.get(drawn);
+        String table = entry != null && entry.loot() != null ? entry.loot() : tables.get(phase);
+        return table == null || table.isBlank() ? null : table;
     }
 
     /**
@@ -28,11 +44,21 @@ public record OneBlockEntries(Map<String, Block> blocks, Map<String, Creature> c
      *
      * @param data the block and its states, as {@code oak_stairs[facing=north]}
      * @param spawns the creature a spawner placed here spawns, or none
+     * @param loot the loot table a container placed here is filled from, blank for none, or none to take the phase's
+     * @param rarity a rarity of that table whose effects fire for the breaker when this entry is drawn, or none
      */
-    public record Block(String data, @Nullable String spawns) {
+    public record Block(
+            String data,
+            @Nullable String spawns,
+            @Nullable String loot,
+            @Nullable String rarity) {
 
         public Block {
             Objects.requireNonNull(data, "data");
+        }
+
+        public Block(String data, @Nullable String spawns) {
+            this(data, spawns, null, null);
         }
     }
 

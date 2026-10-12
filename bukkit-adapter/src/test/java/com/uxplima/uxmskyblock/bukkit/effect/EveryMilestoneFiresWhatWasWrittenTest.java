@@ -30,8 +30,11 @@ class EveryMilestoneFiresWhatWasWrittenTest {
     private static final Path SHIPPED = Path.of("src/main/resources/modules/effects.conf");
     private static final Path LOOT = Path.of("src/main/resources/loot");
 
-    /** {@code fire(written, "kinetic-ward", ...)} and {@code fireMilestone("island-created", ...)}. */
-    private static final Pattern FIRED = Pattern.compile("fire(?:Milestone)?\\([^\"]*\"([a-z-]+)\"");
+    /**
+     * {@code fire(written, "kinetic-ward", ...)} and {@code fireMilestone("island-created", ...)}, within one statement:
+     * a call that names its interaction by a variable ends before any quote, and is not read as the next one found.
+     */
+    private static final Pattern FIRED = Pattern.compile("fire(?:Milestone)?\\([^\";]*\"([a-z-]+)\"");
 
     /** A shipped loot table's rarity names the entry fired for whoever finds it: {@code effects = "loot-rare"}. */
     private static final Pattern NAMED_BY_LOOT = Pattern.compile("effects\\s*=\\s*\"([a-z-]+)\"");
