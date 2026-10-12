@@ -25,10 +25,12 @@ import com.uxplima.uxmskyblock.bukkit.effect.InteractionEffectPlayer;
 import com.uxplima.uxmskyblock.bukkit.effect.InteractionEffects;
 import com.uxplima.uxmskyblock.bukkit.i18n.Messages;
 import com.uxplima.uxmskyblock.bukkit.listener.IslandProtectionListener;
+import com.uxplima.uxmskyblock.bukkit.mission.ModeMissions;
 import com.uxplima.uxmskyblock.core.application.oneblock.OneBlockProgressPort;
 import com.uxplima.uxmskyblock.core.application.oneblock.OneBlockService;
 import com.uxplima.uxmskyblock.core.application.scheduler.SchedulerPort;
 import com.uxplima.uxmskyblock.core.domain.island.Island;
+import com.uxplima.uxmskyblock.core.domain.mission.MissionTriggerType;
 
 /**
  * Brings a OneBlock island's block back when it is broken, as whatever its phase draws.
@@ -48,6 +50,7 @@ public final class OneBlockListener implements Listener {
     private final Messages messages;
     private final InteractionEffects effects;
     private final InteractionEffectPlayer effectPlayer;
+    private volatile ModeMissions missions = ModeMissions.NONE;
 
     public OneBlockListener(
             OneBlockService service,
@@ -62,6 +65,11 @@ public final class OneBlockListener implements Listener {
         this.messages = Objects.requireNonNull(messages, "messages must not be null");
         this.effects = Objects.requireNonNull(effects, "effects must not be null");
         this.effectPlayer = Objects.requireNonNull(effectPlayer, "effectPlayer must not be null");
+    }
+
+    /** Tells it where a break of the block and a phase reached count, for the missions that ask for them. */
+    public void useMissions(ModeMissions missions) {
+        this.missions = Objects.requireNonNull(missions, "missions must not be null");
     }
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
@@ -88,7 +96,19 @@ public final class OneBlockListener implements Listener {
         OneBlockService.Broken next = broken.get();
         // Set once the break has finished: set now, the break would clear it again.
         scheduler.onRegion(world.getName(), x >> 4, z >> 4, () -> comeBack(world, x, y, z, next));
+        ModeMissions counts = missions;
+        // The block broken belonged to the phase it finished, when it finished one.
+        counts.counted(
+                player,
+                MissionTriggerType.ONEBLOCK_BREAK,
+                next.finished().orElse(next.position().phase()).key(),
+                1L);
         if (next.phaseBegan()) {
+            counts.counted(
+                    player,
+                    MissionTriggerType.ONEBLOCK_PHASE,
+                    next.position().phase().key(),
+                    1L);
             next.finished()
                     .ifPresent(finished -> effectPlayer.fire(
                             effects, "oneblock-phase-finished", player, Map.of("phase", finished.key())));

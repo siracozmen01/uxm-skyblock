@@ -80,6 +80,7 @@ class ABoxedIslandIsPlayedInItsBoxTest extends MockBukkitHarness {
     private final Set<String> earned = new HashSet<>();
     private final List<IslandId> changed = new ArrayList<>();
     private final List<String> fired = new ArrayList<>();
+    private final List<String> counted = new ArrayList<>();
 
     @SuppressWarnings("NullAway.Init")
     private World boxedWorld;
@@ -193,6 +194,7 @@ class ABoxedIslandIsPlayedInItsBoxTest extends MockBukkitHarness {
     @Test
     @DisplayName("An advancement grows the box once for the island, and a recipe grows nothing")
     void anAdvancementGrowsTheBox() {
+        listener.useMissions((who, trigger, target, amount) -> counted.add(trigger + " " + target + " " + amount));
         service.start(islandId);
         PlayerMock player = createPlayer("Explorer");
 
@@ -205,6 +207,9 @@ class ABoxedIslandIsPlayedInItsBoxTest extends MockBukkitHarness {
         assertThat(said(player))
                 .anySatisfy(line -> assertThat(line).contains("2").contains("15×15"));
         assertThat(fired).describedAs("how far it grew and how wide it is now").containsExactly("grew 2 15");
+        assertThat(counted)
+                .describedAs("how far it grew counts for the missions")
+                .containsExactly("BOXED_GROW * 2");
     }
 
     @Test

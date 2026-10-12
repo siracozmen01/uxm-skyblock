@@ -39,7 +39,7 @@ import com.uxplima.uxmskyblock.core.domain.mission.MissionTriggerType;
  * Event-driven zero-friction listener intercepting player actions and updating
  * mission progress asynchronously without stalling server region tick loops.
  */
-public final class IslandMissionListener implements Listener {
+public final class IslandMissionListener implements Listener, ModeMissions {
 
     /**
      * What this interaction fires, as the operator wrote it.
@@ -125,6 +125,12 @@ public final class IslandMissionListener implements Listener {
         if (event.getState() == PlayerFishEvent.State.CAUGHT_FISH) {
             dispatchTrigger(event.getPlayer(), MissionTriggerType.FISHING, "*", 1L);
         }
+    }
+
+    /** A mode's own event, counted as any other trigger is. */
+    @Override
+    public void counted(Player player, MissionTriggerType trigger, String target, long amount) {
+        dispatchTrigger(player, trigger, target, amount);
     }
 
     private void dispatchTrigger(Player player, MissionTriggerType trigger, String target, long amount) {

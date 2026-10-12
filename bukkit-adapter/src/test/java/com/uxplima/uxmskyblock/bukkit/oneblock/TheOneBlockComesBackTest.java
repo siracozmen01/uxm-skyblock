@@ -61,6 +61,7 @@ class TheOneBlockComesBackTest extends MockBukkitHarness {
     private World world;
 
     private final List<String> fired = new ArrayList<>();
+    private final List<String> counted = new ArrayList<>();
 
     @SuppressWarnings("NullAway.Init")
     private OneBlockListener listener;
@@ -127,6 +128,7 @@ class TheOneBlockComesBackTest extends MockBukkitHarness {
                         com.uxplima.uxmlib.condition.action.ActionList.parse(
                                 List.of("[console] probe began %phase% %blocks%")))),
                 new InteractionEffectPlayer(null, Messages.bundled()));
+        listener.useMissions((who, trigger, target, amount) -> counted.add(trigger + " " + target + " " + amount));
     }
 
     @Test
@@ -160,6 +162,9 @@ class TheOneBlockComesBackTest extends MockBukkitHarness {
         assertThat(fired)
                 .describedAs("the phase finished, then the one begun and how long it lasts")
                 .containsExactly("finished plains", "began underground 5");
+        assertThat(counted)
+                .describedAs("each break counts for the phase it was broken in, and the phase reached counts once")
+                .containsExactly("ONEBLOCK_BREAK plains 1", "ONEBLOCK_BREAK plains 1", "ONEBLOCK_PHASE underground 1");
 
         assertThat(block.getType()).isEqualTo(Material.IRON_ORE);
         assertThat(PlainTextComponentSerializer.plainText()

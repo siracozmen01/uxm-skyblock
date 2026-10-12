@@ -9,5 +9,11 @@ public enum MissionTriggerType {
     FISHING,
     LEVEL_REACH,
     BANK_BALANCE,
-    ITEM_SUBMIT
+    ITEM_SUBMIT,
+    /** The OneBlock island's own block is broken; the target is the phase it was broken in. */
+    ONEBLOCK_BREAK,
+    /** A OneBlock island reaches a phase; the target is the phase begun. */
+    ONEBLOCK_PHASE,
+    /** A Boxed island's box grows; the amount is how far. */
+    BOXED_GROW
 }

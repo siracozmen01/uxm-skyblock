@@ -388,6 +388,12 @@ public final class GameplayWiring {
         this.cacheEviction.whenForgotten(this.economicWiring.worthService()::forgetIsland);
         this.cacheEviction.whenForgotten(this.chunkBlockWiring.service()::forget);
         this.cacheEviction.whenForgotten(this.creationWiring.missionService()::forgetIsland);
+        // A mode's own events count for the missions that ask for them, when there are missions.
+        com.uxplima.uxmskyblock.bukkit.mission.IslandMissionListener missions = this.creationWiring.missionListener();
+        if (missions != null) {
+            this.oneBlockWiring.listener().useMissions(missions);
+            this.boxedWiring.listener().useMissions(missions);
+        }
         // Each island's edge is drawn the way its members chose: the client's border, a wall, or nothing. A ChunkBlock
         // island is edged by the wall around its open ground instead.
         var chunkBlock = this.chunkBlockWiring.service();

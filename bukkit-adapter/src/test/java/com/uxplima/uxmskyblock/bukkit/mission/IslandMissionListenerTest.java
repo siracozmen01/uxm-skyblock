@@ -116,6 +116,23 @@ class IslandMissionListenerTest {
         verify(islandStoragePort, times(1)).findIslandIdByProfileId(profileId);
     }
 
+    @Test
+    @DisplayName("A mode's own event is counted as any other trigger, for the player's island")
+    void aModesEventIsCounted() {
+        listener.setProfileIsland(profileId, islandId);
+
+        listener.counted(player, MissionTriggerType.ONEBLOCK_PHASE, "underground", 1L);
+
+        verify(missionService)
+                .handleTrigger(
+                        org.mockito.ArgumentMatchers.eq(islandId),
+                        org.mockito.ArgumentMatchers.eq(profileId),
+                        org.mockito.ArgumentMatchers.eq(MissionTriggerType.ONEBLOCK_PHASE),
+                        org.mockito.ArgumentMatchers.eq("underground"),
+                        org.mockito.ArgumentMatchers.eq(1L),
+                        any());
+    }
+
     private static class ImmediateScheduler implements SchedulerPort {
         @Override
         public void onGlobal(Runnable task) {

@@ -57,6 +57,8 @@ public final class BoxedListener implements Listener {
     private final Messages messages;
     private final InteractionEffects effects;
     private final InteractionEffectPlayer effectPlayer;
+    private volatile com.uxplima.uxmskyblock.bukkit.mission.ModeMissions missions =
+            com.uxplima.uxmskyblock.bukkit.mission.ModeMissions.NONE;
     private final Function<UUID, Optional<ProfileId>> activeProfile;
     private final Function<ProfileId, Optional<IslandId>> islandOf;
     private final Consumer<IslandId> boxChanged;
@@ -88,6 +90,11 @@ public final class BoxedListener implements Listener {
         this.boxChanged = Objects.requireNonNull(boxChanged, "boxChanged must not be null");
         this.boxedWorlds = Set.copyOf(boxedWorlds);
         this.bypassPermission = Objects.requireNonNull(bypassPermission, "bypassPermission must not be null");
+    }
+
+    /** Tells it where a box grown counts, for the missions that ask for it. */
+    public void useMissions(com.uxplima.uxmskyblock.bukkit.mission.ModeMissions missions) {
+        this.missions = Objects.requireNonNull(missions, "missions must not be null");
     }
 
     @EventHandler(priority = EventPriority.MONITOR)
@@ -126,6 +133,11 @@ public final class BoxedListener implements Listener {
                                         java.util.Map.of(
                                                 "blocks", Integer.toString(grown.blocks()),
                                                 "size", Integer.toString(across)));
+                                missions.counted(
+                                        player,
+                                        com.uxplima.uxmskyblock.core.domain.mission.MissionTriggerType.BOXED_GROW,
+                                        "*",
+                                        grown.blocks());
                             });
                         });
             } catch (RuntimeException e) {
