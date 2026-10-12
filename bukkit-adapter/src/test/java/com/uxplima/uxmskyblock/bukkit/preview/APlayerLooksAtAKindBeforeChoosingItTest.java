@@ -60,6 +60,8 @@ class APlayerLooksAtAKindBeforeChoosingItTest extends MockBukkitHarness {
     private World skyblock;
     private PresetPreviews previews;
     private PlayerMock ada;
+    private SchedulerPort scheduler;
+    private Clock clock;
     private Location stood;
 
     private static StarterPreset preset(String id) {
@@ -78,7 +80,7 @@ class APlayerLooksAtAKindBeforeChoosingItTest extends MockBukkitHarness {
         skyblock = server.addSimpleWorld("skyblock");
         World spawn = server.addSimpleWorld("spawn");
         spawnPoint = new Location(spawn, 0.5, 64, 0.5);
-        SchedulerPort scheduler = mock(SchedulerPort.class);
+        scheduler = mock(SchedulerPort.class);
         doAnswer(call -> {
                     call.getArgument(3, Runnable.class).run();
                     return null;
@@ -98,6 +100,22 @@ class APlayerLooksAtAKindBeforeChoosingItTest extends MockBukkitHarness {
         doAnswer(call -> later.add(call.getArgument(1, Runnable.class)))
                 .when(scheduler)
                 .asyncAfter(any(Duration.class), any(Runnable.class));
+        clock = new Clock() {
+            @Override
+            public java.time.ZoneId getZone() {
+                return ZoneOffset.UTC;
+            }
+
+            @Override
+            public Clock withZone(java.time.ZoneId zone) {
+                return this;
+            }
+
+            @Override
+            public Instant instant() {
+                return now;
+            }
+        };
         previews = new PresetPreviews(
                 settings::get,
                 () -> List.of(DESERT, CLASSIC),
@@ -111,22 +129,7 @@ class APlayerLooksAtAKindBeforeChoosingItTest extends MockBukkitHarness {
                 },
                 scheduler,
                 Messages.bundled(),
-                new Clock() {
-                    @Override
-                    public java.time.ZoneId getZone() {
-                        return ZoneOffset.UTC;
-                    }
-
-                    @Override
-                    public Clock withZone(java.time.ZoneId zone) {
-                        return this;
-                    }
-
-                    @Override
-                    public Instant instant() {
-                        return now;
-                    }
-                });
+                clock);
         ada = createMovingPlayer("Ada");
         stood = new Location(spawn, 10.5, 70, -3.5, 45f, 5f);
         ada.teleport(stood);
@@ -317,22 +320,185 @@ class APlayerLooksAtAKindBeforeChoosingItTest extends MockBukkitHarness {
         ada.setGameMode(GameMode.SPECTATOR);
         holdTicks = true;
         previews.onJoin(new PlayerJoinEvent(ada, Component.empty()));
-        assertThat(ada.getGameMode()).isEqualTo(GameMode.SURVIVAL);
+        assertThat(ada.getGameMode())
+                .describedAs("held as a looker until the move lands")
+                .isEqualTo(GameMode.SPECTATOR);
+        assertThat(previews.looking(ada)).isTrue();
         assertThat(ada.getLocation())
                 .describedAs("no move inside the join: on Folia it takes the region down")
                 .isNotEqualTo(stood);
         assertThat(ada.getPersistentDataContainer().has(PresetPreviews.RETURN, PersistentDataType.STRING))
                 .describedAs("kept until the move is made")
                 .isTrue();
-        nextTick.forEach(Runnable::run);
         holdTicks = false;
+        List<Runnable> due = new ArrayList<>(nextTick);
+        nextTick.clear();
+        due.forEach(Runnable::run);
         assertThat(ada.getLocation()).isEqualTo(stood);
+        assertThat(ada.getGameMode()).isEqualTo(GameMode.SURVIVAL);
+        assertThat(previews.looking(ada)).isFalse();
         assertThat(ada.getPersistentDataContainer().has(PresetPreviews.RETURN, PersistentDataType.STRING))
                 .isFalse();
         later.forEach(Runnable::run);
         assertThat(ada.getLocation())
                 .describedAs("the old look's end does nothing")
                 .isEqualTo(stood);
+    }
+
+    @Test
+    @DisplayName("A move back that fails tries the spawn, and one that fails there too keeps the player held and"
+            + " tries again")
+    void aMoveThatFails() {
+        Refusing bo = new Refusing(server);
+        server.addPlayer(bo);
+        bo.teleport(stood);
+        bo.setGameMode(GameMode.SURVIVAL);
+        previews.show(bo, CLASSIC);
+        Location over = bo.getLocation();
+
+        bo.refuse = place -> place.getWorld().getName().equals("spawn") && place.getX() == stood.getX();
+        later.removeFirst().run();
+        assertThat(bo.getLocation())
+                .describedAs("refused its own place, sent to spawn")
+                .isEqualTo(spawnPoint);
+        assertThat(bo.getGameMode()).isEqualTo(GameMode.SURVIVAL);
+
+        now = now.plusSeconds(31);
+        bo.teleport(stood);
+        previews.show(bo, CLASSIC);
+        bo.refuse = place -> true;
+        later.removeFirst().run();
+        assertThat(bo.getLocation()).isEqualTo(over);
+        assertThat(bo.getGameMode())
+                .describedAs("never in their own mode at the showroom")
+                .isEqualTo(GameMode.SPECTATOR);
+        assertThat(previews.looking(bo)).isTrue();
+        assertThat(bo.getPersistentDataContainer().has(PresetPreviews.RETURN, PersistentDataType.STRING))
+                .isTrue();
+
+        bo.refuse = place -> false;
+        later.removeFirst().run();
+        assertThat(bo.getLocation()).describedAs("tried again, and it landed").isEqualTo(stood);
+        assertThat(bo.getGameMode()).isEqualTo(GameMode.SURVIVAL);
+    }
+
+    @Test
+    @DisplayName("Hits long over are let go as many players are hurt, and a fresh one is kept")
+    void manyHurt() {
+        for (int each = 0; each < PresetPreviews.HURT_KEPT; each++) {
+            org.bukkit.entity.Player other = mock(org.bukkit.entity.Player.class);
+            org.mockito.Mockito.when(other.getUniqueId()).thenReturn(java.util.UUID.randomUUID());
+            previews.onHurt(hit(other));
+        }
+        now = now.plusSeconds(60);
+        // The one past the count lets the old hits go, and must keep its own.
+        previews.onHurt(hit(ada));
+
+        assertThat(previews.show(ada, CLASSIC)).describedAs("hurt a moment ago").isFalse();
+    }
+
+    private static org.bukkit.event.entity.EntityDamageEvent hit(org.bukkit.entity.Entity entity) {
+        org.bukkit.event.entity.EntityDamageEvent hit = mock(org.bukkit.event.entity.EntityDamageEvent.class);
+        org.mockito.Mockito.when(hit.getEntity()).thenReturn(entity);
+        return hit;
+    }
+
+    @Test
+    @DisplayName("A player gliding or riding is not let look, as a look would take them out of the fall or the ride")
+    void notOnTheWing() {
+        Refusing bo = new Refusing(server);
+        server.addPlayer(bo);
+        bo.teleport(stood);
+        bo.setGameMode(GameMode.SURVIVAL);
+
+        bo.gliding = true;
+        assertThat(previews.show(bo, CLASSIC)).isFalse();
+        bo.gliding = false;
+        bo.riding = true;
+        assertThat(previews.show(bo, CLASSIC)).isFalse();
+        bo.riding = false;
+        assertThat(previews.show(bo, CLASSIC)).isTrue();
+        assertThat(bo.getGameMode()).isEqualTo(GameMode.SPECTATOR);
+    }
+
+    /**
+     * A player whose asynchronous move lands at once, or is refused where {@link #refuse} says, and who glides or
+     * rides when told to.
+     */
+    private static final class Refusing extends PlayerMock {
+        java.util.function.Predicate<Location> refuse = place -> false;
+        boolean gliding;
+        boolean riding;
+
+        Refusing(org.mockbukkit.mockbukkit.ServerMock server) {
+            super(
+                    server,
+                    "Bo",
+                    java.util.UUID.nameUUIDFromBytes("Bo".getBytes(java.nio.charset.StandardCharsets.UTF_8)));
+        }
+
+        @Override
+        public boolean isGliding() {
+            return gliding;
+        }
+
+        @Override
+        public boolean isInsideVehicle() {
+            return riding;
+        }
+
+        @Override
+        public CompletableFuture<Boolean> teleportAsync(
+                Location location,
+                PlayerTeleportEvent.TeleportCause cause,
+                io.papermc.paper.entity.TeleportFlag... flags) {
+            if (refuse.test(location)) {
+                return CompletableFuture.completedFuture(false);
+            }
+            setLocation(location);
+            return CompletableFuture.completedFuture(true);
+        }
+    }
+
+    @Test
+    @DisplayName("Calm is asked again when the look begins, and a hit is remembered past a quit")
+    void calmWhenItBegins() {
+        CompletableFuture<Void> laying = new CompletableFuture<>();
+        PresetPreviews slow = new PresetPreviews(
+                settings::get,
+                () -> List.of(CLASSIC),
+                server::getWorld,
+                () -> "skyblock",
+                () -> spawnPoint,
+                (preset, world, x, y, z) -> laying,
+                scheduler,
+                Messages.bundled(),
+                clock);
+        org.bukkit.event.entity.EntityDamageEvent hit = mock(org.bukkit.event.entity.EntityDamageEvent.class);
+        org.mockito.Mockito.when(hit.getEntity()).thenReturn(ada);
+
+        assertThat(slow.show(ada, CLASSIC)).isTrue();
+        slow.onHurt(hit);
+        laying.complete(null);
+        assertThat(slow.looking(ada))
+                .describedAs("hurt while the showroom was laid")
+                .isFalse();
+        assertThat(ada.getGameMode()).isEqualTo(GameMode.SURVIVAL);
+
+        slow.onQuit(new PlayerQuitEvent(ada, Component.empty(), PlayerQuitEvent.QuitReason.DISCONNECTED));
+        now = now.plusSeconds(31);
+        said();
+        assertThat(slow.show(ada, CLASSIC))
+                .describedAs("a hit 31 seconds ago is long calm")
+                .isTrue();
+        slow.onHurt(hit);
+        slow.onQuit(new PlayerQuitEvent(ada, Component.empty(), PlayerQuitEvent.QuitReason.DISCONNECTED));
+        now = now.plusSeconds(31);
+        slow.onHurt(hit);
+        slow.onQuit(new PlayerQuitEvent(ada, Component.empty(), PlayerQuitEvent.QuitReason.DISCONNECTED));
+        assertThat(slow.show(ada, CLASSIC))
+                .describedAs("hurt, left and came back")
+                .isFalse();
     }
 
     @Test
