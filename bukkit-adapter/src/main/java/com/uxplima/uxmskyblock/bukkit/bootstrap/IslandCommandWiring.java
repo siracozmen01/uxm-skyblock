@@ -392,6 +392,12 @@ final class IslandCommandWiring {
             modes.add(new com.uxplima.uxmskyblock.bukkit.chunkblock.ChunkBlockAdmin(
                     gameplay.chunkBlockWiring().service()));
         }
+        if (gameplay.tradeWindsWiring().enabled()) {
+            modes.add(new com.uxplima.uxmskyblock.bukkit.tradewinds.TradeWindsAdmin(
+                    gameplay.tradeWindsWiring().market(),
+                    gameplay.tradeWindsWiring().service(),
+                    gameplay.tradeWindsWiring().config()));
+        }
         if (gameplay.boxedWiring().enabled()) {
             modes.add(new com.uxplima.uxmskyblock.bukkit.boxed.BoxedAdmin(
                     gameplay.boxedWiring().service(), gameplay.boxedWiring().edgeMover()));

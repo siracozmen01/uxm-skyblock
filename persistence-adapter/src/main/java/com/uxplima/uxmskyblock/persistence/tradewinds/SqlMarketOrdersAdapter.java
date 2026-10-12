@@ -179,6 +179,52 @@ public final class SqlMarketOrdersAdapter implements MarketOrdersPort {
     }
 
     @Override
+    public boolean setTradeVolume(IslandId vessel, long volume) {
+        try (Connection conn = database.connection();
+                PreparedStatement ps =
+                        conn.prepareStatement("UPDATE tradewinds_vessels SET trade_volume = ? WHERE island_id = ?")) {
+            ps.setLong(1, volume);
+            ps.setString(2, vessel.value().toString());
+            return ps.executeUpdate() == 1;
+        } catch (SQLException e) {
+            throw new IllegalStateException("Could not set the trade of vessel " + vessel, e);
+        }
+    }
+
+    @Override
+    public void setStanding(IslandId vessel, String portId, long standing) {
+        String island = vessel.value().toString();
+        // Two tries: a write that finds no row inserts one, and one that lost that race sets the row it lost to.
+        for (int attempt = 0; attempt < 2; attempt++) {
+            try (Connection conn = database.connection()) {
+                try (PreparedStatement ps = conn.prepareStatement(
+                        "UPDATE tradewinds_standing SET standing = ? WHERE island_id = ? AND port_id = ?")) {
+                    ps.setLong(1, standing);
+                    ps.setString(2, island);
+                    ps.setString(3, portId);
+                    if (ps.executeUpdate() == 1) {
+                        return;
+                    }
+                }
+                try (PreparedStatement ps = conn.prepareStatement(
+                        "INSERT INTO tradewinds_standing (island_id, port_id, standing) VALUES (?, ?, ?)")) {
+                    ps.setString(1, island);
+                    ps.setString(2, portId);
+                    ps.setLong(3, standing);
+                    ps.executeUpdate();
+                    return;
+                }
+            } catch (SQLException e) {
+                String state = e.getSQLState();
+                boolean raced = (state != null && state.startsWith("23")) || (state == null && e.getErrorCode() == 19);
+                if (!raced || attempt == 1) {
+                    throw new IllegalStateException("Could not set the standing of vessel " + vessel, e);
+                }
+            }
+        }
+    }
+
+    @Override
     public List<Traded> mostTraded(int limit) {
         try (Connection conn = database.connection();
                 PreparedStatement ps = conn.prepareStatement("SELECT v.island_id, i.custom_name, v.trade_volume"

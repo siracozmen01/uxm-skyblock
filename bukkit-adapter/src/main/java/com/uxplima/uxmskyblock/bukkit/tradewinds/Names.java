@@ -16,7 +16,8 @@ final class Names {
      * {@code <tag>}, filled with what the reader's language file writes under {@code group.id}, or with the
      * id itself when no file names it.
      */
-    static TagResolver of(Messages messages, Player player, String tag, String group, String id) {
+    static TagResolver of(
+            Messages messages, net.kyori.adventure.audience.Audience player, String tag, String group, String id) {
         String key = "tradewinds." + group + "." + id;
         return messages.raw(player, key) == null
                 ? Placeholder.unparsed(tag, id)

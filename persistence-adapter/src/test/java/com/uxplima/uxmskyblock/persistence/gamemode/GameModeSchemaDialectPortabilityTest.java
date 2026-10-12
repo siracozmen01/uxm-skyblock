@@ -374,6 +374,16 @@ class GameModeSchemaDialectPortabilityTest {
             assertThat(market.find(sale.id()).orElseThrow().attempts()).isZero();
             assertThat(market.standing(islandId, "bay")).isEqualTo(700);
             assertThat(market.tradeVolume(islandId)).isEqualTo(700);
+            // An operator's rank and standing: set whole, a port's standing made where there was none.
+            assertThat(market.setTradeVolume(islandId, 5_000)).isTrue();
+            assertThat(market.tradeVolume(islandId)).isEqualTo(5_000);
+            assertThat(market.setTradeVolume(IslandId.of(UUID.randomUUID()), 1)).isFalse();
+            market.setStanding(islandId, "bay", 40);
+            market.setStanding(islandId, "cove", 90);
+            assertThat(market.standing(islandId, "bay")).isEqualTo(40);
+            assertThat(market.standing(islandId, "cove")).isEqualTo(90);
+            assertThat(market.setTradeVolume(islandId, 700)).isTrue();
+            market.setStanding(islandId, "bay", 700);
             assertThat(market.vesselsWithOpenOrders()).containsExactly(islandId);
             assertThat(market.open(islandId)).hasSize(1);
             var voyagesTable = new com.uxplima.uxmskyblock.persistence.tradewinds.SqlVoyagesAdapter(database);

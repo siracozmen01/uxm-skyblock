@@ -157,6 +157,44 @@ public final class PortMarket {
                 : Result.err("tradewinds.hold.elsewhere");
     }
 
+    /**
+     * Puts {@code vessel} in {@code port} now, as an operator does, under the vessel's lease. Says why not when it
+     * cannot.
+     */
+    public Result<Instant, String> moveTo(IslandId vessel, Port port) {
+        Objects.requireNonNull(port, "port");
+        OptionalLong epoch = lease.hold(vessel);
+        if (epoch.isEmpty()) {
+            return Result.err("tradewinds.hold.elsewhere");
+        }
+        Instant now = clock.instant();
+        return voyages.setSail(vessel, epoch.getAsLong(), node, new VoyagesPort.Voyage(port.id(), now))
+                ? Result.ok(now)
+                : Result.err("tradewinds.hold.elsewhere");
+    }
+
+    /**
+     * Gives {@code vessel} the rank the file calls {@code rankId}, as an operator does: its trade is set to what the
+     * rank takes. Says which rank, or why not.
+     */
+    public Result<Ranks.Rank, String> setRank(IslandId vessel, String rankId) {
+        Optional<Ranks.Rank> rank = ranks.named(rankId);
+        if (rank.isEmpty()) {
+            return Result.err("isadmin.tradewinds.unknown_rank");
+        }
+        return orders.setTradeVolume(vessel, rank.get().volume())
+                ? Result.ok(rank.get())
+                : Result.err("isadmin.tradewinds.not_vessel");
+    }
+
+    /** Sets the standing of {@code vessel} in {@code port}, as an operator does. */
+    public void setStanding(IslandId vessel, Port port, long standing) {
+        if (standing < 0) {
+            throw new IllegalArgumentException("a standing is not below 0: " + standing);
+        }
+        orders.setStanding(vessel, port.id(), standing);
+    }
+
     /** The rank {@code vessel} holds by the trade it did. */
     public Ranks.Rank rank(IslandId vessel) {
         return ranks.of(orders.tradeVolume(vessel));

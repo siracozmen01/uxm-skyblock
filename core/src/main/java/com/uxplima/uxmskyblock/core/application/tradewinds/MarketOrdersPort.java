@@ -139,6 +139,12 @@ public interface MarketOrdersPort {
     /** All the trade the vessel did. */
     long tradeVolume(IslandId vessel);
 
+    /** Sets all the trade the vessel did, as an operator does to give it a rank. Says whether it is a vessel. */
+    boolean setTradeVolume(IslandId vessel, long volume);
+
+    /** Sets the vessel's standing in {@code portId}, as an operator does. */
+    void setStanding(IslandId vessel, String portId, long standing);
+
     /** A vessel and all the trade it did, with the name its island goes by. */
     record Traded(IslandId vessel, String name, long volume) {
         public Traded {

@@ -69,6 +69,30 @@ class AnOrderMovesMoneyOnceTest {
     }
 
     @Test
+    @DisplayName("An operator puts a vessel in a port at once, gives it a rank and sets its standing in a port")
+    void anOperatorsVessel() {
+        PortMarket market = market();
+
+        assertThat(market.moveTo(vessel, BAY).orElseThrow()).isEqualTo(NOW);
+        assertThat(market.where(vessel)).isEqualTo(new PortMarket.Where.Docked("emerald-bay"));
+        assertThat(market.moveTo(vessel, BAY).isOk())
+                .describedAs("moving it where it lies is no harm")
+                .isTrue();
+
+        assertThat(market.setRank(vessel, "sloop").orElseThrow().id()).isEqualTo("sloop");
+        assertThat(market.rank(vessel).id()).isEqualTo("sloop");
+        assertThat(orders.tradeVolume(vessel)).isEqualTo(1_000);
+        assertThat(market.setRank(vessel, "dinghy").orElseThrow().id()).isEqualTo("dinghy");
+        assertThat(market.rank(vessel).id()).isEqualTo("dinghy");
+        assertThat(market.setRank(vessel, "galleon").errorOrThrow()).isEqualTo("isadmin.tradewinds.unknown_rank");
+
+        market.setStanding(vessel, BAY, 2_500);
+        assertThat(orders.standing(vessel, "emerald-bay")).isEqualTo(2_500);
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> market.setStanding(vessel, BAY, -1))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
     @DisplayName("A sale takes a lot from the hold and the bank pays for it once")
     void aSale() {
         docked();
@@ -447,6 +471,17 @@ class AnOrderMovesMoneyOnceTest {
         @Override
         public long tradeVolume(IslandId islandId) {
             return volume;
+        }
+
+        @Override
+        public boolean setTradeVolume(IslandId islandId, long set) {
+            volume = set;
+            return true;
+        }
+
+        @Override
+        public void setStanding(IslandId islandId, String portId, long set) {
+            standing.put(portId, set);
         }
 
         @Override

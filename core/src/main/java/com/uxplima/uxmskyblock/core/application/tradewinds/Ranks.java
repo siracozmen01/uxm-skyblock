@@ -70,6 +70,11 @@ public record Ranks(List<Rank> ranks) {
         return held;
     }
 
+    /** The rank the file calls {@code id}, if there is one. */
+    public Optional<Rank> named(String id) {
+        return ranks.stream().filter(rank -> rank.id().equals(id)).findFirst();
+    }
+
     /** The rank after {@code rank}, if there is one. */
     public Optional<Rank> after(Rank rank) {
         int at = ranks.indexOf(rank);

@@ -47,6 +47,14 @@ public enum CatalogPermissions {
             "uxmskyblock.admin.chunkblock.reset",
             "Close every chunk of a ChunkBlock island but the first",
             PermissionDefault.OP),
+    ADMIN_TRADEWINDS_SETRANK(
+            "uxmskyblock.admin.tradewinds.setrank", "Give a TradeWinds vessel a rank", PermissionDefault.OP),
+    ADMIN_TRADEWINDS_SETSTANDING(
+            "uxmskyblock.admin.tradewinds.setstanding",
+            "Set a TradeWinds vessel's standing in a port",
+            PermissionDefault.OP),
+    ADMIN_TRADEWINDS_MOVEPORT(
+            "uxmskyblock.admin.tradewinds.moveport", "Put a TradeWinds vessel in a port at once", PermissionDefault.OP),
     ADMIN_ONEBLOCK_RESPAWN(
             "uxmskyblock.admin.oneblock.respawn", "Lay a OneBlock island's block again", PermissionDefault.OP),
 
