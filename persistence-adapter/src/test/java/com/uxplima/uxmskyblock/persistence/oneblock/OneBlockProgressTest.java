@@ -83,6 +83,14 @@ class OneBlockProgressTest {
                 }
                 stored.addBreaks(islandId, breaks);
             }
+
+            @Override
+            public void setBreaks(IslandId islandId, long count) {
+                if (writesFail.get()) {
+                    throw new IllegalStateException("the database went away");
+                }
+                stored.setBreaks(islandId, count);
+            }
         };
     }
 
@@ -141,6 +149,28 @@ class OneBlockProgressTest {
         service.flush();
 
         assertThat(stored.find(island).orElseThrow().blocksBroken()).isEqualTo(3);
+    }
+
+    @Test
+    @DisplayName("An operator's count is written whole, lower or higher, and breaks after it are added to it")
+    void anOperatorsCountIsWrittenWhole() {
+        OneBlockService service = service();
+        service.start(island, 0, 100, 0);
+        for (int i = 0; i < 5; i++) {
+            service.onBreak(island);
+        }
+        service.flush();
+
+        service.addBroken(island, -3);
+        assertThat(stored.find(island).orElseThrow().blocksBroken()).isEqualTo(2);
+        service.onBreak(island);
+        service.setBroken(island, 1);
+        assertThat(stored.find(island).orElseThrow().blocksBroken())
+                .describedAs("the break before the set is part of what was set over")
+                .isEqualTo(1);
+        service.onBreak(island);
+        service.flush();
+        assertThat(stored.find(island).orElseThrow().blocksBroken()).isEqualTo(2);
     }
 
     @Test

@@ -255,6 +255,12 @@ class WhatAOneBlockIslandReadsTest extends MockBukkitHarness {
                         (id, held) ->
                                 new OneBlockIsland(id, held.x(), held.y(), held.z(), held.blocksBroken() + breaks));
             }
+
+            @Override
+            public void setBreaks(IslandId island, long count) {
+                stored.computeIfPresent(
+                        island, (id, held) -> new OneBlockIsland(id, held.x(), held.y(), held.z(), count));
+            }
         };
     }
 }

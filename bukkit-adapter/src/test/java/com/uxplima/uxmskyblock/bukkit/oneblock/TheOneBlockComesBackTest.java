@@ -260,6 +260,9 @@ class TheOneBlockComesBackTest extends MockBukkitHarness {
 
             @Override
             public void addBreaks(IslandId islandId, long breaks) {}
+
+            @Override
+            public void setBreaks(IslandId islandId, long count) {}
         };
     }
 }

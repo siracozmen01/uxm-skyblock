@@ -24,4 +24,7 @@ public interface OneBlockProgressPort {
      * each counted their own breaks never overwrite one another.
      */
     void addBreaks(IslandId islandId, long breaks);
+
+    /** Sets the island's count, as an operator does, whatever it held. A count is never below nothing. */
+    void setBreaks(IslandId islandId, long count);
 }

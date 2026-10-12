@@ -596,12 +596,24 @@ public final class IslandCommandTree {
         this.commandNames = names;
     }
 
+    private @Nullable ModeAdminCommands modeAdmin;
+
+    /** What an operator does to the islands of each mode, registered with the island command as {@code /isadmin}. */
+    public void useModeAdmin(ModeAdminCommands admin) {
+        this.modeAdmin = java.util.Objects.requireNonNull(admin, "admin must not be null");
+    }
+
     public void register(JavaPlugin plugin) {
         java.nio.file.Path file = plugin.getDataFolder().toPath().resolve("commands.conf");
         if (!java.nio.file.Files.exists(file)) {
             plugin.saveResource("commands.conf", false);
         }
         this.commandNames = com.uxplima.uxmlib.command.annotation.ConfiguredCommands.load(file);
+        ModeAdminCommands admin = this.modeAdmin;
+        if (admin != null) {
+            // Its own command, there whether or not the island command is.
+            admin.register(plugin, this.commandNames, this::reads);
+        }
         ConfiguredCommandTree<CommandSourceStack> names = new ConfiguredCommandTree<>(this.commandNames);
         com.uxplima.uxmlib.command.annotation.ConfiguredCommands.Entry root = names.root();
         if (!root.enabled()) {

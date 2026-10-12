@@ -179,6 +179,11 @@ class GameModeSchemaDialectPortabilityTest {
                 assertThat(read.blocksBroken()).isEqualTo(7);
             });
             assertThat(oneBlock.findAll()).extracting(read -> read.islandId()).contains(islandId);
+            // An operator's count, written whole, lower and higher.
+            oneBlock.setBreaks(islandId, 2);
+            assertThat(oneBlock.find(islandId).orElseThrow().blocksBroken()).isEqualTo(2);
+            oneBlock.setBreaks(islandId, 7);
+            assertThat(oneBlock.find(islandId).orElseThrow().blocksBroken()).isEqualTo(7);
 
             // The island's authority: taken, renewed under its epoch, refused under a stale one.
             IslandAuthorityOutcome taken = islands.acquireAuthority(islandId, NODE, 60);

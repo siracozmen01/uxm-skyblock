@@ -53,14 +53,40 @@ final class ConfiguredCommandTree<S> {
     /** Whether a source reads the language a tag names. The console reads every one. */
     private final BiPredicate<S, String> reads;
 
+    /** The key the root is read under, the word it answers to and its aliases when the file says nothing. */
+    private final String rootKey;
+
+    private final String rootWord;
+    private final List<String> rootAliasesShipped;
+
     ConfiguredCommandTree(@Nullable ConfiguredCommands names) {
         this(names, (source, tag) -> true);
     }
 
     /** @param reads whether a source reads the language a tag such as {@code tr} or {@code pt-BR} names */
     ConfiguredCommandTree(@Nullable ConfiguredCommands names, BiPredicate<S, String> reads) {
+        this(names, reads, ROOT, ROOT, List.of("is"));
+    }
+
+    /**
+     * A tree read under another key: another command, or the branches of one branch, keyed as
+     * {@code island.subcommands.chunks}.
+     *
+     * @param rootKey the key the root is read under
+     * @param rootWord the word the root answers to when the file says nothing
+     * @param rootAliases the aliases it has when the file says nothing
+     */
+    ConfiguredCommandTree(
+            @Nullable ConfiguredCommands names,
+            BiPredicate<S, String> reads,
+            String rootKey,
+            String rootWord,
+            List<String> rootAliases) {
         this.names = names;
         this.reads = Objects.requireNonNull(reads, "reads");
+        this.rootKey = Objects.requireNonNull(rootKey, "rootKey");
+        this.rootWord = Objects.requireNonNull(rootWord, "rootWord");
+        this.rootAliasesShipped = List.copyOf(rootAliases);
     }
 
     /** Whether a player who reads {@code locale} is one of the readers {@code tag} names. */
@@ -96,12 +122,12 @@ final class ConfiguredCommandTree<S> {
 
     /** The root's own entry: its name, its aliases and whether it is registered at all. */
     ConfiguredCommands.Entry root() {
-        return entry(ROOT, ROOT, List.of("is"));
+        return entry(rootKey, rootWord, rootAliasesShipped);
     }
 
     /** The key's entry for a branch of the root, which answers to its own word when the file is silent. */
     ConfiguredCommands.Entry branch(String key) {
-        return entry(ConfiguredCommands.branchKey(ROOT, key), key, List.of());
+        return entry(ConfiguredCommands.branchKey(rootKey, key), key, List.of());
     }
 
     /**
@@ -110,7 +136,20 @@ final class ConfiguredCommandTree<S> {
      */
     LiteralArgumentBuilder<S> apply(LiteralArgumentBuilder<S> built) {
         Objects.requireNonNull(built, "built");
-        LiteralArgumentBuilder<S> root = LiteralArgumentBuilder.<S>literal(root().name())
+        return rename(built, root().name());
+    }
+
+    /**
+     * The branches of {@code built} under the names the file gives, with {@code built} keeping its own word: for a
+     * branch whose word the tree above it names.
+     */
+    LiteralArgumentBuilder<S> applyToBranches(LiteralArgumentBuilder<S> built) {
+        Objects.requireNonNull(built, "built");
+        return rename(built, built.getLiteral());
+    }
+
+    private LiteralArgumentBuilder<S> rename(LiteralArgumentBuilder<S> built, String rootName) {
+        LiteralArgumentBuilder<S> root = LiteralArgumentBuilder.<S>literal(rootName)
                 .requires(built.getRequirement())
                 .executes(built.getCommand());
         Set<String> taken = new HashSet<>();

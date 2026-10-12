@@ -136,8 +136,7 @@ public final class OneBlockListener implements Listener {
     static final double CAUGHT_WITHIN = 3.0;
 
     private static void comeBack(World world, int x, int y, int z, OneBlockService.Broken next) {
-        world.getBlockAt(x, y, z).setType(OneBlockStart.blockOf(next.nextBlock()));
-        putBackOnTop(world, x, y, z);
+        lay(world, x, y, z, next.nextBlock());
         next.creature().ifPresent(creature -> {
             NamespacedKey key = NamespacedKey.fromString(creature.toLowerCase(java.util.Locale.ROOT));
             EntityType type = key == null ? null : Registry.ENTITY_TYPE.get(key);
@@ -145,6 +144,12 @@ public final class OneBlockListener implements Listener {
                 world.spawnEntity(new Location(world, x + 0.5, y + 1, z + 0.5), type);
             }
         });
+    }
+
+    /** Lays the block as {@code block} and puts whoever dropped while it was gone back on top. On the block's region. */
+    static void lay(World world, int x, int y, int z, String block) {
+        world.getBlockAt(x, y, z).setType(OneBlockStart.blockOf(block));
+        putBackOnTop(world, x, y, z);
     }
 
     /**

@@ -26,6 +26,18 @@ public enum CatalogPermissions {
     ADMIN_RESTORE("uxmskyblock.admin.restore", "Back up and restore islands and the database", PermissionDefault.OP),
     ADMIN_BOOSTER("uxmskyblock.admin.booster", "Grant island boosters administratively", PermissionDefault.OP),
     ADMIN_SCHEMATIC("uxmskyblock.admin.schematic", "Save and paste schematics", PermissionDefault.OP),
+    ADMIN_ONEBLOCK_SETPHASE(
+            "uxmskyblock.admin.oneblock.setphase", "Move a OneBlock island to a phase", PermissionDefault.OP),
+    ADMIN_ONEBLOCK_SETCOUNT(
+            "uxmskyblock.admin.oneblock.setcount", "Set a OneBlock island's count of breaks", PermissionDefault.OP),
+    ADMIN_ONEBLOCK_ADDCOUNT(
+            "uxmskyblock.admin.oneblock.addcount",
+            "Add to or take from a OneBlock island's count of breaks",
+            PermissionDefault.OP),
+    ADMIN_ONEBLOCK_CHECK(
+            "uxmskyblock.admin.oneblock.check", "Read where a OneBlock island stands", PermissionDefault.OP),
+    ADMIN_ONEBLOCK_RESPAWN(
+            "uxmskyblock.admin.oneblock.respawn", "Lay a OneBlock island's block again", PermissionDefault.OP),
 
     ISLAND_CREATE("uxmskyblock.island.create", "Create a new skyblock island", PermissionDefault.TRUE),
     ISLAND_DELETE("uxmskyblock.island.delete", "Delete an island", PermissionDefault.TRUE),

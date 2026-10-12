@@ -264,6 +264,7 @@ final class IslandCommandWiring {
         tree.useLifecycle(gameplay.playerLifecycle());
         tree.useGameModes(gameplay.gameModeHierarchyService()::modeOf);
         tree.useLeaderboards(gameplay.leaderboardMetrics());
+        tree.useModeAdmin(modeAdmin(gameplay, authority, integration.messages()));
         // A OneBlock island's standing, as the operator's menu file draws it and as placeholders.
         var oneBlockPanel = gameplay.oneBlockWiring().panel(integration.menuEngine());
         // A ChunkBlock island's chunks, as the operator's menu file draws them, the unlock and placeholders.
@@ -376,5 +377,18 @@ final class IslandCommandWiring {
         tree.useMarkerSynchroniser(integration.markerSynchroniser());
         tree.setMissionService(gameplay.missionService());
         return tree;
+    }
+
+    /** {@code /isadmin}: a branch for each mode this server runs. */
+    private static com.uxplima.uxmskyblock.bukkit.command.ModeAdminCommands modeAdmin(
+            GameplayWiring gameplay, AuthorityWiring authority, com.uxplima.uxmskyblock.bukkit.i18n.Messages messages) {
+        java.util.List<com.uxplima.uxmskyblock.bukkit.command.ModeAdminCommands.Mode> modes =
+                new java.util.ArrayList<>();
+        if (gameplay.oneBlockWiring().enabled()) {
+            modes.add(new com.uxplima.uxmskyblock.bukkit.oneblock.OneBlockAdmin(
+                    gameplay.oneBlockWiring().service()));
+        }
+        return new com.uxplima.uxmskyblock.bukkit.command.ModeAdminCommands(
+                modes, gameplay.locationService(), authority.sessionCoordinator(), gameplay.scheduler(), messages);
     }
 }

@@ -91,4 +91,22 @@ public final class SqlOneBlockProgressAdapter implements OneBlockProgressPort {
             throw new IllegalStateException("Could not count the breaks of OneBlock island " + islandId, e);
         }
     }
+
+    @Override
+    public void setBreaks(IslandId islandId, long count) {
+        Objects.requireNonNull(islandId, "islandId must not be null");
+        if (count < 0) {
+            throw new IllegalArgumentException("A count of breaks cannot be negative: " + count);
+        }
+        String sql =
+                "UPDATE oneblock_progress SET blocks_broken = ?, updated_at = CURRENT_TIMESTAMP WHERE island_id = ?";
+        try (Connection conn = dataSource.getConnection();
+                PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setLong(1, count);
+            ps.setString(2, islandId.value().toString());
+            ps.executeUpdate();
+        } catch (SQLException e) {
+            throw new IllegalStateException("Could not set the count of OneBlock island " + islandId, e);
+        }
+    }
 }

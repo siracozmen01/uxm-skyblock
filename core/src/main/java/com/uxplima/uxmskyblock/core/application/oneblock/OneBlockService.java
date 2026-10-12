@@ -38,11 +38,16 @@ public final class OneBlockService {
             boolean phaseBegan,
             Optional<OneBlockPhase> finished) {}
 
+    /** What an operator's change did to an island's count. */
+    public record Changed(long was, long now) {}
+
     /** An island's count while it is in memory: what is stored, and what was counted since. */
     private static final class Counted {
         final OneBlockProgressPort.OneBlockIsland stored;
         final AtomicLong total;
         final AtomicLong unwritten = new AtomicLong();
+        /** Whether an operator set the count since the last write, so the next write sets it whole. */
+        final java.util.concurrent.atomic.AtomicBoolean replaced = new java.util.concurrent.atomic.AtomicBoolean();
 
         Counted(OneBlockProgressPort.OneBlockIsland stored) {
             this.stored = stored;
@@ -113,6 +118,12 @@ public final class OneBlockService {
         return held == null ? Optional.empty() : Optional.of(phases.positionAt(held.total.get()));
     }
 
+    /** What the island's block is laid as now, drawn from the phase it stands in, or nothing if it is not one. */
+    public Optional<String> blockNow(IslandId islandId) {
+        Counted held = held(islandId);
+        return held == null ? Optional.empty() : Optional.of(phases.nextBlock(held.total.get(), random));
+    }
+
     /** Counts one break of the island's block and says what it turns into, or nothing if it is not one. */
     public Optional<Broken> onBreak(IslandId islandId) {
         Counted held = held(islandId);
@@ -129,6 +140,86 @@ public final class OneBlockService {
                 phases.startsAPhase(broken)
                         ? Optional.of(phases.positionAt(broken - 1).phase())
                         : Optional.empty()));
+    }
+
+    /**
+     * Sets the island's count, as an operator does, and writes it at once.
+     *
+     * @return the count before and after, or nothing if it is not a OneBlock island
+     */
+    public Optional<Changed> setBroken(IslandId islandId, long count) {
+        if (count < 0) {
+            throw new IllegalArgumentException("A count of breaks cannot be negative: " + count);
+        }
+        Counted held = held(islandId);
+        if (held == null) {
+            return Optional.empty();
+        }
+        long was = held.total.getAndSet(count);
+        held.replaced.set(true);
+        writeNow(islandId, held);
+        return Optional.of(new Changed(was, count));
+    }
+
+    /**
+     * Adds {@code breaks} to the island's count, or takes them away when negative, never below nothing, as an
+     * operator does, and writes it at once.
+     *
+     * @return the count before and after, or nothing if it is not a OneBlock island
+     */
+    public Optional<Changed> addBroken(IslandId islandId, long breaks) {
+        Counted held = held(islandId);
+        if (held == null) {
+            return Optional.empty();
+        }
+        long was;
+        long now;
+        do {
+            was = held.total.get();
+            now = Math.max(0, Math.addExact(was, breaks));
+        } while (!held.total.compareAndSet(was, now));
+        held.replaced.set(true);
+        writeNow(islandId, held);
+        return Optional.of(new Changed(was, now));
+    }
+
+    /**
+     * Writes what the island has counted since the last write, or its whole count when an operator set it. A write
+     * that fails keeps what it would have written for the next.
+     *
+     * @return whether anything was written
+     */
+    private boolean writeNow(IslandId islandId, Counted held) {
+        if (held.replaced.getAndSet(false)) {
+            // The whole count holds every break counted so far, so none is added on top of it later.
+            held.unwritten.set(0);
+            try {
+                progress.setBreaks(islandId, held.total.get());
+                return true;
+            } catch (RuntimeException failed) {
+                held.replaced.set(true);
+                LOGGER.log(
+                        Level.WARNING,
+                        failed,
+                        () -> "Setting the OneBlock count of island " + islandId + " failed; it is kept.");
+                return false;
+            }
+        }
+        long pending = held.unwritten.getAndSet(0);
+        if (pending == 0) {
+            return false;
+        }
+        try {
+            progress.addBreaks(islandId, pending);
+            return true;
+        } catch (RuntimeException failed) {
+            held.unwritten.addAndGet(pending);
+            LOGGER.log(
+                    Level.WARNING,
+                    failed,
+                    () -> "Writing the OneBlock count of island " + islandId + " failed; it is kept.");
+            return false;
+        }
     }
 
     /**
@@ -167,19 +258,8 @@ public final class OneBlockService {
     public int flush() {
         int written = 0;
         for (Map.Entry<IslandId, Counted> entry : counted.entrySet()) {
-            long pending = entry.getValue().unwritten.getAndSet(0);
-            if (pending == 0) {
-                continue;
-            }
-            try {
-                progress.addBreaks(entry.getKey(), pending);
+            if (writeNow(entry.getKey(), entry.getValue())) {
                 written++;
-            } catch (RuntimeException failed) {
-                entry.getValue().unwritten.addAndGet(pending);
-                LOGGER.log(
-                        Level.WARNING,
-                        failed,
-                        () -> "Writing the OneBlock count of island " + entry.getKey() + " failed; it is kept.");
             }
         }
         return written;
@@ -195,14 +275,7 @@ public final class OneBlockService {
         if (held == null) {
             return;
         }
-        long pending = held.unwritten.getAndSet(0);
-        if (pending > 0) {
-            try {
-                progress.addBreaks(islandId, pending);
-            } catch (RuntimeException gone) {
-                LOGGER.log(Level.FINE, gone, () -> "Island " + islandId + " kept no OneBlock count to write.");
-            }
-        }
+        writeNow(islandId, held);
     }
 
     private @Nullable Counted held(IslandId islandId) {

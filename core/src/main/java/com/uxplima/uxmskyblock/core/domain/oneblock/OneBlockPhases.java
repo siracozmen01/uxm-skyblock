@@ -48,6 +48,19 @@ public record OneBlockPhases(List<OneBlockPhase> phases, AfterTheLast afterTheLa
         return total;
     }
 
+    /** How many breaks it takes to reach the phase {@code key} on the first pass, or nothing for no such phase. */
+    public java.util.OptionalLong startOf(String key) {
+        Objects.requireNonNull(key, "key");
+        long before = 0;
+        for (OneBlockPhase phase : phases) {
+            if (phase.key().equals(key)) {
+                return java.util.OptionalLong.of(before);
+            }
+            before = Math.addExact(before, phase.blocks());
+        }
+        return java.util.OptionalLong.empty();
+    }
+
     /** Where an island that has broken {@code broken} blocks stands. */
     public Position positionAt(long broken) {
         if (broken < 0) {
