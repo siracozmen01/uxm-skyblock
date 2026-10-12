@@ -37,6 +37,7 @@ public final class OneBlockWiring implements AutoCloseable {
         this.service = new OneBlockService(
                 persistence.oneBlockProgressPort(),
                 persistence.oneBlockRewardPort(),
+                persistence.oneBlockWaitPort(),
                 config.phases(),
                 new SplittableRandom());
         this.saving = scheduler.repeatAsync(service::flush, config.saveInterval(), config.saveInterval());
@@ -50,6 +51,10 @@ public final class OneBlockWiring implements AutoCloseable {
         this.draws = new com.uxplima.uxmskyblock.bukkit.oneblock.OneBlockDraws(
                 config::entries, configuration.messages(), configuration::lootTables);
         listener.useDraws(draws);
+        com.uxplima.uxmskyblock.bukkit.oneblock.OneBlockPauses pauses =
+                new com.uxplima.uxmskyblock.bukkit.oneblock.OneBlockPauses(
+                        () -> config, service, scheduler, configuration.messages(), draws, bedrockPlayer());
+        listener.usePauses(pauses);
         listener.usePhaseLists(new com.uxplima.uxmskyblock.bukkit.oneblock.OneBlockPhaseLists(
                 () -> config, scheduler, org.bukkit.Bukkit::getPlayer));
         listener.useMoments(new com.uxplima.uxmskyblock.bukkit.oneblock.OneBlockMoments(
@@ -62,6 +67,15 @@ public final class OneBlockWiring implements AutoCloseable {
             try {
                 int count = service.prime();
                 LOGGER.fine(() -> count + " OneBlock islands are in memory.");
+                // A wait that was counting down before the restart goes on where it stood.
+                for (var waiting : service.timedWaits()) {
+                    pauses.resume(
+                            waiting,
+                            island -> persistence
+                                    .islandStoragePort()
+                                    .findLocationByIslandId(island)
+                                    .map(found -> found.worldName()));
+                }
             } catch (RuntimeException e) {
                 LOGGER.log(Level.WARNING, "The OneBlock islands could not be read ahead; each is read when needed.", e);
             }

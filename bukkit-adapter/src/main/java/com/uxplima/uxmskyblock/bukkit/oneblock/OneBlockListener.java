@@ -52,6 +52,7 @@ public final class OneBlockListener implements Listener {
     private volatile OneBlockDraws draws = OneBlockDraws.PLAIN;
     private volatile @org.jspecify.annotations.Nullable OneBlockMoments moments;
     private volatile @org.jspecify.annotations.Nullable OneBlockPhaseLists phaseLists;
+    private volatile @org.jspecify.annotations.Nullable OneBlockPauses pauses;
 
     public OneBlockListener(
             OneBlockService service,
@@ -66,6 +67,20 @@ public final class OneBlockListener implements Listener {
         this.messages = Objects.requireNonNull(messages, "messages must not be null");
         this.effects = Objects.requireNonNull(effects, "effects must not be null");
         this.effectPlayer = Objects.requireNonNull(effectPlayer, "effectPlayer must not be null");
+    }
+
+    /** Goes on with the waits read back before the world was loaded. */
+    @EventHandler
+    public void onWorldLoad(org.bukkit.event.world.WorldLoadEvent event) {
+        OneBlockPauses waits = pauses;
+        if (waits != null) {
+            waits.worldLoaded(event.getWorld());
+        }
+    }
+
+    /** Tells it which phases wait once they begin, with their block bedrock and a countdown over it. */
+    public void usePauses(OneBlockPauses pauses) {
+        this.pauses = Objects.requireNonNull(pauses, "pauses must not be null");
     }
 
     /** Tells it what each phase runs when it begins, finishes and first finishes. */
@@ -100,6 +115,12 @@ public final class OneBlockListener implements Listener {
         if (oneBlock.isEmpty() || !isTheBlock(oneBlock.get(), block)) {
             return;
         }
+        OneBlockPauses waits = pauses;
+        if (waits != null && waits.holds(island.get().id())) {
+            // The phase's wait is not over: its bedrock stays, whoever could break it.
+            event.setCancelled(true);
+            return;
+        }
         Optional<OneBlockService.Broken> broken = service.onBreak(island.get().id());
         if (broken.isEmpty()) {
             return;
@@ -115,13 +136,21 @@ public final class OneBlockListener implements Listener {
         OneBlockMoments happens = moments;
         IslandId islandId = island.get().id();
         String phase = next.position().phase().key();
+        java.time.Duration pause = waits != null && next.phaseBegan() ? waits.pauseOf(phase) : java.time.Duration.ZERO;
         String momentKey = "moment:" + next.position().intoPhase();
         // A moment the island was paid in this pass, before a crash or an operator set its count back, is not had.
-        java.util.Optional<com.uxplima.uxmskyblock.bukkit.config.OneBlockMoment> moment = happens == null
-                ? java.util.Optional.empty()
-                : happens.at(phase, next.position().intoPhase())
-                        .filter(m -> service.claim(islandId, phase, momentKey, next.nextCycle()));
+        // A phase that waits begins with bedrock, so nothing is laid at its first break but that.
+        java.util.Optional<com.uxplima.uxmskyblock.bukkit.config.OneBlockMoment> moment =
+                happens == null || !pause.isZero()
+                        ? java.util.Optional.empty()
+                        : happens.at(phase, next.position().intoPhase())
+                                .filter(m -> service.claim(islandId, phase, momentKey, next.nextCycle()));
         scheduler.onRegion(world.getName(), x >> 4, z >> 4, () -> {
+            if (waits != null && !pause.isZero()) {
+                waits.begin(islandId, phase, pause, world, x, y, z);
+                putBackOnTop(world, x, y, z);
+                return;
+            }
             String rarity = comeBack(
                     drawn,
                     world,

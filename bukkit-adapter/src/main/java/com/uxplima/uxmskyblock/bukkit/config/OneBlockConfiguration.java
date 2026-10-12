@@ -1,11 +1,13 @@
 package com.uxplima.uxmskyblock.bukkit.config;
 
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.logging.Logger;
 
 import org.bukkit.Material;
@@ -16,6 +18,8 @@ import org.bukkit.entity.EntityType;
 import com.uxplima.uxmskyblock.core.domain.oneblock.OneBlockPhase;
 import com.uxplima.uxmskyblock.core.domain.oneblock.OneBlockPhases;
 import com.uxplima.uxmskyblock.core.domain.oneblock.WeightedPool;
+import com.uxplima.uxmskyblock.core.domain.requirement.Requirement;
+import com.uxplima.uxmskyblock.core.domain.requirement.RequirementLines;
 import org.spongepowered.configurate.ConfigurationNode;
 
 /**
@@ -35,6 +39,7 @@ import org.spongepowered.configurate.ConfigurationNode;
  * @param entries the pool entries written as more than a name
  * @param moments what happens at exact breaks, by phase, then by how many of the phase's blocks were broken
  * @param lists what each phase runs when it begins, finishes and first finishes, by phase, then by event
+ * @param gates what stands before each phase begins, by phase, for a phase that writes anything
  */
 public record OneBlockConfiguration(
         boolean enabled,
@@ -43,7 +48,8 @@ public record OneBlockConfiguration(
         Map<String, String> icons,
         OneBlockEntries entries,
         Map<String, Map<Long, OneBlockMoment>> moments,
-        Map<String, Map<String, OneBlockLists>> lists) {
+        Map<String, Map<String, OneBlockLists>> lists,
+        Map<String, OneBlockGate> gates) {
 
     /** The icon of a phase whose file names none. */
     public static final String DEFAULT_ICON = "GRASS_BLOCK";
@@ -153,7 +159,7 @@ public record OneBlockConfiguration(
     static final java.util.regex.Pattern NAME = java.util.regex.Pattern.compile("[a-z0-9_-]{1,64}");
 
     public OneBlockConfiguration(boolean enabled, OneBlockPhases phases, java.time.Duration saveInterval) {
-        this(enabled, phases, saveInterval, Map.of(), OneBlockEntries.NONE, Map.of(), Map.of());
+        this(enabled, phases, saveInterval, Map.of(), OneBlockEntries.NONE, Map.of(), Map.of(), Map.of());
     }
 
     /** How often counted breaks are written, when the file names no interval. */
@@ -175,6 +181,12 @@ public record OneBlockConfiguration(
         Map<String, Map<String, OneBlockLists>> listed = new LinkedHashMap<>();
         lists.forEach((phase, byEvent) -> listed.put(phase, Map.copyOf(byEvent)));
         lists = java.util.Collections.unmodifiableMap(listed);
+        gates = Map.copyOf(gates);
+    }
+
+    /** What stands before the phase {@code phase} begins: nothing, unless its file writes a wait or requirements. */
+    public OneBlockGate gateOf(String phase) {
+        return gates.getOrDefault(phase, OneBlockGate.OPEN);
     }
 
     /** What the phase {@code phase} runs on {@code event}, one of {@link OneBlockLists#EVENTS}, if it writes any. */
@@ -233,6 +245,7 @@ public record OneBlockConfiguration(
         Map<String, OneBlockEntries.Block> blockEntries = new LinkedHashMap<>();
         Map<String, OneBlockEntries.Creature> creatureEntries = new LinkedHashMap<>();
         Map<String, String> tables = new LinkedHashMap<>();
+        Map<String, OneBlockGate> gates = new LinkedHashMap<>();
         Map<String, Map<Long, OneBlockMoment>> moments = new LinkedHashMap<>();
         Map<String, Map<String, OneBlockLists>> lists = new LinkedHashMap<>();
         // A list, because the phases are gone through in order and a HOCON object keeps none.
@@ -256,6 +269,10 @@ public record OneBlockConfiguration(
                         new WeightedPool(creatures(key, phase.node("creatures"), creatureEntries)),
                         phase.node("creature-chance").getDouble(0)));
                 lists.put(key, lists(key, phase));
+                OneBlockGate gate = gate(key, phase);
+                if (!gate.isOpen()) {
+                    gates.put(key, gate);
+                }
                 String table = phase.node("loot").getString("").strip();
                 if (!table.isEmpty()) {
                     tables.put(key, table);
@@ -283,7 +300,39 @@ public record OneBlockConfiguration(
                 icons,
                 new OneBlockEntries(blockEntries, creatureEntries, tables),
                 moments,
-                lists);
+                lists,
+                gates);
+    }
+
+    /**
+     * What the phase writes to stand before it: {@code wait}, a time as {@code 5m}, and {@code requires}, a list of
+     * requirement lines. A line that cannot be read, a wait line, which {@code wait} says instead, and a points line,
+     * which only ChunkBlock keeps, are left out with a warning.
+     */
+    private static OneBlockGate gate(String phase, ConfigurationNode node) {
+        Duration wait = Duration.ZERO;
+        String written = node.node("wait").getString("").strip();
+        if (!written.isEmpty()) {
+            Optional<Duration> read = RequirementLines.duration(written);
+            if (read.isPresent()) {
+                wait = read.get();
+            } else {
+                LOGGER.warning(() -> "OneBlock phase '" + phase + "' waits '" + written
+                        + "', which is no time such as 5m or 1h30m, so it waits for nothing.");
+            }
+        }
+        List<Requirement> requires = new ArrayList<>();
+        for (ConfigurationNode line : node.node("requires").childrenList()) {
+            String text = line.getString("");
+            Optional<Requirement> read = RequirementLines.parse(text);
+            if (read.isEmpty() || read.get() instanceof Requirement.Wait || read.get() instanceof Requirement.Points) {
+                LOGGER.warning(() -> "OneBlock phase '" + phase + "' requires '" + text
+                        + "', which it cannot ask, and the line is left out. A wait is written as wait = \"5m\".");
+                continue;
+            }
+            requires.add(read.get());
+        }
+        return new OneBlockGate(wait, requires);
     }
 
     /** The phase file of {@code name}, or nothing, said in the console, when there is none to read. */

@@ -1,5 +1,6 @@
 package com.uxplima.uxmskyblock.core.application.oneblock;
 
+import java.time.Instant;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
@@ -53,6 +54,9 @@ public final class OneBlockService {
         final java.util.concurrent.atomic.AtomicBoolean replaced = new java.util.concurrent.atomic.AtomicBoolean();
         /** The last pass each reward of a phase was paid in, keyed by {@link #paidKey}. */
         final Map<String, Long> paid = new ConcurrentHashMap<>();
+        /** What the island waits for before its next phase, or nothing. */
+        final java.util.concurrent.atomic.AtomicReference<OneBlockWaitPort.@Nullable Waiting> waiting =
+                new java.util.concurrent.atomic.AtomicReference<>();
 
         Counted(OneBlockProgressPort.OneBlockIsland stored) {
             this.stored = stored;
@@ -62,6 +66,7 @@ public final class OneBlockService {
 
     private final OneBlockProgressPort progress;
     private final OneBlockRewardPort rewards;
+    private final OneBlockWaitPort waits;
     private final OneBlockPhases phases;
     private final RandomGenerator random;
     private final Map<IslandId, Counted> counted = new ConcurrentHashMap<>();
@@ -85,8 +90,18 @@ public final class OneBlockService {
 
     public OneBlockService(
             OneBlockProgressPort progress, OneBlockRewardPort rewards, OneBlockPhases phases, RandomGenerator random) {
+        this(progress, rewards, OneBlockWaitPort.NONE, phases, random);
+    }
+
+    public OneBlockService(
+            OneBlockProgressPort progress,
+            OneBlockRewardPort rewards,
+            OneBlockWaitPort waits,
+            OneBlockPhases phases,
+            RandomGenerator random) {
         this.progress = Objects.requireNonNull(progress, "progress must not be null");
         this.rewards = Objects.requireNonNull(rewards, "rewards must not be null");
+        this.waits = Objects.requireNonNull(waits, "waits must not be null");
         this.phases = Objects.requireNonNull(phases, "phases must not be null");
         this.random = Objects.requireNonNull(random, "random must not be null");
     }
@@ -195,6 +210,87 @@ public final class OneBlockService {
                             + " failed, so it is not paid.");
             return false;
         }
+    }
+
+    /** The phase the island's next break begins, if it begins one. */
+    public Optional<OneBlockPhase> phaseAhead(IslandId islandId) {
+        Counted held = held(islandId);
+        if (held == null) {
+            return Optional.empty();
+        }
+        long next = held.total.get() + 1;
+        return phases.startsAPhase(next) ? Optional.of(phases.positionAt(next).phase()) : Optional.empty();
+    }
+
+    /** What the island waits for before its next phase, if it waits. Asks storage nothing. */
+    public Optional<OneBlockWaitPort.Waiting> waiting(IslandId islandId) {
+        Counted held = held(islandId);
+        return held == null ? Optional.empty() : Optional.ofNullable(held.waiting.get());
+    }
+
+    /**
+     * Has the island wait before {@code phase}, until {@code until} or, when that is none, until the phase's
+     * requirements hold. In memory only: {@link #storeWait} writes it, off the region threads.
+     *
+     * @return whether the island waits now, which it does not when it is no OneBlock island
+     */
+    public boolean waitBefore(IslandId islandId, String phase, @Nullable Instant until) {
+        Counted held = held(islandId);
+        if (held == null) {
+            return false;
+        }
+        held.waiting.set(new OneBlockWaitPort.Waiting(islandId, phase, until));
+        return true;
+    }
+
+    /**
+     * Ends the island's wait, if it is the one given, in memory; {@link #storeWait} writes it. A wait ended twice,
+     * by its timer and by an operator, ends once.
+     *
+     * @return whether this call ended it
+     */
+    public boolean endWait(IslandId islandId, OneBlockWaitPort.Waiting ended) {
+        Counted held = held(islandId);
+        return held != null && held.waiting.compareAndSet(ended, null);
+    }
+
+    /**
+     * Writes the island's wait as it stands in memory, or that it waits no longer. Run off the region threads.
+     *
+     * @return whether it was written
+     */
+    public boolean storeWait(IslandId islandId) {
+        Counted held = held(islandId);
+        if (held == null) {
+            return false;
+        }
+        OneBlockWaitPort.Waiting now = held.waiting.get();
+        try {
+            if (now == null) {
+                waits.clear(islandId);
+            } else {
+                waits.set(now);
+            }
+            return true;
+        } catch (RuntimeException failed) {
+            LOGGER.log(
+                    Level.WARNING,
+                    failed,
+                    () -> "Writing the OneBlock wait of island " + islandId + " failed; it is kept in memory.");
+            return false;
+        }
+    }
+
+    /** Every island waiting for a time to pass, as held in memory: each wait goes on after a restart. */
+    public java.util.List<OneBlockWaitPort.Waiting> timedWaits() {
+        java.util.List<OneBlockWaitPort.Waiting> timed = new java.util.ArrayList<>();
+        for (Counted held : counted.values()) {
+            OneBlockWaitPort.Waiting now = held.waiting.get();
+            if (now != null && now.timed()) {
+                timed.add(now);
+            }
+        }
+        return timed;
     }
 
     private static String paidKey(String phase, String reward) {
@@ -309,6 +405,12 @@ public final class OneBlockService {
                 remember(held, those);
             }
         });
+        for (OneBlockWaitPort.Waiting one : waits.findAll()) {
+            Counted held = counted.get(one.islandId());
+            if (held != null) {
+                held.waiting.compareAndSet(null, one);
+            }
+        }
         primed = true;
         return all.size();
     }
@@ -322,6 +424,7 @@ public final class OneBlockService {
         progress.start(islandId, x, y, z);
         // An island that starts over is owed every reward again.
         rewards.clear(islandId);
+        waits.clear(islandId);
         notOneBlock.remove(islandId);
         counted.put(islandId, new Counted(new OneBlockProgressPort.OneBlockIsland(islandId, x, y, z, 0)));
         return phases.nextBlock(0, random);
@@ -372,9 +475,11 @@ public final class OneBlockService {
             return null;
         }
         java.util.List<OneBlockRewardPort.Paid> paid = rewards.find(islandId);
+        Optional<OneBlockWaitPort.Waiting> waiting = waits.find(islandId);
         return counted.computeIfAbsent(islandId, id -> {
             Counted read = new Counted(stored.get());
             remember(read, paid);
+            read.waiting.set(waiting.orElse(null));
             return read;
         });
     }
