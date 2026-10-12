@@ -129,6 +129,42 @@ class AVaultCloseCarriesThePlayersStateTest {
     }
 
     @Test
+    @DisplayName("Until the close's write lands, or its refusal is settled, nothing else moves the player's state")
+    void aCloseHoldsOtherWritesUntilItLands() {
+        java.util.List<Runnable> later = new java.util.ArrayList<>();
+        SchedulerPort deferred = inlineScheduler();
+        doAnswer(invocation -> later.add(invocation.getArgument(0, Runnable.class)))
+                .when(deferred)
+                .async(any(Runnable.class));
+        IslandVaultWindow deferring = new IslandVaultWindow(
+                vaultService,
+                mock(IslandStoragePort.class),
+                deferred,
+                VaultConfiguration.defaultConfiguration(),
+                Messages.bundled(),
+                sessions);
+        PlayerMock player = server.addPlayer();
+        ActiveSession session = new ActiveSession(new PlayerUuid(player.getUniqueId()), profile, 4L, 9L);
+        when(sessions.getActiveSession(player.getUniqueId())).thenReturn(session);
+
+        deferring.commit(player, holder(profile), new ItemStack[] {null});
+        assertThat(session.selfWriteOutstanding()).isTrue();
+        later.forEach(Runnable::run);
+        assertThat(session.selfWriteOutstanding()).isFalse();
+
+        later.clear();
+        org.mockito.Mockito.doThrow(new IllegalStateException("refused"))
+                .when(vaultService)
+                .commitVaultPage(any(), any(), any(), any(), any());
+        deferring.commit(player, holder(profile), new ItemStack[] {null});
+        assertThat(session.selfWriteOutstanding()).isTrue();
+        later.forEach(Runnable::run);
+        assertThat(session.selfWriteOutstanding())
+                .describedAs("a refused write is settled on the player, and then holds nothing back")
+                .isFalse();
+    }
+
+    @Test
     @DisplayName("A window opened for another profile than the one in play carries nothing for the player")
     void anotherProfileCarriesNothing() {
         PlayerMock player = server.addPlayer();

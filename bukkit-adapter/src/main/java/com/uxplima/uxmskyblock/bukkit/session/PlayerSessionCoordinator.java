@@ -124,7 +124,8 @@ public final class PlayerSessionCoordinator {
                 this.messages,
                 activeSessions::get,
                 this::runLeftHooks,
-                this::runActiveHooks);
+                this::runActiveHooks,
+                this.nanoClock);
         this.shutdownFlow = new SessionShutdown(
                 this.nodeId, this.sessionAuthorityPort, this.handoffFinalizationPort, this.schedulerPort, hooks);
         this.loginQueue = new LoginQueue(this.schedulerPort, this.messages, this.nanoClock, this::attemptJoin);

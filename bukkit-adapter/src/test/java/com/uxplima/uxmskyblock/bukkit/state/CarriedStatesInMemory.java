@@ -21,9 +21,13 @@ public final class CarriedStatesInMemory implements CarriedStatePort {
     final Map<ProfileId, Map<String, CarriedState>> kept = new HashMap<>();
     int crossings;
     boolean refuse;
+    boolean unreachable;
 
     @Override
     public Optional<String> carriedGroup(ProfileId profileId) {
+        if (unreachable) {
+            throw new IllegalStateException("the database did not answer");
+        }
         return Optional.ofNullable(groups.get(profileId));
     }
 

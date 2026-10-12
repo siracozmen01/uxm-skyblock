@@ -528,6 +528,49 @@ class EachWorldKeepsWhatAPlayerCarriesTest extends MockBukkitHarness {
     }
 
     @Test
+    @DisplayName(
+            "Until the group is read the player is held in every world a group names, and a failed read is tried again")
+    void anUnreadGroupHoldsThePlayer() {
+        PlayerStateListener listener = new PlayerStateListener(states, player -> {});
+        states.left(ada);
+        store.unreachable = true;
+        states.sessionActive(ada);
+
+        assertThat(states.carried(ada)).isEmpty();
+        assertThat(states.pending(ada)).describedAs("held, not let through").isTrue();
+        org.bukkit.event.player.PlayerDropItemEvent drop = new org.bukkit.event.player.PlayerDropItemEvent(
+                ada, ada.getWorld().dropItem(ada.getLocation(), new ItemStack(Material.DIAMOND)));
+        listener.onDrop(drop);
+        assertThat(drop.isCancelled()).isTrue();
+        ada.teleport(new Location(nether, 0, 64, 0));
+        assertThat(states.pending(ada))
+                .describedAs("a world no group names keeps what the player brought")
+                .isFalse();
+        ada.teleport(new Location(main, 0, 64, 0));
+
+        store.unreachable = false;
+        assertThat(states.arrived(ada)).isFalse();
+
+        assertThat(states.carried(ada)).describedAs("read on the next arrival").contains("world");
+        assertThat(states.pending(ada)).isFalse();
+    }
+
+    @Test
+    @DisplayName("A window's write still to land holds the crossing back until it has")
+    void aWindowWriteHoldsTheCrossing() {
+        ada.getInventory().setItem(0, new ItemStack(Material.DIAMOND));
+        session().selfWriteBegun();
+
+        assertThat(to(boxed)).isFalse();
+        assertThat(store.crossings).isZero();
+        assertThat(states.pending(ada)).isTrue();
+
+        session().selfWriteLanded();
+        assertThat(states.arrived(ada)).isTrue();
+        assertThat(ada.getInventory().getItem(0)).isNull();
+    }
+
+    @Test
     @DisplayName("Each profile carries for its own group and keeps its own things")
     void eachProfileKeepsItsOwn() {
         to(boxed);

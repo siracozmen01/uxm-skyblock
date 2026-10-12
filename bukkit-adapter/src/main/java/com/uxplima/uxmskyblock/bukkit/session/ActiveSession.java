@@ -30,6 +30,8 @@ public final class ActiveSession {
     private final AtomicReference<@Nullable AutoCloseable> heartbeatTask = new AtomicReference<>(null);
     private final AtomicReference<@Nullable AutoCloseable> checkpointTask = new AtomicReference<>(null);
     private volatile boolean inPlay;
+    private final java.util.concurrent.atomic.AtomicInteger selfWrites =
+            new java.util.concurrent.atomic.AtomicInteger();
     /** A lease this node has not been granted yet; the clock can take any value, so this is a marker. */
     private static final long NEVER_HELD = Long.MIN_VALUE;
 
@@ -125,6 +127,25 @@ public final class ActiveSession {
     /** What the player holds is about to be replaced; nothing may be done with it until it is. */
     public void leavePlay() {
         inPlay = false;
+    }
+
+    /**
+     * A window that writes the player's state itself has closed, holding what the player held then, and its write
+     * has not landed. Until it has, nothing else moves the player's state: written after a crossing or a switch,
+     * it would put back what the player held before it.
+     */
+    public void selfWriteBegun() {
+        selfWrites.incrementAndGet();
+    }
+
+    /** The write {@link #selfWriteBegun} announced has landed, or been settled. */
+    public void selfWriteLanded() {
+        selfWrites.decrementAndGet();
+    }
+
+    /** Whether a write of the player's state taken earlier is still to land. */
+    public boolean selfWriteOutstanding() {
+        return selfWrites.get() > 0;
     }
 
     public boolean isFenced() {

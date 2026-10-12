@@ -528,16 +528,24 @@ public final class IslandVaultWindow {
         byte[] serialized = BukkitInventorySerializer.serializeItemStacks(holder.stored(contents));
         List<VaultAuditLogEntry> auditTrail = VaultAuditTrail.of(holder, contents);
         PlayerAtClose playerState = stateOf(player, holder);
+        if (playerState != null) {
+            playerState.session().selfWriteBegun();
+        }
         schedulerPort.async(() -> {
             try {
                 commitPage(holder, serialized, playerState, auditTrail);
+                landed(playerState);
             } catch (RuntimeException e) {
                 // The window is already closed and what it held is nowhere: not in the page, because
                 // the commit was refused, and not with the player, because they put it in the vault.
                 // Telling them it was refused and keeping the items is losing them.
                 schedulerPort.onEntity(new PlayerUuid(player.getUniqueId()), () -> {
-                    messages.send(player, "vault.commit_refused");
-                    settleTheRefusedCommit(player, holder, contents);
+                    try {
+                        messages.send(player, "vault.commit_refused");
+                        settleTheRefusedCommit(player, holder, contents);
+                    } finally {
+                        landed(playerState);
+                    }
                 });
             }
         });
@@ -611,6 +619,12 @@ public final class IslandVaultWindow {
             session.setLastDurableVersion(write.writtenVersion());
         } finally {
             session.writes().unlock();
+        }
+    }
+
+    private static void landed(@Nullable PlayerAtClose playerState) {
+        if (playerState != null) {
+            playerState.session().selfWriteLanded();
         }
     }
 

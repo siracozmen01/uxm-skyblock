@@ -69,6 +69,7 @@ public final class PlayerStates {
     private final Sessions sessions;
     private final SchedulerPort scheduler;
     private final Map<UUID, String> carried = new ConcurrentHashMap<>();
+    private final Set<UUID> reading = ConcurrentHashMap.newKeySet();
 
     /** @param presetWorlds the worlds the presets make islands in, each a group when the file names none */
     public PlayerStates(
@@ -106,35 +107,51 @@ public final class PlayerStates {
      * they stand in when it carries for none yet, and swaps if they stand in another.
      */
     public void sessionActive(Player player) {
-        CarriedStateConfiguration settings = config.get();
         ActiveSession session = sessions.session(player.getUniqueId());
-        if (!settings.enabled() || session == null) {
+        if (!config.get().enabled() || session == null) {
             return;
         }
+        carried.remove(player.getUniqueId());
+        read(player, session);
+    }
+
+    /**
+     * Reads the group the player's profile carries for. Until it is read the player is held in every world a group
+     * names, and a read that fails is tried again on their next arrival.
+     */
+    private void read(Player player, ActiveSession session) {
         UUID uuid = player.getUniqueId();
+        if (!reading.add(uuid)) {
+            return;
+        }
         ProfileId profile = session.activeProfileId();
-        Optional<String> here = groupHere(player, settings);
-        carried.remove(uuid);
+        Optional<String> here = groupHere(player, config.get());
         scheduler.async(() -> {
             Optional<String> group;
             try {
                 group = store.carriedGroup(profile).or(() -> here.map(first -> store.carryFirst(profile, first)));
             } catch (RuntimeException e) {
+                reading.remove(uuid);
                 LOGGER.log(Level.WARNING, e, () -> "The group " + profile + " carries for could not be read");
                 return;
             }
-            group.ifPresent(read -> scheduler.onEntity(PlayerUuid.of(uuid), () -> {
-                if (player.isOnline() && session.activeProfileId().equals(profile) && !session.isFenced()) {
-                    carried.put(uuid, read);
+            scheduler.onEntity(PlayerUuid.of(uuid), () -> {
+                reading.remove(uuid);
+                if (group.isPresent()
+                        && player.isOnline()
+                        && session.activeProfileId().equals(profile)
+                        && !session.isFenced()) {
+                    carried.put(uuid, group.get());
                     arrived(player);
                 }
-            }));
+            });
         });
     }
 
     /** The player left, or left the profile: what they carry is read again for the next session. */
     public void left(Player player) {
         carried.remove(player.getUniqueId());
+        reading.remove(player.getUniqueId());
     }
 
     /**
@@ -148,14 +165,25 @@ public final class PlayerStates {
         }
         Optional<String> to = groupHere(player, settings);
         UUID uuid = player.getUniqueId();
-        String from = carried.get(uuid);
-        if (to.isEmpty() || from == null || from.equals(to.get())) {
+        if (to.isEmpty()) {
             // A world no group names keeps what the player brought.
             return false;
         }
         ActiveSession session = sessions.session(uuid);
-        if (session == null || session.isFenced() || !sessions.inPlay(uuid)) {
-            // Out of play the player's state is about to be replaced, by a join, a profile switch or a crossing.
+        String from = carried.get(uuid);
+        if (from == null) {
+            if (session != null && !session.isFenced()) {
+                read(player, session);
+            }
+            return false;
+        }
+        if (from.equals(to.get())
+                || session == null
+                || session.isFenced()
+                || !sessions.inPlay(uuid)
+                || session.selfWriteOutstanding()) {
+            // Out of play the player's state is about to be replaced, by a join, a profile switch or a crossing,
+            // and a window's write still to land holds what they held before.
             return false;
         }
         SWAPPING.add(uuid);
@@ -229,8 +257,9 @@ public final class PlayerStates {
     }
 
     /**
-     * Whether the player stands in a world of another group than the one whose things they carry, or is crossing
-     * now: arrived, and not swapped yet. Nothing they carry may be put down there before the swap.
+     * Whether the player stands in a world of another group than the one whose things they carry, or one a group
+     * names before the group they carry for is read, or is crossing now. Nothing they carry may be put down there
+     * before the swap.
      */
     public boolean pending(Player player) {
         CarriedStateConfiguration settings = config.get();
@@ -242,7 +271,8 @@ public final class PlayerStates {
         }
         Optional<String> here = groupHere(player, settings);
         String from = carried.get(player.getUniqueId());
-        return here.isPresent() && from != null && !here.get().equals(from);
+        // Before the group is read nothing is known to be the player's here, so they are held.
+        return here.isPresent() && (from == null || !here.get().equals(from));
     }
 
     private Optional<String> groupHere(Player player, CarriedStateConfiguration settings) {

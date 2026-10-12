@@ -45,6 +45,7 @@ final class ProfileSwitchFlow {
     private final Function<UUID, @Nullable ActiveSession> sessions;
     private final BiConsumer<Player, ProfileId> leftHooks;
     private final Consumer<Player> activeHooks;
+    private final java.util.function.LongSupplier nanoClock;
 
     ProfileSwitchFlow(
             ServerNodeId nodeId,
@@ -55,7 +56,8 @@ final class ProfileSwitchFlow {
             Messages messages,
             Function<UUID, @Nullable ActiveSession> sessions,
             BiConsumer<Player, ProfileId> leftHooks,
-            Consumer<Player> activeHooks) {
+            Consumer<Player> activeHooks,
+            java.util.function.LongSupplier nanoClock) {
         this.nodeId = Objects.requireNonNull(nodeId, "nodeId");
         this.switchProfileUseCase = Objects.requireNonNull(switchProfileUseCase, "switchProfileUseCase");
         this.cutShort = Objects.requireNonNull(cutShort, "cutShort");
@@ -65,6 +67,7 @@ final class ProfileSwitchFlow {
         this.sessions = Objects.requireNonNull(sessions, "sessions");
         this.leftHooks = Objects.requireNonNull(leftHooks, "leftHooks");
         this.activeHooks = Objects.requireNonNull(activeHooks, "activeHooks");
+        this.nanoClock = Objects.requireNonNull(nanoClock, "nanoClock");
     }
 
     /**
@@ -92,6 +95,12 @@ final class ProfileSwitchFlow {
         // 1. Snapshot source inventory on entity thread
         schedulerPort.onEntity(playerUuid, () -> {
             if (!player.isOnline() || session.isFenced()) {
+                return;
+            }
+            if (!session.inPlay(nanoClock.getAsLong()) || session.selfWriteOutstanding()) {
+                // Another change of what the player holds is under way: a crossing between groups of worlds,
+                // or a window's write. A switch started now would land in its middle.
+                messages.send(player, "session.switch_failed");
                 return;
             }
 
