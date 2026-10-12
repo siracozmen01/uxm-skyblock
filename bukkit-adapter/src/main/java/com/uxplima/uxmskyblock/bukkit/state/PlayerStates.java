@@ -127,9 +127,17 @@ public final class PlayerStates {
             byte[] incoming = data.get(slot(to), PersistentDataType.BYTE_ARRAY);
             Snapshot coming = incoming == null ? Snapshot.fresh() : Snapshot.read(incoming);
             // What the player puts down is written before anything they carry changes.
-            data.set(slot(from), PersistentDataType.BYTE_ARRAY, take(player).write());
+            Snapshot leaving = take(player);
+            data.set(slot(from), PersistentDataType.BYTE_ARRAY, leaving.write());
             data.set(GROUP, PersistentDataType.STRING, to);
-            give(player, coming, keeps);
+            // Advancements come back first, into empty hands. An advancement's own reward, experience or loot, is
+            // paid each time it is given back, and everything set below overwrites what it paid, so crossing
+            // between groups is no way to earn it again.
+            player.getInventory().clear();
+            if (keeps.advancements()) {
+                advancements.earn(player, coming.advancements());
+            }
+            give(player, coming, leaving, keeps);
             data.remove(slot(to));
         } catch (RuntimeException e) {
             LOGGER.log(
@@ -168,50 +176,55 @@ public final class PlayerStates {
                 advancements.earned(player));
     }
 
-    /** Hands the player what {@code coming} holds, for each part the group keeps apart. */
-    private void give(Player player, Snapshot coming, CarriedStateConfiguration.Keeps keeps) {
-        if (keeps.inventory()) {
-            player.getInventory().clear();
-            player.getInventory()
-                    .setContents(
-                            contents(coming.inventory(), player.getInventory().getSize()));
+    /**
+     * Hands the player what {@code coming} holds for each part the group keeps apart, and what they carried,
+     * {@code leaving}, for every other part, so nothing paid in the swap stays.
+     */
+    private void give(Player player, Snapshot coming, Snapshot leaving, CarriedStateConfiguration.Keeps keeps) {
+        Snapshot items = keeps.inventory() ? coming : leaving;
+        player.getInventory().clear();
+        player.getInventory()
+                .setContents(contents(items.inventory(), player.getInventory().getSize()));
+        Snapshot chest = keeps.enderChest() ? coming : leaving;
+        player.getEnderChest().clear();
+        player.getEnderChest()
+                .setContents(contents(chest.enderChest(), player.getEnderChest().getSize()));
+        Snapshot experience = keeps.experience() ? coming : leaving;
+        player.setLevel(experience.level());
+        player.setExp(experience.exp());
+        player.setTotalExperience(experience.totalExperience());
+        Snapshot body = keeps.health() ? coming : leaving;
+        AttributeInstance max = player.getAttribute(Attribute.MAX_HEALTH);
+        double most = max == null ? 20.0 : max.getValue();
+        player.setHealth(body.health() <= 0 ? most : Math.min(body.health(), most));
+        Snapshot stomach = keeps.hunger() ? coming : leaving;
+        player.setFoodLevel(stomach.food());
+        player.setSaturation(stomach.saturation());
+        player.setExhaustion(stomach.exhaustion());
+        Snapshot effects = keeps.effects() ? coming : leaving;
+        for (PotionEffect effect : List.copyOf(player.getActivePotionEffects())) {
+            player.removePotionEffect(effect.getType());
         }
-        if (keeps.enderChest()) {
-            player.getEnderChest().clear();
-            player.getEnderChest()
-                    .setContents(
-                            contents(coming.enderChest(), player.getEnderChest().getSize()));
-        }
-        if (keeps.experience()) {
-            player.setLevel(coming.level());
-            player.setExp(coming.exp());
-            player.setTotalExperience(coming.totalExperience());
-        }
-        if (keeps.health()) {
-            AttributeInstance max = player.getAttribute(Attribute.MAX_HEALTH);
-            double most = max == null ? 20.0 : max.getValue();
-            double health = coming.health() <= 0 ? most : Math.min(coming.health(), most);
-            player.setHealth(health);
-        }
-        if (keeps.hunger()) {
-            player.setFoodLevel(coming.food());
-            player.setSaturation(coming.saturation());
-            player.setExhaustion(coming.exhaustion());
-        }
-        if (keeps.effects()) {
-            for (PotionEffect effect : List.copyOf(player.getActivePotionEffects())) {
-                player.removePotionEffect(effect.getType());
-            }
-            for (String written : coming.effects()) {
-                PotionEffect effect = SealedInventory.effectWritten(written);
-                if (effect != null) {
-                    player.addPotionEffect(effect);
-                }
+        for (String written : effects.effects()) {
+            PotionEffect effect = SealedInventory.effectWritten(written);
+            if (effect != null) {
+                player.addPotionEffect(effect);
             }
         }
-        if (keeps.advancements()) {
-            advancements.earn(player, coming.advancements());
+    }
+
+    /**
+     * Whether the player stands in a world of another group than the one whose things they carry: arrived, and not
+     * swapped yet. Nothing they carry may be put down there before the swap.
+     */
+    public boolean pending(Player player) {
+        CarriedStateConfiguration settings = config.get();
+        if (!settings.enabled()) {
+            return false;
         }
+        Optional<String> here = settings.groupOf(player.getWorld().getName(), presetWorlds.get());
+        Optional<String> carried = carried(player);
+        return here.isPresent() && carried.isPresent() && !here.get().equals(carried.get());
     }
 
     private ItemStack[] contents(byte @Nullable [] written, int size) {

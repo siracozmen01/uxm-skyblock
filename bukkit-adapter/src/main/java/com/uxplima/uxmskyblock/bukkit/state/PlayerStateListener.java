@@ -1,24 +1,45 @@
 package com.uxplima.uxmskyblock.bukkit.state;
 
 import java.util.Objects;
+import java.util.function.Consumer;
 
+import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
+import org.bukkit.event.inventory.InventoryOpenEvent;
 import org.bukkit.event.player.PlayerAdvancementDoneEvent;
 import org.bukkit.event.player.PlayerChangedWorldEvent;
+import org.bukkit.event.player.PlayerDropItemEvent;
 import org.bukkit.event.player.PlayerJoinEvent;
+import org.bukkit.event.player.PlayerRespawnEvent;
+import org.bukkit.event.player.PlayerTeleportEvent;
 
 /**
- * Swaps what a player carries when they change worlds or join in a world of another group, and keeps quiet the
- * advancements a swap hands back, which the player had already.
+ * Swaps what a player carries when they reach a world of another group, and keeps quiet the advancements a swap
+ * hands back, which the player had already.
+ *
+ * <p>Folia moves a player between worlds without the world change event, so a teleport and a respawn into another
+ * world each ask for the swap once the player has landed, and a sweep asks for every player every second. Between
+ * landing and the swap nothing the player carries may be dropped or put in a container in the new world: what
+ * they carry still belongs to the group they came from.
  */
 public final class PlayerStateListener implements Listener {
 
     private final PlayerStates states;
+    private final Consumer<Player> soon;
 
-    public PlayerStateListener(PlayerStates states) {
+    /** @param soon runs the swap for the player on their own thread a tick from now, once they have landed */
+    public PlayerStateListener(PlayerStates states, Consumer<Player> soon) {
         this.states = Objects.requireNonNull(states, "states must not be null");
+        this.soon = Objects.requireNonNull(soon, "soon must not be null");
+    }
+
+    /** Asks for the swap for {@code player}, on their own thread. What the sweep and {@link #soon} run. */
+    public void arrive(Player player) {
+        if (player.isOnline()) {
+            states.arrived(player);
+        }
     }
 
     @EventHandler(priority = EventPriority.MONITOR)
@@ -29,6 +50,37 @@ public final class PlayerStateListener implements Listener {
     @EventHandler(priority = EventPriority.MONITOR)
     public void onJoin(PlayerJoinEvent event) {
         states.arrived(event.getPlayer());
+    }
+
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    public void onTeleport(PlayerTeleportEvent event) {
+        if (event.getTo().getWorld() != null
+                && !event.getTo().getWorld().equals(event.getFrom().getWorld())) {
+            soon.accept(event.getPlayer());
+        }
+    }
+
+    @EventHandler(priority = EventPriority.MONITOR)
+    public void onRespawn(PlayerRespawnEvent event) {
+        soon.accept(event.getPlayer());
+    }
+
+    /** Landed and not swapped yet: the item stays in hand and is put down with the rest. */
+    @EventHandler(priority = EventPriority.LOWEST, ignoreCancelled = true)
+    public void onDrop(PlayerDropItemEvent event) {
+        if (states.pending(event.getPlayer())) {
+            event.setCancelled(true);
+            soon.accept(event.getPlayer());
+        }
+    }
+
+    /** Landed and not swapped yet: no container opens until what the player carries is swapped. */
+    @EventHandler(priority = EventPriority.LOWEST, ignoreCancelled = true)
+    public void onOpen(InventoryOpenEvent event) {
+        if (event.getPlayer() instanceof Player player && states.pending(player)) {
+            event.setCancelled(true);
+            soon.accept(player);
+        }
     }
 
     /** An advancement given back in a swap is not announced: nobody earned it just now. */

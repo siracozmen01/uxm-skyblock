@@ -243,7 +243,7 @@ class EachWorldKeepsWhatAPlayerCarriesTest extends MockBukkitHarness {
                         said.add(event.message());
                     }
                 });
-        listener[0] = new PlayerStateListener(quiet);
+        listener[0] = new PlayerStateListener(quiet, player -> {});
         ada.teleport(new Location(main, 0, 64, 0));
         quiet.arrived(ada);
         ada.teleport(new Location(boxed, 0, 64, 0));
@@ -256,5 +256,114 @@ class EachWorldKeepsWhatAPlayerCarriesTest extends MockBukkitHarness {
 
         assertThat(said).containsExactly((net.kyori.adventure.text.Component) null);
         assertThat(outside.message()).isEqualTo(net.kyori.adventure.text.Component.text("done"));
+    }
+
+    @Test
+    @DisplayName("What an advancement pays when it is given back in a swap does not stay, so crossing earns nothing")
+    void aGivenBackRewardDoesNotStay() {
+        PlayerStates paying =
+                new PlayerStates(config::get, () -> List.of("world", "boxed"), codec, new PlayerStates.Advancements() {
+                    @Override
+                    public Set<String> earned(Player player) {
+                        return earned.getOrDefault(player.getUniqueId(), Set.of());
+                    }
+
+                    @Override
+                    public void earn(Player player, Set<String> criteria) {
+                        // Vanilla pays experience and loot each time an advancement is awarded.
+                        for (String ignored : criteria) {
+                            player.getInventory().addItem(new ItemStack(Material.DIAMOND, 10));
+                            player.setLevel(player.getLevel() + 10);
+                        }
+                        earned.put(player.getUniqueId(), Set.copyOf(criteria));
+                    }
+                });
+        ada.teleport(new Location(main, 0, 64, 0));
+        paying.arrived(ada);
+        ada.setLevel(3);
+        earned.put(ada.getUniqueId(), Set.of("minecraft:story/mine_diamond|diamond"));
+        ada.teleport(new Location(boxed, 0, 64, 0));
+        paying.arrived(ada);
+
+        ada.teleport(new Location(main, 0, 64, 0));
+        assertThat(paying.arrived(ada)).isTrue();
+
+        assertThat(earned.get(ada.getUniqueId())).containsExactly("minecraft:story/mine_diamond|diamond");
+        assertThat(ada.getInventory().getItem(0))
+                .describedAs("the diamonds the advancement paid again are gone")
+                .isNull();
+        assertThat(ada.getLevel()).describedAs("and so is the experience").isEqualTo(3);
+    }
+
+    @Test
+    @DisplayName(
+            "Landed in another group and not swapped yet, nothing is dropped or put away, and the swap is asked for")
+    void nothingLeavesBeforeTheSwap() {
+        List<Player> asked = new ArrayList<>();
+        PlayerStateListener listener = new PlayerStateListener(states, asked::add);
+        to(main);
+        ada.getInventory().setItem(0, new ItemStack(Material.DIAMOND));
+        ada.teleport(new Location(boxed, 0, 64, 0));
+
+        assertThat(states.pending(ada)).isTrue();
+        org.bukkit.event.player.PlayerDropItemEvent drop = new org.bukkit.event.player.PlayerDropItemEvent(
+                ada, ada.getWorld().dropItem(ada.getLocation(), new ItemStack(Material.DIAMOND)));
+        listener.onDrop(drop);
+        org.bukkit.event.inventory.InventoryOpenEvent open =
+                new org.bukkit.event.inventory.InventoryOpenEvent(ada.openInventory(server.createInventory(null, 27)));
+        listener.onOpen(open);
+
+        assertThat(drop.isCancelled()).isTrue();
+        assertThat(open.isCancelled()).isTrue();
+        assertThat(asked).containsExactly(ada, ada);
+
+        listener.arrive(ada);
+        assertThat(states.pending(ada)).isFalse();
+        org.bukkit.event.player.PlayerDropItemEvent later = new org.bukkit.event.player.PlayerDropItemEvent(
+                ada, ada.getWorld().dropItem(ada.getLocation(), new ItemStack(Material.OAK_LOG)));
+        listener.onDrop(later);
+        assertThat(later.isCancelled())
+                .describedAs("once swapped the player drops what they like")
+                .isFalse();
+        assertThat(asked).hasSize(2);
+    }
+
+    @Test
+    @DisplayName("A teleport into another world and a respawn ask for the swap, a teleport within a world does not")
+    void aTeleportAsksForTheSwap() {
+        List<Player> asked = new ArrayList<>();
+        PlayerStateListener listener = new PlayerStateListener(states, asked::add);
+
+        listener.onTeleport(new org.bukkit.event.player.PlayerTeleportEvent(
+                ada, new Location(main, 0, 64, 0), new Location(main, 50, 64, 0)));
+        assertThat(asked).isEmpty();
+
+        listener.onTeleport(new org.bukkit.event.player.PlayerTeleportEvent(
+                ada, new Location(main, 0, 64, 0), new Location(boxed, 0, 64, 0)));
+        assertThat(asked).containsExactly(ada);
+
+        listener.onRespawn(new org.bukkit.event.player.PlayerRespawnEvent(
+                ada,
+                new Location(boxed, 0, 64, 0),
+                false,
+                false,
+                false,
+                org.bukkit.event.player.PlayerRespawnEvent.RespawnReason.DEATH));
+        assertThat(asked).containsExactly(ada, ada);
+    }
+
+    @Test
+    @DisplayName("A player who left before the swap ran is not swapped")
+    void anOfflinePlayerIsLeftAlone() {
+        PlayerStateListener listener = new PlayerStateListener(states, player -> {});
+        to(main);
+        ada.getInventory().setItem(0, new ItemStack(Material.DIAMOND));
+        ada.teleport(new Location(boxed, 0, 64, 0));
+
+        ada.disconnect();
+        listener.arrive(ada);
+
+        assertThat(ada.getInventory().getItem(0)).isEqualTo(new ItemStack(Material.DIAMOND));
+        assertThat(PlayerStates.carried(ada)).contains("world");
     }
 }

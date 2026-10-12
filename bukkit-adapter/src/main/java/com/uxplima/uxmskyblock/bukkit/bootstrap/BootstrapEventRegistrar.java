@@ -21,14 +21,31 @@ public final class BootstrapEventRegistrar {
             ConfigurationWiring configWiring) {
         CatalogPermissions.registerAll(pm);
         // What a player carries is kept apart for each group of worlds, as modules/player-state.conf says.
-        pm.registerEvents(
-                new com.uxplima.uxmskyblock.bukkit.state.PlayerStateListener(
-                        new com.uxplima.uxmskyblock.bukkit.state.PlayerStates(
-                                configWiring::carriedStateConfig,
-                                () -> presetWorlds(configWiring),
-                                new com.uxplima.uxmskyblock.bukkit.creative.ServerInventoryCodec(),
-                                new com.uxplima.uxmskyblock.bukkit.state.ServerAdvancements())),
-                plugin);
+        var scheduler = gameplayWiring.scheduler();
+        java.util.concurrent.atomic.AtomicReference<com.uxplima.uxmskyblock.bukkit.state.PlayerStateListener> carried =
+                new java.util.concurrent.atomic.AtomicReference<>();
+        carried.set(new com.uxplima.uxmskyblock.bukkit.state.PlayerStateListener(
+                new com.uxplima.uxmskyblock.bukkit.state.PlayerStates(
+                        configWiring::carriedStateConfig,
+                        () -> presetWorlds(configWiring),
+                        new com.uxplima.uxmskyblock.bukkit.creative.ServerInventoryCodec(),
+                        new com.uxplima.uxmskyblock.bukkit.state.ServerAdvancements()),
+                player -> scheduler.onEntity(
+                        player.getUniqueId(),
+                        () -> java.util.Objects.requireNonNull(carried.get()).arrive(player))));
+        pm.registerEvents(carried.get(), plugin);
+        // Folia moves players between worlds without telling, so every player is looked at once a second.
+        scheduler.repeatGlobal(
+                () -> {
+                    for (org.bukkit.entity.Player online : plugin.getServer().getOnlinePlayers()) {
+                        scheduler.onEntity(
+                                online.getUniqueId(),
+                                () -> java.util.Objects.requireNonNull(carried.get())
+                                        .arrive(online));
+                    }
+                },
+                java.time.Duration.ofSeconds(1),
+                java.time.Duration.ofSeconds(1));
         if (featureModuleWiring.moduleRegistry().isModuleEnabled("core")) {
             pm.registerEvents(gameplayWiring.protectionListener(), plugin);
             pm.registerEvents(gameplayWiring.playerLifecycle(), plugin);
