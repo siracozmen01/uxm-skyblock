@@ -50,7 +50,12 @@ public final class PlayerChunkPurse implements ChunkPurse {
                         .map(kept -> (long) Math.floor(kept.wallet().balance(player, kept.pool())))
                         .orElse(0L);
             case ChunkRequirement.Items items ->
-                material(items).map(type -> count(player.getInventory(), type)).orElse(0L);
+                // What a sealed player holds was made in a creative place, and pays for nothing.
+                com.uxplima.uxmskyblock.bukkit.creative.SealedInventory.holds(player)
+                        ? 0L
+                        : material(items)
+                                .map(type -> count(player.getInventory(), type))
+                                .orElse(0L);
             default -> 0L;
         };
     }

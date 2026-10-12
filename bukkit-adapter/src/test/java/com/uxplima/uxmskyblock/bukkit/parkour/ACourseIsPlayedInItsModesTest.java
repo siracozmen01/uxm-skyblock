@@ -43,6 +43,8 @@ class ACourseIsPlayedInItsModesTest extends MockBukkitHarness {
     private final Set<IslandId> courses = new HashSet<>();
     private final Set<UUID> runners = new HashSet<>();
     private final List<org.bukkit.inventory.ItemStack[]> kept = new java.util.ArrayList<>();
+    private final java.util.concurrent.atomic.AtomicBoolean sessionInPlay =
+            new java.util.concurrent.atomic.AtomicBoolean(true);
 
     @SuppressWarnings("NullAway.Init")
     private World world;
@@ -128,7 +130,8 @@ class ACourseIsPlayedInItsModesTest extends MockBukkitHarness {
                                 return kept.get(java.nio.ByteBuffer.wrap(bytes).getInt());
                             }
                         },
-                        "parkour"),
+                        "parkour",
+                        player -> sessionInPlay.get()),
                 com.uxplima.uxmskyblock.bukkit.i18n.Messages.bundled(),
                 com.uxplima.uxmskyblock.bukkit.effect.InteractionEffects.none(),
                 new com.uxplima.uxmskyblock.bukkit.effect.InteractionEffectPlayer());
@@ -252,6 +255,24 @@ class ACourseIsPlayedInItsModesTest extends MockBukkitHarness {
         assertThat(builder.getInventory().contains(org.bukkit.Material.ENDER_PEARL))
                 .describedAs("nothing made on the course was ever written")
                 .isFalse();
+    }
+
+    @Test
+    @DisplayName("A builder whose session does not hold their things yet is neither sealed nor given creative")
+    void noCreativeBeforeTheSeal() {
+        sessionInPlay.set(false);
+        builder.getInventory().setItem(0, new org.bukkit.inventory.ItemStack(org.bukkit.Material.IRON_PICKAXE));
+        at(builder, 8);
+
+        assertThat(modes.check(builder)).isEqualTo(GameMode.SURVIVAL);
+
+        assertThat(builder.getGameMode()).isEqualTo(GameMode.SURVIVAL);
+        assertThat(com.uxplima.uxmskyblock.bukkit.creative.SealedInventory.holds(builder))
+                .isFalse();
+        sessionInPlay.set(true);
+        assertThat(modes.check(builder))
+                .describedAs("once in play the course seals and builds")
+                .isEqualTo(GameMode.CREATIVE);
     }
 
     @Test

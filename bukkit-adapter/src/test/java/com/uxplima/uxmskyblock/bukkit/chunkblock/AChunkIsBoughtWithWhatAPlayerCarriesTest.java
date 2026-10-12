@@ -252,6 +252,21 @@ class AChunkIsBoughtWithWhatAPlayerCarriesTest extends MockBukkitHarness {
     }
 
     @Test
+    @DisplayName("What a sealed player holds was made in a creative place, and buys no chunk")
+    void aSealedPlayerBuysNothing() {
+        new com.uxplima.uxmskyblock.bukkit.creative.SealedInventory(
+                        new com.uxplima.uxmskyblock.bukkit.creative.ServerInventoryCodec(), "brix")
+                .seal(player);
+        player.getInventory().addItem(new ItemStack(Material.STONE, 64));
+        PlayerChunkPurse purse = new PlayerChunkPurse(new Purse(), id -> Optional.empty());
+        ChunkRequirement.Items stone = new ChunkRequirement.Items("stone", 1);
+
+        assertThat(purse.carried(player, stone)).isZero();
+        assertThat(purse.take(player, stone, 10)).isZero();
+        assertThat(player.getInventory().contains(Material.STONE, 64)).isTrue();
+    }
+
+    @Test
     @DisplayName("A bypass takes every line of itself in full, or nothing at all")
     void aBypassIsWholeOrNothing() {
         ChunkPurchase purchase = selling(

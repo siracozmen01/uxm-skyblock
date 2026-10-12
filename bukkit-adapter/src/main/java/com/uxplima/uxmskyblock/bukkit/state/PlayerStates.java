@@ -245,6 +245,8 @@ public final class PlayerStates {
                 // no way to earn it again. A group that keeps none apart is given back what the player held.
                 advancements.earn(player, Set.copyOf(done.advancements()));
                 BukkitInventorySerializer.applyToPlayer(player, done.carried());
+                // What a seal still held was written as what the player put down, and is not given twice.
+                SealedInventory.forget(player);
                 session.setLastDurableVersion(done.carried().version());
                 carried.put(uuid, crossing.to());
             } else if (crossed instanceof CarriedStatePort.Crossed.Refused refused) {

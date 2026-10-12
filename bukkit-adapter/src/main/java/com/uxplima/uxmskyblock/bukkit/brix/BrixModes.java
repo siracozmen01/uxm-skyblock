@@ -92,7 +92,11 @@ public final class BrixModes implements Listener {
                     || (!modes.keepPermission().isEmpty() && player.hasPermission(modes.keepPermission()))) {
                 return now;
             }
-            sealed.seal(player);
+            if (!sealed.seal(player)) {
+                // Not sealed, so not given the place's mode: at the join the session has not yet put the
+                // player's own things on them, and creative before the seal would be sealed as theirs.
+                return now;
+            }
             messages.send(player, "brix.entered");
             effectPlayer.fire(effects, "brix-plot-entered", player);
         }

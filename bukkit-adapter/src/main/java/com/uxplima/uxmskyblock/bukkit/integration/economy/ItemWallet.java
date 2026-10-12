@@ -56,7 +56,8 @@ final class ItemWallet implements Wallet {
     @Override
     public boolean deposit(@Nullable Player player, String currency, double amount) {
         int given = whole(amount);
-        if (player == null || given < 0) {
+        if (player == null || given < 0 || com.uxplima.uxmskyblock.bukkit.creative.SealedInventory.holds(player)) {
+            // Paid into a sealed player's hands, it would go with the creative place's things at the unseal.
             return false;
         }
         int left = given;
@@ -73,6 +74,10 @@ final class ItemWallet implements Wallet {
     }
 
     private int carried(Player player) {
+        if (com.uxplima.uxmskyblock.bukkit.creative.SealedInventory.holds(player)) {
+            // What a sealed player holds was made in a creative place, and pays for nothing.
+            return 0;
+        }
         ItemStack plain = new ItemStack(material);
         int total = 0;
         for (ItemStack stack : player.getInventory().getStorageContents()) {

@@ -209,6 +209,25 @@ class TheBankKeepsTheOperatorsCurrenciesTest {
     }
 
     @Test
+    @DisplayName(
+            "A sealed player's diamonds were made in a creative place: they pay for nothing, and nothing is paid in")
+    void aSealedPlayerPaysWithNothing() {
+        new com.uxplima.uxmskyblock.bukkit.creative.SealedInventory(
+                        new com.uxplima.uxmskyblock.bukkit.creative.ServerInventoryCodec(), "brix")
+                .seal(player);
+        player.getInventory().addItem(new ItemStack(Material.DIAMOND, 20));
+        ExternalWalletPort wallet = wallets(diamonds()).walletFor("diamonds").orElseThrow();
+        PlayerUuid uuid = new PlayerUuid(player.getUniqueId());
+
+        assertThat(wallet.hasFunds(uuid, 1)).isFalse();
+        assertThat(wallet.withdraw(uuid, 5)).isFalse();
+        assertThat(wallet.deposit(uuid, 7))
+                .describedAs("it would go with the creative place's things at the unseal")
+                .isFalse();
+        assertThat(diamondsCarried()).isEqualTo(20);
+    }
+
+    @Test
     @DisplayName("A player who left before their thread answered holds nothing and pays nothing")
     void aPlayerWhoLeftHoldsNothing() {
         player.getInventory().addItem(new ItemStack(Material.DIAMOND, 20));
@@ -254,6 +273,7 @@ class TheBankKeepsTheOperatorsCurrenciesTest {
         org.bukkit.entity.Player holder = mock(org.bukkit.entity.Player.class);
         org.bukkit.inventory.PlayerInventory inventory = mock(org.bukkit.inventory.PlayerInventory.class);
         when(holder.getInventory()).thenReturn(inventory);
+        when(holder.getUniqueId()).thenReturn(java.util.UUID.randomUUID());
         when(inventory.getStorageContents()).thenReturn(new ItemStack[] {new ItemStack(Material.DIAMOND, 10)});
         when(inventory.removeItem(any(ItemStack[].class)))
                 .thenReturn(new java.util.HashMap<>(Map.of(0, new ItemStack(Material.DIAMOND, 4))));

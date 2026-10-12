@@ -69,6 +69,12 @@ class APlotKeepsWhatWasBroughtTest extends MockBukkitHarness {
     private SealedInventory sealed;
 
     @SuppressWarnings("NullAway.Init")
+    private BrixService service;
+
+    @SuppressWarnings("NullAway.Init")
+    private IslandProtectionListener islands;
+
+    @SuppressWarnings("NullAway.Init")
     private PlayerMock builder;
 
     @SuppressWarnings("NullAway.Init")
@@ -80,11 +86,10 @@ class APlotKeepsWhatWasBroughtTest extends MockBukkitHarness {
         builder = createPlayer("Builder");
         visitor = createPlayer("Visitor");
         Island plot = island(0, builder.getUniqueId());
-        IslandProtectionListener islands =
-                new IslandProtectionListener(mock(IslandStoragePort.class), new IslandAccessService());
+        islands = new IslandProtectionListener(mock(IslandStoragePort.class), new IslandAccessService());
         islands.cacheIsland(plot, "plots");
         islands.cacheIsland(island(1000, UUID.randomUUID()), "plots");
-        BrixService service = new BrixService(new BrixPlotsPort() {
+        service = new BrixService(new BrixPlotsPort() {
             @Override
             public Set<IslandId> findAll() {
                 return Set.copyOf(plots);
@@ -247,6 +252,30 @@ class APlotKeepsWhatWasBroughtTest extends MockBukkitHarness {
         assertThat(builder.getInventory().contains(Material.BEDROCK))
                 .describedAs("nothing made on the plot was ever written")
                 .isFalse();
+    }
+
+    @Test
+    @DisplayName("A builder whose session does not hold their things yet is neither sealed nor given creative")
+    void noCreativeBeforeTheSeal() {
+        SealedInventory waiting = new SealedInventory(
+                new com.uxplima.uxmskyblock.bukkit.creative.ServerInventoryCodec(), "brix", player -> false);
+        BrixModes early = new BrixModes(
+                service,
+                islands,
+                mock(SchedulerPort.class),
+                BrixConfiguration.Modes.SHIPPED,
+                waiting,
+                Messages.bundled(),
+                InteractionEffects.none(),
+                new InteractionEffectPlayer());
+        builder.getInventory().setItem(0, new ItemStack(Material.IRON_PICKAXE));
+        at(builder, 8);
+
+        assertThat(early.check(builder)).isEqualTo(GameMode.SURVIVAL);
+
+        assertThat(builder.getGameMode()).isEqualTo(GameMode.SURVIVAL);
+        assertThat(SealedInventory.holds(builder)).isFalse();
+        assertThat(builder.getInventory().getItem(0)).isEqualTo(new ItemStack(Material.IRON_PICKAXE));
     }
 
     @Test

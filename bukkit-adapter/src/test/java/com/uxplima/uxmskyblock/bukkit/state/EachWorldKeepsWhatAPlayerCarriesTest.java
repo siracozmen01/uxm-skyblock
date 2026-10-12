@@ -348,6 +348,37 @@ class EachWorldKeepsWhatAPlayerCarriesTest extends MockBukkitHarness {
     }
 
     @Test
+    @DisplayName("A seal the crossing could not lift is written as what was put down, and never given back again")
+    void anUnliftedSealIsLetGo() {
+        ada.getInventory().setItem(0, new ItemStack(Material.IRON_PICKAXE));
+        // Written in a form the crossing cannot read back, so the seal stays on.
+        new SealedInventory(
+                        new InventoryCodec() {
+                            @Override
+                            public byte[] write(ItemStack[] items) {
+                                return new byte[] {9};
+                            }
+
+                            @Override
+                            public ItemStack[] read(byte[] bytes) {
+                                throw new IllegalStateException("unreadable");
+                            }
+                        },
+                        "brix")
+                .seal(ada);
+        ada.getInventory().setItem(0, new ItemStack(Material.BEDROCK, 64));
+
+        assertThat(to(boxed)).isTrue();
+
+        assertThat(SealedInventory.holds(ada)).isFalse();
+        assertThat(to(main)).isTrue();
+        assertThat(ada.getInventory().getItem(0))
+                .describedAs("the pickaxe kept, once, and never the bedrock")
+                .isEqualTo(new ItemStack(Material.IRON_PICKAXE));
+        assertThat(ada.getInventory().contains(Material.BEDROCK)).isFalse();
+    }
+
+    @Test
     @DisplayName("An advancement handed back in a swap is not announced, and one earned outside a swap is")
     void aHandedBackAdvancementIsQuiet() {
         org.bukkit.advancement.Advancement advancement =
