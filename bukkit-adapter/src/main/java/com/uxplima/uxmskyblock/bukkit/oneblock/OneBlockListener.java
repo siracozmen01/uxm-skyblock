@@ -53,6 +53,7 @@ public final class OneBlockListener implements Listener {
     private volatile @org.jspecify.annotations.Nullable OneBlockMoments moments;
     private volatile @org.jspecify.annotations.Nullable OneBlockPhaseLists phaseLists;
     private volatile @org.jspecify.annotations.Nullable OneBlockPauses pauses;
+    private volatile @org.jspecify.annotations.Nullable OneBlockGates gates;
 
     public OneBlockListener(
             OneBlockService service,
@@ -76,6 +77,11 @@ public final class OneBlockListener implements Listener {
         if (waits != null) {
             waits.worldLoaded(event.getWorld());
         }
+    }
+
+    /** Tells it which phases ask lines that must hold before they begin. */
+    public void useGates(OneBlockGates gates) {
+        this.gates = Objects.requireNonNull(gates, "gates must not be null");
     }
 
     /** Tells it which phases wait once they begin, with their block bedrock and a countdown over it. */
@@ -121,20 +127,59 @@ public final class OneBlockListener implements Listener {
             event.setCancelled(true);
             return;
         }
-        Optional<OneBlockService.Broken> broken = service.onBreak(island.get().id());
-        if (broken.isEmpty()) {
-            return;
-        }
         World world = block.getWorld();
         int x = block.getX();
         int y = block.getY();
         int z = block.getZ();
         Player player = event.getPlayer();
-        OneBlockService.Broken next = broken.get();
+        IslandId id = island.get().id();
+        OneBlockGates gate = gates;
+        if (gate != null) {
+            Optional<com.uxplima.uxmskyblock.core.domain.oneblock.OneBlockPhase> ahead = service.phaseAhead(id);
+            if (ahead.isPresent() && gate.asks(ahead.get().key())) {
+                // The break does not count while the next phase's lines are asked: the block comes back as it was.
+                OneBlockDraws drawn = draws;
+                String phaseNow =
+                        service.position(id).map(at -> at.phase().key()).orElse("");
+                scheduler.onRegion(
+                        world.getName(),
+                        x >> 4,
+                        z >> 4,
+                        () -> service.blockNow(id).ifPresent(again -> {
+                            lay(drawn, world, x, y, z, again);
+                            var unused = drawn.fill(world, x, y, z, again, phaseNow);
+                        }));
+                Island owner = island.get();
+                gate.ask(
+                        owner,
+                        player,
+                        ahead.get().key(),
+                        () -> scheduler.onRegion(
+                                world.getName(),
+                                x >> 4,
+                                z >> 4,
+                                () -> service.onBreak(id)
+                                        .ifPresent(next -> counted(owner, player, world, x, y, z, next))));
+                return;
+            }
+        }
+        Optional<OneBlockService.Broken> broken = service.onBreak(id);
+        if (broken.isEmpty()) {
+            return;
+        }
+        counted(island.get(), player, world, x, y, z, broken.get());
+    }
+
+    /**
+     * What a counted break does: the block comes back as the draw or a moment, a phase that begins does so with its
+     * lists, and a phase that waits begins with bedrock.
+     */
+    private void counted(Island owner, Player player, World world, int x, int y, int z, OneBlockService.Broken next) {
+        OneBlockPauses waits = pauses;
         // Set once the break has finished: set now, the break would clear it again.
         OneBlockDraws drawn = draws;
         OneBlockMoments happens = moments;
-        IslandId islandId = island.get().id();
+        IslandId islandId = owner.id();
         String phase = next.position().phase().key();
         java.time.Duration pause = waits != null && next.phaseBegan() ? waits.pauseOf(phase) : java.time.Duration.ZERO;
         String momentKey = "moment:" + next.position().intoPhase();
@@ -205,7 +250,7 @@ public final class OneBlockListener implements Listener {
                 // The phase's own lists, or the shipped one when it wrote none.
                 pay(islandId, finished.key(), "finished", next.cycle(), player, () -> {
                     if (written == null
-                            || !written.run(effectPlayer, finished.key(), "finished", island.get(), player, says)) {
+                            || !written.run(effectPlayer, finished.key(), "finished", owner, player, says)) {
                         effectPlayer.fire(effects, "oneblock-phase-finished", player, says);
                     }
                 });
@@ -216,8 +261,7 @@ public final class OneBlockListener implements Listener {
                             "first-finished",
                             0,
                             player,
-                            () -> written.run(
-                                    effectPlayer, finished.key(), "first-finished", island.get(), player, says));
+                            () -> written.run(effectPlayer, finished.key(), "first-finished", owner, player, says));
                 }
             });
             messages.send(player, "oneblock.phase_began", Placeholder.unparsed("phase", title(player, next)));
@@ -227,7 +271,7 @@ public final class OneBlockListener implements Listener {
                     "blocks",
                     Long.toString(next.position().phaseLength()));
             pay(islandId, phase, "began", next.nextCycle(), player, () -> {
-                if (written == null || !written.run(effectPlayer, phase, "began", island.get(), player, began)) {
+                if (written == null || !written.run(effectPlayer, phase, "began", owner, player, began)) {
                     effectPlayer.fire(effects, "oneblock-phase-began", player, began);
                 }
             });

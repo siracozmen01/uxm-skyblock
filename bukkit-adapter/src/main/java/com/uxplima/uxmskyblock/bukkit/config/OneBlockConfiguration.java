@@ -306,8 +306,8 @@ public record OneBlockConfiguration(
 
     /**
      * What the phase writes to stand before it: {@code wait}, a time as {@code 5m}, and {@code requires}, a list of
-     * requirement lines. A line that cannot be read, a wait line, which {@code wait} says instead, and a points line,
-     * which only ChunkBlock keeps, are left out with a warning.
+     * requirement lines. A line that cannot be read, a wait line, which {@code wait} says instead, and a points or a
+     * ladder level line, which only ChunkBlock keeps, are left out with a warning.
      */
     private static OneBlockGate gate(String phase, ConfigurationNode node) {
         Duration wait = Duration.ZERO;
@@ -325,7 +325,10 @@ public record OneBlockConfiguration(
         for (ConfigurationNode line : node.node("requires").childrenList()) {
             String text = line.getString("");
             Optional<Requirement> read = RequirementLines.parse(text);
-            if (read.isEmpty() || read.get() instanceof Requirement.Wait || read.get() instanceof Requirement.Points) {
+            if (read.isEmpty()
+                    || read.get() instanceof Requirement.Wait
+                    || read.get() instanceof Requirement.Points
+                    || (read.get() instanceof Requirement.Level level && level.level() == Requirement.Level.LADDER)) {
                 LOGGER.warning(() -> "OneBlock phase '" + phase + "' requires '" + text
                         + "', which it cannot ask, and the line is left out. A wait is written as wait = \"5m\".");
                 continue;

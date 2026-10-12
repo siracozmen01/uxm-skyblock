@@ -267,6 +267,36 @@ final class IslandCommandWiring {
         tree.useModeAdmin(modeAdmin(config, gameplay, authority, integration.messages()));
         // A OneBlock island's standing, as the operator's menu file draws it and as placeholders.
         var oneBlockPanel = gameplay.oneBlockWiring().panel(integration.menuEngine());
+        // A phase's requirement lines, asked of the breaker's purse, the island's bank and its level.
+        var bridge = integration.economyBridge();
+        gameplay.oneBlockWiring()
+                .useGates(
+                        gameplay.scheduler(),
+                        integration.messages(),
+                        new com.uxplima.uxmskyblock.bukkit.chunkblock.PlayerChunkPurse(
+                                new com.uxplima.uxmskyblock.bukkit.chunkblock.PlayerChunkPurse.Money() {
+                                    @Override
+                                    public double balance(org.bukkit.entity.Player player) {
+                                        return bridge.balance(player);
+                                    }
+
+                                    @Override
+                                    public boolean withdraw(org.bukkit.entity.Player player, double amount) {
+                                        return bridge.withdrawWallet(player, amount);
+                                    }
+
+                                    @Override
+                                    public boolean deposit(org.bukkit.entity.Player player, double amount) {
+                                        return bridge.depositWallet(player, amount);
+                                    }
+                                },
+                                id -> bridge.wallets().flatMap(wallets -> wallets.currency(id))),
+                        persistence.islandBankPort(),
+                        gameplay.bankService(),
+                        gameplay.accessService(),
+                        authority.sessionCoordinator()::activeProfile,
+                        (islandId, profile) -> levelOf(gameplay, islandId, profile),
+                        config.nodeConfig().nodeId());
         // A ChunkBlock island's chunks, as the operator's menu file draws them, the unlock and placeholders.
         var chunkBlockPanel = gameplay.chunkBlockWiring()
                 .panel(

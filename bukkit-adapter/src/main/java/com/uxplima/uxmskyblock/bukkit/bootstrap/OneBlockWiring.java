@@ -133,6 +133,108 @@ public final class OneBlockWiring implements AutoCloseable {
         return listener;
     }
 
+    /**
+     * Has the listener ask each phase's requirement lines before it begins: the breaker's purse, the island's bank,
+     * which only a member whose role may spend from it pays out of, and the island's level.
+     */
+    public void useGates(
+            SchedulerPort scheduler,
+            com.uxplima.uxmskyblock.bukkit.i18n.Messages messages,
+            com.uxplima.uxmskyblock.bukkit.chunkblock.ChunkPurse purse,
+            com.uxplima.uxmskyblock.core.application.bank.IslandBankPort bankPort,
+            com.uxplima.uxmskyblock.core.application.bank.IslandBankService bank,
+            com.uxplima.uxmskyblock.core.application.island.IslandAccessService access,
+            java.util.function.Function<
+                            java.util.UUID, java.util.Optional<com.uxplima.uxmskyblock.core.domain.identity.ProfileId>>
+                    activeProfile,
+            java.util.function.BiFunction<
+                            com.uxplima.uxmskyblock.core.domain.identity.IslandId,
+                            com.uxplima.uxmskyblock.core.domain.identity.ProfileId,
+                            Long>
+                    levelOf,
+            com.uxplima.uxmskyblock.core.domain.session.ServerNodeId node) {
+        var funds = new com.uxplima.uxmskyblock.bukkit.oneblock.OneBlockGates.IslandFunds() {
+            @Override
+            public long held(
+                    com.uxplima.uxmskyblock.core.domain.identity.IslandId islandId,
+                    com.uxplima.uxmskyblock.core.domain.requirement.Requirement line) {
+                return bankPort.findBankByIslandId(islandId)
+                        .map(held -> line
+                                        instanceof
+                                        com.uxplima.uxmskyblock.core.domain.requirement.Requirement.Currency currency
+                                ? held.heldOf(com.uxplima.uxmskyblock.core.application.bank.BankCurrencies.columnOf(
+                                        currency.id()))
+                                : held.primaryBalanceMinorUnits())
+                        .orElse(0L);
+            }
+
+            @Override
+            public boolean take(
+                    com.uxplima.uxmskyblock.core.domain.identity.IslandId islandId,
+                    org.bukkit.entity.Player payer,
+                    com.uxplima.uxmskyblock.core.domain.requirement.Requirement line) {
+                return moved(islandId, payer, line, -1);
+            }
+
+            @Override
+            public void giveBack(
+                    com.uxplima.uxmskyblock.core.domain.identity.IslandId islandId,
+                    org.bukkit.entity.Player payer,
+                    com.uxplima.uxmskyblock.core.domain.requirement.Requirement line) {
+                if (!moved(islandId, payer, line, 1)) {
+                    LOGGER.warning(() ->
+                            "Giving back what OneBlock took from the bank of island " + islandId + " failed: " + line);
+                }
+            }
+
+            private boolean moved(
+                    com.uxplima.uxmskyblock.core.domain.identity.IslandId islandId,
+                    org.bukkit.entity.Player payer,
+                    com.uxplima.uxmskyblock.core.domain.requirement.Requirement line,
+                    long sign) {
+                String column;
+                long amount;
+                if (line instanceof com.uxplima.uxmskyblock.core.domain.requirement.Requirement.Currency currency) {
+                    column = com.uxplima.uxmskyblock.core.application.bank.BankCurrencies.columnOf(currency.id());
+                    amount = currency.amount();
+                } else if (line instanceof com.uxplima.uxmskyblock.core.domain.requirement.Requirement.Money money) {
+                    column = com.uxplima.uxmskyblock.core.application.bank.BankCurrencies.PRIMARY_COLUMN;
+                    amount = money.minor();
+                } else {
+                    return false;
+                }
+                return bank.move(
+                                islandId,
+                                new com.uxplima.uxmskyblock.core.domain.identity.PlayerUuid(payer.getUniqueId()),
+                                column,
+                                sign * amount,
+                                "OneBlock phase",
+                                node)
+                        instanceof com.uxplima.uxmskyblock.core.domain.bank.BankTransactionOutcome.Success;
+            }
+
+            @Override
+            public boolean mayTake(
+                    com.uxplima.uxmskyblock.core.domain.island.Island island, org.bukkit.entity.Player payer) {
+                return activeProfile
+                        .apply(payer.getUniqueId())
+                        .map(profile -> access.canWithdrawBank(island, profile))
+                        .orElse(false);
+            }
+        };
+        listener.useGates(new com.uxplima.uxmskyblock.bukkit.oneblock.OneBlockGates(
+                () -> config,
+                service,
+                scheduler,
+                messages,
+                purse,
+                funds,
+                (island, player) -> activeProfile
+                        .apply(player.getUniqueId())
+                        .map(profile -> levelOf.apply(island.id(), profile))
+                        .orElse(0L)));
+    }
+
     /** Stops the schedule and writes what is still only counted, before the database closes. */
     @Override
     public void close() {
