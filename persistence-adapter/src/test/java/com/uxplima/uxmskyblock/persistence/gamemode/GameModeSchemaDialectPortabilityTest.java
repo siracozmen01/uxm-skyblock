@@ -406,6 +406,49 @@ class GameModeSchemaDialectPortabilityTest {
                         .isEqualTo(4);
                 assertThat(most.name()).isNotBlank();
             });
+
+            // Each mode's board reads its own table: a second island behind the first on each, and faster on its
+            // course, ranks where it should.
+            PlayerUuid otherOwner = PlayerUuid.of(UUID.randomUUID());
+            ProfileId otherProfile = ProfileId.of(UUID.randomUUID());
+            account(database, otherOwner, otherProfile);
+            IslandId other = IslandId.of(UUID.randomUUID());
+            islands.saveIsland(
+                    Island.create(
+                            other,
+                            IslandBounds.fromCenterAndRadius(400, 0, 100),
+                            otherOwner,
+                            otherProfile,
+                            Instant.now()),
+                    IslandLocation.fromCenterAndRadius(other, "skyblock", 400, 0, 100));
+            oneBlock.start(other, 400, 100, 0);
+            oneBlock.addBreaks(other, 2);
+            parkour.add(other);
+            parkour.finish(other, runner, 10_000);
+            boxed.add(other);
+            chunks.start(other, new ChunkPos(25, 0));
+            com.uxplima.uxmskyblock.persistence.leaderboard.SqlModeStandingsAdapter standings =
+                    new com.uxplima.uxmskyblock.persistence.leaderboard.SqlModeStandingsAdapter(database.dataSource());
+            assertThat(standings.mostBroken(5))
+                    .extracting(s -> s.islandId() + " " + s.value())
+                    .containsExactly(islandId + " 7", other + " 2");
+            assertThat(standings.fastestCourses(5))
+                    .extracting(s -> s.islandId() + " " + s.value())
+                    .describedAs("each course by the best anybody ran it in, the fastest first")
+                    .containsExactly(other + " 10000", islandId + " 25000");
+            assertThat(standings.mostEarned(5))
+                    .extracting(s -> s.islandId() + " " + s.value())
+                    .describedAs("a box that earned nothing is on the board at nothing")
+                    .containsExactly(islandId + " 4", other + " 0");
+            assertThat(standings.mostChunks(5))
+                    .extracting(s -> s.islandId() + " " + s.value())
+                    .describedAs("the chunk it started with and the two it opened")
+                    .containsExactly(islandId + " 3", other + " 1");
+            assertThat(standings.mostChunks(1)).hasSize(1);
+            assertThat(standings.mostBroken(5))
+                    .allSatisfy(s -> assertThat(s.name()).isNotBlank());
+            islands.deleteIsland(other);
+            assertThat(standings.mostBroken(5)).extracting(s -> s.islandId()).containsExactly(islandId);
             assertThat(stranger.farthestReach())
                     .describedAs("the edge of the island furthest from the centre, on x or z")
                     .isGreaterThan(0);
@@ -429,6 +472,10 @@ class GameModeSchemaDialectPortabilityTest {
             assertThat(parkour.mostRun(5)).isEmpty();
             assertThat(oneBlock.find(islandId)).isEmpty();
             assertThat(chunks.find(islandId)).isEmpty();
+            assertThat(standings.mostBroken(5)).isEmpty();
+            assertThat(standings.fastestCourses(5)).isEmpty();
+            assertThat(standings.mostEarned(5)).isEmpty();
+            assertThat(standings.mostChunks(5)).isEmpty();
         } finally {
             if (!database.isClosed()) {
                 database.close();

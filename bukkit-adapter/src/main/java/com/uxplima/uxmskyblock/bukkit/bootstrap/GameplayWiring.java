@@ -241,6 +241,7 @@ public final class GameplayWiring {
                     .register(new com.uxplima.uxmskyblock.core.application.parkour.ParkourRunsMetric(
                             this.parkourWiring.service()));
         }
+        modeBoards(persistence.modeStandingsPort());
 
         // What a leave, a kick, a death and a reset do, as the operator's lifecycle rules say.
         this.playerLifecycle = new com.uxplima.uxmskyblock.bukkit.lifecycle.PlayerLifecycle(
@@ -677,6 +678,25 @@ public final class GameplayWiring {
 
     public IslandBankService bankService() {
         return economicWiring.bankService();
+    }
+
+    /** Each mode's own boards, for the modes this server runs, on the boards and to every plugin that reads them. */
+    private void modeBoards(com.uxplima.uxmskyblock.core.application.leaderboard.ModeStandingsPort standings) {
+        var metrics = creationWiring.leaderboardMetrics();
+        if (this.oneBlockWiring.enabled()) {
+            com.uxplima.uxmskyblock.core.application.leaderboard.ModeMetrics.oneBlock(
+                    metrics, standings, this.oneBlockWiring.service().phases());
+        }
+        if (this.parkourWiring.enabled()) {
+            com.uxplima.uxmskyblock.core.application.leaderboard.ModeMetrics.parkour(metrics, standings);
+        }
+        if (this.boxedWiring.enabled()) {
+            com.uxplima.uxmskyblock.core.application.leaderboard.ModeMetrics.boxed(
+                    metrics, standings, this.boxedWiring.service().rules());
+        }
+        if (this.chunkBlockWiring.enabled()) {
+            com.uxplima.uxmskyblock.core.application.leaderboard.ModeMetrics.chunkBlock(metrics, standings);
+        }
     }
 
     /** Every metric the plugin ranks, its own and those another plugin registered. */
