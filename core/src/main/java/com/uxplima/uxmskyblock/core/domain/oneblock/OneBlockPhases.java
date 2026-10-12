@@ -61,6 +61,17 @@ public record OneBlockPhases(List<OneBlockPhase> phases, AfterTheLast afterTheLa
         return java.util.OptionalLong.empty();
     }
 
+    /**
+     * Which pass through the phases the block after {@code broken} breaks belongs to, from 0. An island that stays in
+     * the last phase never starts another.
+     */
+    public long cycleOf(long broken) {
+        if (broken < 0) {
+            throw new IllegalArgumentException("A count of breaks cannot be negative: " + broken);
+        }
+        return afterTheLast == AfterTheLast.REPEAT ? broken / cycleLength() : 0;
+    }
+
     /** Where an island that has broken {@code broken} blocks stands. */
     public Position positionAt(long broken) {
         if (broken < 0) {

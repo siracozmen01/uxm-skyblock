@@ -100,6 +100,20 @@ class OneBlockPhasesTest {
                 .isInstanceOf(IllegalArgumentException.class);
     }
 
+    @Test
+    @DisplayName("A pass through the phases counts from 0, and an island that stays in the last never starts another")
+    void cycles() {
+        OneBlockPhases repeat = new OneBlockPhases(List.of(PLAINS, UNDERGROUND), OneBlockPhases.AfterTheLast.REPEAT);
+        OneBlockPhases stay = new OneBlockPhases(List.of(PLAINS, UNDERGROUND), OneBlockPhases.AfterTheLast.STAY);
+
+        assertThat(repeat.cycleOf(0)).isZero();
+        assertThat(repeat.cycleOf(4)).isZero();
+        assertThat(repeat.cycleOf(5)).isEqualTo(1);
+        assertThat(repeat.cycleOf(11)).isEqualTo(2);
+        assertThat(stay.cycleOf(11)).isZero();
+        assertThatThrownBy(() -> repeat.cycleOf(-1)).isInstanceOf(IllegalArgumentException.class);
+    }
+
     private static OneBlockPhase phase(String key, long blocks, Map<String, Double> weights) {
         return new OneBlockPhase(key, blocks, new WeightedPool(weights), WeightedPool.empty(), 0);
     }

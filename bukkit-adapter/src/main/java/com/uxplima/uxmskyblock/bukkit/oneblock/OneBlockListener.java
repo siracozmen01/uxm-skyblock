@@ -50,6 +50,7 @@ public final class OneBlockListener implements Listener {
     private volatile ModeMissions missions = ModeMissions.NONE;
     private volatile OneBlockDraws draws = OneBlockDraws.PLAIN;
     private volatile @org.jspecify.annotations.Nullable OneBlockMoments moments;
+    private volatile @org.jspecify.annotations.Nullable OneBlockPhaseLists phaseLists;
 
     public OneBlockListener(
             OneBlockService service,
@@ -64,6 +65,11 @@ public final class OneBlockListener implements Listener {
         this.messages = Objects.requireNonNull(messages, "messages must not be null");
         this.effects = Objects.requireNonNull(effects, "effects must not be null");
         this.effectPlayer = Objects.requireNonNull(effectPlayer, "effectPlayer must not be null");
+    }
+
+    /** Tells it what each phase runs when it begins, finishes and first finishes. */
+    public void usePhaseLists(OneBlockPhaseLists phaseLists) {
+        this.phaseLists = Objects.requireNonNull(phaseLists, "phaseLists must not be null");
     }
 
     /** Tells it what happens at the exact breaks the phase files write. */
@@ -148,19 +154,30 @@ public final class OneBlockListener implements Listener {
                     MissionTriggerType.ONEBLOCK_PHASE,
                     next.position().phase().key(),
                     1L);
-            next.finished()
-                    .ifPresent(finished -> effectPlayer.fire(
-                            effects, "oneblock-phase-finished", player, Map.of("phase", finished.key())));
+            OneBlockPhaseLists written = phaseLists;
+            String cycle = Long.toString(next.cycle());
+            next.finished().ifPresent(finished -> {
+                Map<String, String> says = Map.of("phase", finished.key(), "cycle", cycle);
+                // The phase's own lists, or the shipped one when it wrote none.
+                if (written == null
+                        || !written.run(effectPlayer, finished.key(), "finished", island.get(), player, says)) {
+                    effectPlayer.fire(effects, "oneblock-phase-finished", player, says);
+                }
+                if (written != null && next.cycle() == 0) {
+                    written.run(effectPlayer, finished.key(), "first-finished", island.get(), player, says);
+                }
+            });
             messages.send(player, "oneblock.phase_began", Placeholder.unparsed("phase", title(player, next)));
-            effectPlayer.fire(
-                    effects,
-                    "oneblock-phase-began",
-                    player,
-                    Map.of(
-                            "phase",
-                            next.position().phase().key(),
-                            "blocks",
-                            Long.toString(next.position().phaseLength())));
+            Map<String, String> began = Map.of(
+                    "phase",
+                    next.position().phase().key(),
+                    "blocks",
+                    Long.toString(next.position().phaseLength()));
+            if (written == null
+                    || !written.run(
+                            effectPlayer, next.position().phase().key(), "began", island.get(), player, began)) {
+                effectPlayer.fire(effects, "oneblock-phase-began", player, began);
+            }
         }
     }
 

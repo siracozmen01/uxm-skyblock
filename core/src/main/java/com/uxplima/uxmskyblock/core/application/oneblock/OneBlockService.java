@@ -28,15 +28,16 @@ public final class OneBlockService {
     private static final Logger LOGGER = Logger.getLogger(OneBlockService.class.getName());
 
     /**
-     * What one break did: what the block becomes, what appears on it, whether a phase began, and the phase it
-     * finished when one did.
+     * What one break did: what the block becomes, what appears on it, whether a phase began, the phase it finished
+     * when one did, and the pass through the phases the broken block belonged to, from 0.
      */
     public record Broken(
             String nextBlock,
             Optional<String> creature,
             OneBlockPhases.Position position,
             boolean phaseBegan,
-            Optional<OneBlockPhase> finished) {}
+            Optional<OneBlockPhase> finished,
+            long cycle) {}
 
     /** What an operator's change did to an island's count. */
     public record Changed(long was, long now) {}
@@ -139,7 +140,8 @@ public final class OneBlockService {
                 phases.startsAPhase(broken),
                 phases.startsAPhase(broken)
                         ? Optional.of(phases.positionAt(broken - 1).phase())
-                        : Optional.empty()));
+                        : Optional.empty(),
+                phases.cycleOf(broken - 1)));
     }
 
     /**

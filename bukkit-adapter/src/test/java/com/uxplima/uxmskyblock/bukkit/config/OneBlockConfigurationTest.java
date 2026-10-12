@@ -54,7 +54,15 @@ class OneBlockConfigurationTest extends MockBukkitHarness {
             assertThat(config.iconOf(phase.key()))
                     .describedAs("%s: its icon is the one written", phase.key())
                     .isEqualTo(written.node("icon").getString());
+            for (String event : OneBlockLists.EVENTS) {
+                assertThat(config.listsOf(phase.key(), event).isPresent())
+                        .describedAs("%s: its %s lists are read as written", phase.key(), event)
+                        .isEqualTo(!written.node(event).virtual());
+            }
         }
+        assertThat(config.listsOf("plains", "first-finished"))
+                .describedAs("the shipped example")
+                .isPresent();
         assertThat(config.phases().phases().stream().map(phase -> config.iconOf(phase.key())))
                 .describedAs("each shipped phase has an icon of its own")
                 .doesNotHaveDuplicates();

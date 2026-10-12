@@ -34,6 +34,7 @@ import org.spongepowered.configurate.ConfigurationNode;
  * @param icons each phase's icon, a block or item name, by the phase's name
  * @param entries the pool entries written as more than a name
  * @param moments what happens at exact breaks, by phase, then by how many of the phase's blocks were broken
+ * @param lists what each phase runs when it begins, finishes and first finishes, by phase, then by event
  */
 public record OneBlockConfiguration(
         boolean enabled,
@@ -41,7 +42,8 @@ public record OneBlockConfiguration(
         java.time.Duration saveInterval,
         Map<String, String> icons,
         OneBlockEntries entries,
-        Map<String, Map<Long, OneBlockMoment>> moments) {
+        Map<String, Map<Long, OneBlockMoment>> moments,
+        Map<String, Map<String, OneBlockLists>> lists) {
 
     /** The icon of a phase whose file names none. */
     public static final String DEFAULT_ICON = "GRASS_BLOCK";
@@ -118,6 +120,32 @@ public record OneBlockConfiguration(
         return moments;
     }
 
+    /** What the phase writes to run when it begins, finishes and first finishes; a line that cannot be is skipped. */
+    private static Map<String, OneBlockLists> lists(String phase, ConfigurationNode node) {
+        Map<String, OneBlockLists> byEvent = new LinkedHashMap<>();
+        for (String event : OneBlockLists.EVENTS) {
+            ConfigurationNode written = node.node(event);
+            if (written.virtual()) {
+                continue;
+            }
+            try {
+                byEvent.put(
+                        event,
+                        new OneBlockLists(
+                                EffectsConfiguration.parseAll(
+                                        "oneblock phase " + phase + ", " + event + ".breaker",
+                                        written.node("breaker").getList(String.class, List.of())),
+                                EffectsConfiguration.parseAll(
+                                        "oneblock phase " + phase + ", " + event + ".members",
+                                        written.node("members").getList(String.class, List.of()))));
+            } catch (org.spongepowered.configurate.serialize.SerializationException wrong) {
+                LOGGER.warning(() -> "OneBlock phase '" + phase + "', " + event + " cannot be read: "
+                        + wrong.getMessage() + ". The shipped list in modules/effects.conf runs instead.");
+            }
+        }
+        return byEvent;
+    }
+
     /** The slots a creature's equipment is written by. */
     public static final List<String> SLOTS = List.of("head", "chest", "legs", "feet", "hand", "off-hand");
 
@@ -125,7 +153,7 @@ public record OneBlockConfiguration(
     static final java.util.regex.Pattern NAME = java.util.regex.Pattern.compile("[a-z0-9_-]{1,64}");
 
     public OneBlockConfiguration(boolean enabled, OneBlockPhases phases, java.time.Duration saveInterval) {
-        this(enabled, phases, saveInterval, Map.of(), OneBlockEntries.NONE, Map.of());
+        this(enabled, phases, saveInterval, Map.of(), OneBlockEntries.NONE, Map.of(), Map.of());
     }
 
     /** How often counted breaks are written, when the file names no interval. */
@@ -144,6 +172,15 @@ public record OneBlockConfiguration(
         Map<String, Map<Long, OneBlockMoment>> copied = new LinkedHashMap<>();
         moments.forEach((phase, at) -> copied.put(phase, Map.copyOf(at)));
         moments = java.util.Collections.unmodifiableMap(copied);
+        Map<String, Map<String, OneBlockLists>> listed = new LinkedHashMap<>();
+        lists.forEach((phase, byEvent) -> listed.put(phase, Map.copyOf(byEvent)));
+        lists = java.util.Collections.unmodifiableMap(listed);
+    }
+
+    /** What the phase {@code phase} runs on {@code event}, one of {@link OneBlockLists#EVENTS}, if it writes any. */
+    public java.util.Optional<OneBlockLists> listsOf(String phase, String event) {
+        return java.util.Optional.ofNullable(lists.getOrDefault(phase, Map.of()).get(event))
+                .filter(written -> !written.isEmpty());
     }
 
     /** What happens once {@code broken} blocks of the phase {@code phase} are broken, if anything. */
@@ -196,6 +233,7 @@ public record OneBlockConfiguration(
         Map<String, OneBlockEntries.Block> blockEntries = new LinkedHashMap<>();
         Map<String, OneBlockEntries.Creature> creatureEntries = new LinkedHashMap<>();
         Map<String, Map<Long, OneBlockMoment>> moments = new LinkedHashMap<>();
+        Map<String, Map<String, OneBlockLists>> lists = new LinkedHashMap<>();
         // A list, because the phases are gone through in order and a HOCON object keeps none.
         for (ConfigurationNode listed : root.node("phases").childrenList()) {
             ConfigurationNode phase = listed.isMap() ? listed : phaseFile(listed.getString(""), phasesFolder);
@@ -216,6 +254,7 @@ public record OneBlockConfiguration(
                         new WeightedPool(blocks),
                         new WeightedPool(creatures(key, phase.node("creatures"), creatureEntries)),
                         phase.node("creature-chance").getDouble(0)));
+                lists.put(key, lists(key, phase));
                 moments.put(
                         key,
                         moments(
@@ -238,7 +277,8 @@ public record OneBlockConfiguration(
                 saveInterval,
                 icons,
                 new OneBlockEntries(blockEntries, creatureEntries),
-                moments);
+                moments,
+                lists);
     }
 
     /** The phase file of {@code name}, or nothing, said in the console, when there is none to read. */
