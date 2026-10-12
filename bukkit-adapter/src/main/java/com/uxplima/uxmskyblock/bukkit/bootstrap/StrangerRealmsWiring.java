@@ -67,8 +67,8 @@ public final class StrangerRealmsWiring implements AutoCloseable {
                 scheduler,
                 org.bukkit.Bukkit::getWorld,
                 org.bukkit.World::isChunkGenerated,
-                com.uxplima.uxmskyblock.bukkit.stranger.UpsideDownReach.copiedUnless(
-                        valuable(configuration.levelConfig()), holdsThings()));
+                com.uxplima.uxmskyblock.bukkit.stranger.UpsideDownReach.copiedOnly(
+                        config.upsideDown().lateCopy()));
         this.compass = new com.uxplima.uxmskyblock.bukkit.stranger.WarpedCompass(
                 realms, scheduler, configuration.messages(), config.compass());
         if (config.enabled() && config.compass().enabled()) {
@@ -101,46 +101,6 @@ public final class StrangerRealmsWiring implements AutoCloseable {
     /** What the Upside Down makes of the creatures born in it, while StrangerRealms is enabled. */
     public UpsideDownSpawns spawns() {
         return spawns;
-    }
-
-    /** The blocks levels.conf gives a level weight or a price: what is worth something on an island. */
-    static java.util.Set<String> valuable(com.uxplima.uxmskyblock.bukkit.config.LevelConfiguration levels) {
-        java.util.Set<String> worth = new java.util.HashSet<>();
-        levels.blockWeights().forEach((block, weight) -> {
-            if (weight > 0) {
-                worth.add(keyed(block));
-            }
-        });
-        levels.basePricesMinorUnits().forEach((block, price) -> {
-            if (price > 0) {
-                worth.add(keyed(block));
-            }
-        });
-        return worth;
-    }
-
-    /** A block as levels.conf writes it, with the game's namespace when it was written without one. */
-    private static String keyed(String block) {
-        String written = block.strip().toLowerCase(java.util.Locale.ROOT);
-        return written.contains(":") ? written : "minecraft:" + written;
-    }
-
-    /**
-     * Whether a block holds things, such as a chest or a furnace, asked once a material. A material the server
-     * cannot answer for is taken to hold things, so it is never copied.
-     */
-    private static java.util.function.Predicate<org.bukkit.Material> holdsThings() {
-        java.util.Map<org.bukkit.Material, Boolean> known = new java.util.concurrent.ConcurrentHashMap<>();
-        return material -> known.computeIfAbsent(material, block -> {
-            if (!block.isBlock() || block.isAir()) {
-                return false;
-            }
-            try {
-                return block.createBlockData().createBlockState() instanceof org.bukkit.block.TileState;
-            } catch (RuntimeException e) {
-                return true;
-            }
-        });
     }
 
     /** The Upside Down following the island's land past where it was first laid. */

@@ -26,8 +26,57 @@ public record StrangerRealmsConfiguration(
      *
      * @param radius how far from the island's centre the land is mirrored, in blocks
      * @param palette how the mirror distresses what it copies, each rule written {@code FROM:TO}
+     * @param lateCopy the blocks a mirror laid after the island was made copies: a name, or a name with one
+     *     {@code *}. Such land may carry what players put on it, so everything else is laid as air.
      */
-    public record UpsideDown(int radius, List<String> palette) {
+    public record UpsideDown(int radius, List<String> palette, List<String> lateCopy) {
+
+        /** The land a mirror laid late copies as shipped: the ground and what grows on it, no ore, nothing made. */
+        public static final List<String> NATURAL_GROUND = List.of(
+                "STONE",
+                "DEEPSLATE",
+                "TUFF",
+                "CALCITE",
+                "ANDESITE",
+                "DIORITE",
+                "GRANITE",
+                "DIRT",
+                "COARSE_DIRT",
+                "ROOTED_DIRT",
+                "GRASS_BLOCK",
+                "PODZOL",
+                "MYCELIUM",
+                "MUD",
+                "CLAY",
+                "SAND",
+                "RED_SAND",
+                "GRAVEL",
+                "SANDSTONE",
+                "RED_SANDSTONE",
+                "TERRACOTTA",
+                "SNOW",
+                "SNOW_BLOCK",
+                "ICE",
+                "PACKED_ICE",
+                "WATER",
+                "LAVA",
+                "BEDROCK",
+                "*_LOG",
+                "*_LEAVES",
+                "SHORT_GRASS",
+                "TALL_GRASS",
+                "FERN",
+                "LARGE_FERN",
+                "DEAD_BUSH",
+                "POPPY",
+                "DANDELION",
+                "MOSS_BLOCK",
+                "SEAGRASS",
+                "TALL_SEAGRASS",
+                "KELP",
+                "KELP_PLANT",
+                "SUGAR_CANE",
+                "VINE");
 
         public static final UpsideDown SHIPPED = new UpsideDown(
                 48,
@@ -44,13 +93,20 @@ public record StrangerRealmsConfiguration(
                         "*_WOOD:STRIPPED_DARK_OAK_WOOD",
                         "POPPY:WITHER_ROSE",
                         "DANDELION:WITHER_ROSE",
-                        "SAND:SOUL_SAND"));
+                        "SAND:SOUL_SAND"),
+                NATURAL_GROUND);
 
         public UpsideDown {
             palette = List.copyOf(palette);
+            lateCopy = List.copyOf(lateCopy);
             if (radius < 0) {
                 throw new IllegalArgumentException("the radius must not be negative");
             }
+        }
+
+        /** The Upside Down with the shipped ground a late mirror copies. */
+        public UpsideDown(int radius, List<String> palette) {
+            this(radius, palette, NATURAL_GROUND);
         }
     }
 
@@ -212,7 +268,8 @@ public record StrangerRealmsConfiguration(
         try {
             upsideDown = new UpsideDown(
                     node.node("radius").getInt(UpsideDown.SHIPPED.radius()),
-                    AcidIslandConfiguration.strings(node.node("palette"), UpsideDown.SHIPPED.palette()));
+                    AcidIslandConfiguration.strings(node.node("palette"), UpsideDown.SHIPPED.palette()),
+                    AcidIslandConfiguration.strings(node.node("late-copy"), UpsideDown.SHIPPED.lateCopy()));
         } catch (IllegalArgumentException e) {
             LOGGER.warning(() -> "modules/strangerrealms.conf upside-down: " + e.getMessage()
                     + ". The shipped Upside Down is used.");

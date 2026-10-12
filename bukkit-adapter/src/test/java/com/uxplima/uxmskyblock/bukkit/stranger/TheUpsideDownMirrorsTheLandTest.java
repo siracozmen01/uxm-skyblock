@@ -238,6 +238,18 @@ class TheUpsideDownMirrorsTheLandTest extends MockBukkitHarness {
         assertThat(odd.upsideDown()).isEqualTo(StrangerRealmsConfiguration.UpsideDown.SHIPPED);
     }
 
+    @Test
+    @DisplayName("What a late mirror copies is the operator's list, the plain ground as shipped")
+    void theLateCopyIsTheOperators() throws Exception {
+        StrangerRealmsConfiguration narrow = StrangerRealmsConfiguration.load(HoconConfigurationLoader.builder()
+                .buildAndLoadString("upside-down { late-copy = [\"STONE\", \"*_LOG\"] }"));
+
+        assertThat(narrow.upsideDown().lateCopy()).containsExactly("STONE", "*_LOG");
+        assertThat(StrangerRealmsConfiguration.UpsideDown.SHIPPED.lateCopy())
+                .contains("STONE", "DIRT", "WATER")
+                .doesNotContain("DIAMOND_ORE", "CHEST", "DIAMOND_BLOCK");
+    }
+
     private UpsideDownStart start(int radius, List<String> palette) {
         return new UpsideDownStart(
                 service, scheduler, new StrangerRealmsConfiguration.UpsideDown(radius, palette), () -> UPSIDE_DOWN);

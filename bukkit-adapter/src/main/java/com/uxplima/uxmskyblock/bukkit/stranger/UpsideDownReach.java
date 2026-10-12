@@ -1,5 +1,8 @@
 package com.uxplima.uxmskyblock.bukkit.stranger;
 
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
@@ -27,8 +30,8 @@ import org.jspecify.annotations.Nullable;
  * creation or walked into before, is never laid over, so nothing anybody built there is lost.
  *
  * <p>Land mirrored this late may carry what the island's players put on it, where the land of a new island did
- * not. A block that is worth something, or one that holds things, would be had twice, once on each side, so the
- * Upside Down gets air in its place.
+ * not, and a block copied across would be had twice, once on each side. So a late mirror copies only the plain
+ * ground the operator lists in {@code upside-down.late-copy}, and lays air for everything else.
  */
 public final class UpsideDownReach implements Listener {
 
@@ -63,12 +66,27 @@ public final class UpsideDownReach implements Listener {
     }
 
     /**
-     * What a late mirror copies: every block but those {@code valuable} names by key, such as
-     * {@code minecraft:diamond_block}, and those {@code holdsThings} says carry contents.
+     * What a late mirror copies: only the blocks {@code written} names, each a name such as {@code STONE} or a name
+     * with one {@code *} such as {@code *_LOG}. Anything else, whatever it is worth, is laid as air.
      */
-    public static Predicate<Material> copiedUnless(Set<String> valuable, Predicate<Material> holdsThings) {
-        Set<String> named = Set.copyOf(valuable);
-        return material -> !named.contains(material.getKey().asString()) && !holdsThings.test(material);
+    public static Predicate<Material> copiedOnly(List<String> written) {
+        List<String> names = written.stream()
+                .map(name -> name.strip().toUpperCase(Locale.ROOT))
+                .filter(name -> !name.isEmpty())
+                .toList();
+        Map<Material, Boolean> known = new ConcurrentHashMap<>();
+        return material ->
+                known.computeIfAbsent(material, block -> names.stream().anyMatch(name -> matches(name, block.name())));
+    }
+
+    private static boolean matches(String written, String name) {
+        int star = written.indexOf('*');
+        if (star < 0) {
+            return written.equals(name);
+        }
+        String before = written.substring(0, star);
+        String after = written.substring(star + 1);
+        return name.length() >= before.length() + after.length() && name.startsWith(before) && name.endsWith(after);
     }
 
     @EventHandler(priority = EventPriority.MONITOR)

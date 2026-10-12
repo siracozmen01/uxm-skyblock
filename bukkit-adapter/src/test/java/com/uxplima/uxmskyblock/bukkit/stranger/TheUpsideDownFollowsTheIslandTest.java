@@ -117,8 +117,7 @@ class TheUpsideDownFollowsTheIslandTest extends MockBukkitHarness {
                 scheduler,
                 worlds::get,
                 (world, x, z) -> made.contains(world.getName() + ":" + x + "," + z),
-                UpsideDownReach.copiedUnless(
-                        Set.of("minecraft:diamond_block"), material -> material == Material.CHEST));
+                UpsideDownReach.copiedOnly(List.of("dirt", "GRASS_BLOCK", "*_LOG", " ")));
     }
 
     private void load(World world, int chunkX, int chunkZ, boolean fresh) {
@@ -198,19 +197,31 @@ class TheUpsideDownFollowsTheIslandTest extends MockBukkitHarness {
     }
 
     @Test
-    @DisplayName("A late mirror lays air for a block worth something or one that holds things, and copies the rest")
-    void whatIsWorthSomethingIsNotHadTwice() {
+    @DisplayName("A late mirror copies only the ground the operator lists, and lays air for anything else")
+    void onlyTheListedGroundIsCopied() {
         land.getBlockAt(40, Y, 8).setType(Material.DIAMOND_BLOCK);
         land.getBlockAt(41, Y, 8).setType(Material.CHEST);
-        land.getBlockAt(42, Y, 8).setType(Material.DIRT);
-        land.getBlockAt(-20, Y, -20).setType(Material.DIAMOND_BLOCK);
+        land.getBlockAt(42, Y, 8).setType(Material.RAW_IRON_BLOCK);
+        land.getBlockAt(43, Y, 8).setType(Material.DIRT);
+        land.getBlockAt(44, Y, 8).setType(Material.OAK_LOG);
+        land.getBlockAt(45, Y, 8).setType(Material.COARSE_DIRT);
+        land.getBlockAt(-20, Y, -20).setType(Material.COAL_BLOCK);
 
         load(land, 2, 0, false);
         load(upsideDown, -2, -2, true);
 
         assertThat(upsideDown.getBlockAt(40, Y, 8).getType()).isEqualTo(Material.AIR);
         assertThat(upsideDown.getBlockAt(41, Y, 8).getType()).isEqualTo(Material.AIR);
-        assertThat(upsideDown.getBlockAt(42, Y, 8).getType()).isEqualTo(Material.DIRT);
+        assertThat(upsideDown.getBlockAt(42, Y, 8).getType())
+                .describedAs("a block no list of worth names is still not ground")
+                .isEqualTo(Material.AIR);
+        assertThat(upsideDown.getBlockAt(43, Y, 8).getType()).isEqualTo(Material.DIRT);
+        assertThat(upsideDown.getBlockAt(44, Y, 8).getType())
+                .describedAs("a name with a star")
+                .isEqualTo(Material.OAK_LOG);
+        assertThat(upsideDown.getBlockAt(45, Y, 8).getType())
+                .describedAs("a name without one is that block alone")
+                .isEqualTo(Material.AIR);
         assertThat(upsideDown.getBlockAt(-20, Y, -20).getType())
                 .describedAs("on the Upside Down's own side too")
                 .isEqualTo(Material.AIR);
