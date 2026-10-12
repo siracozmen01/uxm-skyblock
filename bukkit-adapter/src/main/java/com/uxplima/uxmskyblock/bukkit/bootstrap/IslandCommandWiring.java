@@ -206,6 +206,9 @@ final class IslandCommandWiring {
                         .toList(),
                 org.bukkit.Bukkit::getWorld,
                 () -> worldName,
+                () -> org.bukkit.Bukkit.getWorlds().isEmpty()
+                        ? null
+                        : org.bukkit.Bukkit.getWorlds().getFirst().getSpawnLocation(),
                 (preset, world, x, y, z) -> starts.build(
                         new com.uxplima.uxmskyblock.bukkit.schematic.IslandStart(
                                 world,

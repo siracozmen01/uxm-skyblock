@@ -38,7 +38,7 @@ class ALookBeforeChoosingIsTheOperatorsTest {
             "Each value is read, a time that is none keeps the shipped one, and a look that cannot stand is shipped")
     void written() throws Exception {
         PresetPreview look = read("""
-                presets.preview { enabled = false, time = "1m", radius = 30, cooldown = "soon", world = " showroom ",
+                presets.preview { enabled = false, time = "1m", radius = 30, cooldown = "soon", calm = "5s", world = " showroom ",
                   x = 5000, z = -7000, y = 80, spacing = 200 }
                 """);
 
@@ -47,6 +47,7 @@ class ALookBeforeChoosingIsTheOperatorsTest {
         assertThat(look.radius()).isEqualTo(30);
         assertThat(look.cooldown()).isEqualTo(PresetPreview.SHIPPED.cooldown());
         assertThat(look.world()).isEqualTo("showroom");
+        assertThat(look.calm()).isEqualTo(Duration.ofSeconds(5));
         assertThat(look.xOf(1)).isEqualTo(5200);
         assertThat(look.z()).isEqualTo(-7000);
         assertThat(look.y()).isEqualTo(80);

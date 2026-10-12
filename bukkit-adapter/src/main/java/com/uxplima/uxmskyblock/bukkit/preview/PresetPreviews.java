@@ -76,6 +76,7 @@ public final class PresetPreviews implements Listener {
     private final Supplier<List<StarterPreset>> presets;
     private final Function<String, @Nullable World> worlds;
     private final Supplier<String> islandWorld;
+    private final Supplier<@Nullable Location> spawn;
     private final Showroom showroom;
     private final SchedulerPort scheduler;
     private final Messages messages;
@@ -84,12 +85,14 @@ public final class PresetPreviews implements Listener {
     private final Map<UUID, Instant> lastLook = new ConcurrentHashMap<>();
     private final Set<UUID> moving = ConcurrentHashMap.newKeySet();
     private final Map<String, CompletableFuture<Void>> laid = new ConcurrentHashMap<>();
+    private final Map<UUID, Instant> hurt = new ConcurrentHashMap<>();
 
     public PresetPreviews(
             Supplier<PresetPreview> settings,
             Supplier<List<StarterPreset>> presets,
             Function<String, @Nullable World> worlds,
             Supplier<String> islandWorld,
+            Supplier<@Nullable Location> spawn,
             Showroom showroom,
             SchedulerPort scheduler,
             Messages messages,
@@ -98,6 +101,7 @@ public final class PresetPreviews implements Listener {
         this.presets = Objects.requireNonNull(presets, "presets must not be null");
         this.worlds = Objects.requireNonNull(worlds, "worlds must not be null");
         this.islandWorld = Objects.requireNonNull(islandWorld, "islandWorld must not be null");
+        this.spawn = Objects.requireNonNull(spawn, "spawn must not be null");
         this.showroom = Objects.requireNonNull(showroom, "showroom must not be null");
         this.scheduler = Objects.requireNonNull(scheduler, "scheduler must not be null");
         this.messages = Objects.requireNonNull(messages, "messages must not be null");
@@ -129,6 +133,14 @@ public final class PresetPreviews implements Listener {
             return false;
         }
         Instant now = clock.instant();
+        Instant lastHurt = hurt.get(uuid);
+        // A look is no way out of a fight, a fall or a fire: the player is out of reach while they look.
+        if ((lastHurt != null && now.isBefore(lastHurt.plus(preview.calm())))
+                || player.getFallDistance() > 0
+                || player.getFireTicks() > 0) {
+            messages.send(player, "preview.not_now");
+            return false;
+        }
         Instant last = lastLook.get(uuid);
         if (last != null) {
             Duration left = Duration.between(now, last.plus(preview.cooldown()));
@@ -248,8 +260,8 @@ public final class PresetPreviews implements Listener {
         player.getPersistentDataContainer().remove(RETURN);
         to.ifPresent(returned -> {
             player.setGameMode(returned.mode());
-            Location at = returned.at();
-            // A world taken away since leaves the player where they are, playing as they did.
+            // A world taken away since sends the player to the server's spawn, never left at the showroom.
+            Location at = returned.at() != null ? returned.at() : spawn.get();
             if (back && at != null) {
                 moveTo(player, at);
             }
@@ -263,18 +275,34 @@ public final class PresetPreviews implements Listener {
                 .whenComplete((done, failed) -> moving.remove(uuid));
     }
 
-    /** No jump to another player during a look; any other teleport ends the look where it lands. */
+    /** No jump to another player during a look. */
     @EventHandler(priority = EventPriority.LOWEST, ignoreCancelled = true)
+    public void onSpectate(PlayerTeleportEvent event) {
+        if (event.getCause() == PlayerTeleportEvent.TeleportCause.SPECTATE
+                && looking.containsKey(event.getPlayer().getUniqueId())) {
+            event.setCancelled(true);
+        }
+    }
+
+    /**
+     * A teleport of anybody else's that goes through ends the look where it lands. Read last, so one another plugin
+     * refuses leaves the look running rather than the player at the showroom in their own mode.
+     */
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onTeleport(PlayerTeleportEvent event) {
         Player player = event.getPlayer();
         if (!looking.containsKey(player.getUniqueId()) || moving.contains(player.getUniqueId())) {
             return;
         }
-        if (event.getCause() == PlayerTeleportEvent.TeleportCause.SPECTATE) {
-            event.setCancelled(true);
-            return;
-        }
         end(player, false);
+    }
+
+    /** A player hurt is not let look until they have been calm a while. */
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    public void onHurt(org.bukkit.event.entity.EntityDamageEvent event) {
+        if (event.getEntity() instanceof Player player) {
+            hurt.put(player.getUniqueId(), clock.instant());
+        }
     }
 
     /** A spectator who drifts too far is put back over the showroom. */
@@ -306,6 +334,7 @@ public final class PresetPreviews implements Listener {
         Player player = event.getPlayer();
         UUID uuid = player.getUniqueId();
         moving.remove(uuid);
+        hurt.remove(uuid);
         if (looking.remove(uuid) != null) {
             returnOf(player).ifPresent(returned -> player.setGameMode(returned.mode()));
         }
@@ -315,9 +344,19 @@ public final class PresetPreviews implements Listener {
     @EventHandler(priority = EventPriority.MONITOR)
     public void onJoin(PlayerJoinEvent event) {
         Player player = event.getPlayer();
-        if (player.getPersistentDataContainer().has(RETURN, PersistentDataType.STRING)) {
-            end(player, true);
+        Optional<Returned> left = returnOf(player);
+        if (left.isEmpty()) {
+            return;
         }
+        // The mode now; the move on the player's next tick. A teleport inside the join, before the server has
+        // placed the player, takes down the region they join in. The note stays until the move is made, so a
+        // player who leaves at once is put back the next time.
+        player.setGameMode(left.get().mode());
+        scheduler.onEntity(PlayerUuid.of(player.getUniqueId()), () -> {
+            if (player.isOnline() && !looking.containsKey(player.getUniqueId())) {
+                end(player, true);
+            }
+        });
     }
 
     /** Where a look puts a player back, when that world is still here, and how they played. */

@@ -14,6 +14,7 @@ import org.spongepowered.configurate.ConfigurationNode;
  * @param time how long a look lasts
  * @param radius how far from the showroom's middle a spectator may drift before they are put back over it
  * @param cooldown how long a player waits between two looks
+ * @param calm how long since a player was last hurt before they may look, so a look is no way out of a fight
  * @param world the world the showrooms stand in, the server's island world when blank
  * @param x where the first showroom's middle stands
  * @param z where the first showroom's middle stands
@@ -21,20 +22,39 @@ import org.spongepowered.configurate.ConfigurationNode;
  * @param spacing how far apart two showrooms stand, along x
  */
 public record PresetPreview(
-        boolean enabled, Duration time, int radius, Duration cooldown, String world, int x, int z, int y, int spacing) {
+        boolean enabled,
+        Duration time,
+        int radius,
+        Duration cooldown,
+        Duration calm,
+        String world,
+        int x,
+        int z,
+        int y,
+        int spacing) {
 
     /** As shipped: twenty seconds over the start island, a far corner of the island world. */
     public static final PresetPreview SHIPPED = new PresetPreview(
-            true, Duration.ofSeconds(20), 48, Duration.ofSeconds(30), "", -1_000_000, -1_000_000, 100, 1024);
+            true,
+            Duration.ofSeconds(20),
+            48,
+            Duration.ofSeconds(30),
+            Duration.ofSeconds(10),
+            "",
+            -1_000_000,
+            -1_000_000,
+            100,
+            1024);
 
     public PresetPreview {
         Objects.requireNonNull(time, "time must not be null");
         Objects.requireNonNull(cooldown, "cooldown must not be null");
+        Objects.requireNonNull(calm, "calm must not be null");
         world = Objects.requireNonNull(world, "world must not be null").strip();
         if (time.isNegative() || time.isZero()) {
             throw new IllegalArgumentException("a look lasts longer than nothing: " + time);
         }
-        if (cooldown.isNegative()) {
+        if (cooldown.isNegative() || calm.isNegative()) {
             throw new IllegalArgumentException("a cooldown is not below nothing: " + cooldown);
         }
         if (radius < 8) {
@@ -62,12 +82,14 @@ public record PresetPreview(
         PresetPreview shipped = SHIPPED;
         Duration time = duration(node.node("time"), shipped.time());
         Duration cooldown = duration(node.node("cooldown"), shipped.cooldown());
+        Duration calm = duration(node.node("calm"), shipped.calm());
         try {
             return new PresetPreview(
                     node.node("enabled").getBoolean(shipped.enabled()),
                     time,
                     node.node("radius").getInt(shipped.radius()),
                     cooldown,
+                    calm,
                     node.node("world").getString(shipped.world()),
                     node.node("x").getInt(shipped.x()),
                     node.node("z").getInt(shipped.z()),

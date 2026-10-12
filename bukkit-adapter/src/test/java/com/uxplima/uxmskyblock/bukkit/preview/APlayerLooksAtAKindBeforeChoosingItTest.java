@@ -53,6 +53,9 @@ class APlayerLooksAtAKindBeforeChoosingItTest extends MockBukkitHarness {
     private final AtomicReference<PresetPreview> settings = new AtomicReference<>(PresetPreview.SHIPPED);
     private final List<String> laid = new ArrayList<>();
     private final List<Runnable> later = new ArrayList<>();
+    private final List<Runnable> nextTick = new ArrayList<>();
+    private boolean holdTicks;
+    private Location spawnPoint;
     private Instant now = Instant.parse("2026-10-12T12:00:00Z");
     private World skyblock;
     private PresetPreviews previews;
@@ -74,6 +77,7 @@ class APlayerLooksAtAKindBeforeChoosingItTest extends MockBukkitHarness {
     void setUp() {
         skyblock = server.addSimpleWorld("skyblock");
         World spawn = server.addSimpleWorld("spawn");
+        spawnPoint = new Location(spawn, 0.5, 64, 0.5);
         SchedulerPort scheduler = mock(SchedulerPort.class);
         doAnswer(call -> {
                     call.getArgument(3, Runnable.class).run();
@@ -82,7 +86,11 @@ class APlayerLooksAtAKindBeforeChoosingItTest extends MockBukkitHarness {
                 .when(scheduler)
                 .onRegion(anyString(), anyInt(), anyInt(), any(Runnable.class));
         doAnswer(call -> {
-                    call.getArgument(1, Runnable.class).run();
+                    if (holdTicks) {
+                        nextTick.add(call.getArgument(1, Runnable.class));
+                    } else {
+                        call.getArgument(1, Runnable.class).run();
+                    }
                     return null;
                 })
                 .when(scheduler)
@@ -95,6 +103,7 @@ class APlayerLooksAtAKindBeforeChoosingItTest extends MockBukkitHarness {
                 () -> List.of(DESERT, CLASSIC),
                 server::getWorld,
                 () -> "skyblock",
+                () -> spawnPoint,
                 (preset, world, x, y, z) -> {
                     laid.add(preset.id() + " " + x + " " + y + " " + z);
                     world.getBlockAt(x, y, z).setType(Material.GRASS_BLOCK);
@@ -181,29 +190,79 @@ class APlayerLooksAtAKindBeforeChoosingItTest extends MockBukkitHarness {
         assertThat(said()).contains("look again");
         now = now.plusSeconds(31);
         settings.set(new PresetPreview(
-                false, Duration.ofSeconds(20), 48, Duration.ofSeconds(30), "", -1_000_000, -1_000_000, 100, 1024));
+                false,
+                Duration.ofSeconds(20),
+                48,
+                Duration.ofSeconds(30),
+                Duration.ofSeconds(10),
+                "",
+                -1_000_000,
+                -1_000_000,
+                100,
+                1024));
         assertThat(previews.show(ada, CLASSIC)).isFalse();
         assertThat(said()).contains("turned off");
         assertThat(ada.getGameMode()).isEqualTo(GameMode.SURVIVAL);
     }
 
     @Test
-    @DisplayName("No jump to another player during a look, and anybody else's teleport ends it where it lands")
+    @DisplayName("No jump to another player during a look; a teleport that goes through ends it, one refused does not")
     void teleports() {
+        org.bukkit.plugin.Plugin plugin = org.mockbukkit.mockbukkit.MockBukkit.createMockPlugin();
+        server.getPluginManager().registerEvents(previews, plugin);
+        server.getPluginManager().registerEvents(new RefusesCommands(), plugin);
         previews.show(ada, CLASSIC);
         Location over = ada.getLocation();
 
         PlayerTeleportEvent spectate =
                 new PlayerTeleportEvent(ada, over, stood, PlayerTeleportEvent.TeleportCause.SPECTATE);
-        previews.onTeleport(spectate);
+        server.getPluginManager().callEvent(spectate);
         assertThat(spectate.isCancelled()).isTrue();
         assertThat(previews.looking(ada)).isTrue();
 
-        PlayerTeleportEvent home = new PlayerTeleportEvent(ada, over, stood, PlayerTeleportEvent.TeleportCause.COMMAND);
-        previews.onTeleport(home);
+        PlayerTeleportEvent refused =
+                new PlayerTeleportEvent(ada, over, stood, PlayerTeleportEvent.TeleportCause.COMMAND);
+        server.getPluginManager().callEvent(refused);
+        assertThat(refused.isCancelled()).isTrue();
+        assertThat(previews.looking(ada))
+                .describedAs("refused by another plugin: the player is still a spectator at the showroom")
+                .isTrue();
+        assertThat(ada.getGameMode()).isEqualTo(GameMode.SPECTATOR);
+
+        PlayerTeleportEvent home = new PlayerTeleportEvent(ada, over, stood, PlayerTeleportEvent.TeleportCause.PLUGIN);
+        server.getPluginManager().callEvent(home);
         assertThat(home.isCancelled()).isFalse();
         assertThat(previews.looking(ada)).isFalse();
         assertThat(ada.getGameMode()).isEqualTo(GameMode.SURVIVAL);
+    }
+
+    /** Refuses a command's teleport, as a plugin that holds a player in a fight would. */
+    public static final class RefusesCommands implements org.bukkit.event.Listener {
+        @org.bukkit.event.EventHandler(priority = org.bukkit.event.EventPriority.HIGH, ignoreCancelled = true)
+        public void onTeleport(PlayerTeleportEvent event) {
+            if (event.getCause() == PlayerTeleportEvent.TeleportCause.COMMAND) {
+                event.setCancelled(true);
+            }
+        }
+    }
+
+    @Test
+    @DisplayName("A player hurt a moment ago, falling or burning cannot look, and can once calm")
+    void notInAFight() {
+        org.bukkit.event.entity.EntityDamageEvent hit = mock(org.bukkit.event.entity.EntityDamageEvent.class);
+        org.mockito.Mockito.when(hit.getEntity()).thenReturn(ada);
+        previews.onHurt(hit);
+
+        assertThat(previews.show(ada, CLASSIC)).isFalse();
+        assertThat(said()).contains("Not now");
+        now = now.plusSeconds(11);
+        ada.setFallDistance(3f);
+        assertThat(previews.show(ada, CLASSIC)).isFalse();
+        ada.setFallDistance(0f);
+        ada.setFireTicks(40);
+        assertThat(previews.show(ada, CLASSIC)).isFalse();
+        ada.setFireTicks(0);
+        assertThat(previews.show(ada, CLASSIC)).isTrue();
     }
 
     @Test
@@ -255,7 +314,18 @@ class APlayerLooksAtAKindBeforeChoosingItTest extends MockBukkitHarness {
         assertThat(ada.getGameMode()).isEqualTo(GameMode.SURVIVAL);
         assertThat(previews.looking(ada)).isFalse();
 
+        ada.setGameMode(GameMode.SPECTATOR);
+        holdTicks = true;
         previews.onJoin(new PlayerJoinEvent(ada, Component.empty()));
+        assertThat(ada.getGameMode()).isEqualTo(GameMode.SURVIVAL);
+        assertThat(ada.getLocation())
+                .describedAs("no move inside the join: on Folia it takes the region down")
+                .isNotEqualTo(stood);
+        assertThat(ada.getPersistentDataContainer().has(PresetPreviews.RETURN, PersistentDataType.STRING))
+                .describedAs("kept until the move is made")
+                .isTrue();
+        nextTick.forEach(Runnable::run);
+        holdTicks = false;
         assertThat(ada.getLocation()).isEqualTo(stood);
         assertThat(ada.getPersistentDataContainer().has(PresetPreviews.RETURN, PersistentDataType.STRING))
                 .isFalse();
@@ -263,6 +333,19 @@ class APlayerLooksAtAKindBeforeChoosingItTest extends MockBukkitHarness {
         assertThat(ada.getLocation())
                 .describedAs("the old look's end does nothing")
                 .isEqualTo(stood);
+    }
+
+    @Test
+    @DisplayName("A player whose place to return to is gone joins at the server's spawn, never at the showroom")
+    void noPlaceLeft() {
+        ada.getPersistentDataContainer()
+                .set(PresetPreviews.RETURN, PersistentDataType.STRING, "gone;1;2;3;0;0;CREATIVE");
+        ada.setGameMode(GameMode.SPECTATOR);
+
+        previews.onJoin(new PlayerJoinEvent(ada, Component.empty()));
+
+        assertThat(ada.getGameMode()).isEqualTo(GameMode.CREATIVE);
+        assertThat(ada.getLocation()).isEqualTo(spawnPoint);
     }
 
     @Test
