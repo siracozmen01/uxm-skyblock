@@ -12,7 +12,7 @@ import com.uxplima.uxmskyblock.bukkit.i18n.Messages;
 import org.jspecify.annotations.Nullable;
 
 /**
- * The island's feed, the guestbook of the island a player stands on, their bookmarks and their island's alliances,
+ * The guestbook of the island a player stands on, their bookmarks and their island's alliances,
  * each a window of one tile per line.
  *
  * <p>Each was a header and a line per entry in chat. A guestbook entry was moderated by typing an id the chat line
@@ -23,16 +23,14 @@ import org.jspecify.annotations.Nullable;
 public final class SocialWindows {
 
     /** The menu files, one for each list. */
-    public static final String ACTIVITY_FILE = "island-activity";
-
     public static final String GUESTBOOK_FILE = "island-guestbook";
+
     public static final String BOOKMARKS_FILE = "island-bookmarks";
     public static final String ALLIANCES_FILE = "island-alliances";
 
     /** The lists those files draw from. */
-    static final String ACTIVITY = "skyblock:activity";
-
     static final String GUESTBOOK = "skyblock:guestbook";
+
     static final String BOOKMARKS = "skyblock:bookmarks";
     static final String ALLIES = "skyblock:allies";
     static final String OFFERS = "skyblock:alliance-offers";
@@ -46,14 +44,6 @@ public final class SocialWindows {
     static final String BREAK = "skyblock:alliance-break";
     static final String ACCEPT = "skyblock:alliance-accept";
     static final String DECLINE = "skyblock:alliance-decline";
-
-    /** One line of the feed as the reader reads it, and how long ago it happened. */
-    public record Line(String text, String ago) {
-        public Line {
-            Objects.requireNonNull(text, "text must not be null");
-            Objects.requireNonNull(ago, "ago must not be null");
-        }
-    }
 
     /** One entry of a guestbook, by the id its moderation commands take. */
     public record Entry(String id, String message, boolean pinned, boolean hidden) {
@@ -86,7 +76,7 @@ public final class SocialWindows {
         if (engine == null) {
             return;
         }
-        for (String list : List.of(ACTIVITY, GUESTBOOK, BOOKMARKS, ALLIES, OFFERS)) {
+        for (String list : List.of(GUESTBOOK, BOOKMARKS, ALLIES, OFFERS)) {
             engine.handedList(list);
         }
         entryVerb(engine, PIN, entry -> "guestbook " + (entry.pinned() ? "unpin " : "pin ") + entry.id());
@@ -118,15 +108,6 @@ public final class SocialWindows {
                         }));
     }
 
-    /** One row per line of the feed, the newest first. */
-    static List<MenuRow> lineRows(List<Line> lines) {
-        List<MenuRow> rows = new ArrayList<>(lines.size());
-        for (Line line : lines) {
-            rows.add(new MenuRow(Map.of("text", line.text(), "ago", line.ago()), line));
-        }
-        return List.copyOf(rows);
-    }
-
     /** One row per entry: what it says, and whether it is pinned, hidden or neither. */
     List<MenuRow> entryRows(Player reader, List<Entry> entries) {
         List<MenuRow> rows = new ArrayList<>(entries.size());
@@ -152,15 +133,6 @@ public final class SocialWindows {
             rows.add(new MenuRow(Map.of("name", place.name(), "owner", owner != null ? owner : "?"), place));
         }
         return List.copyOf(rows);
-    }
-
-    /** Shows the feed, and answers false when the operator removed its file, so the command says it in chat. */
-    public boolean showActivity(Player player, List<Line> lines) {
-        return open(
-                player,
-                ACTIVITY_FILE,
-                Map.of("count", Integer.toString(lines.size())),
-                Map.of(ACTIVITY, lineRows(lines)));
     }
 
     /** Shows the guestbook of the island the player stands on, with whether they may moderate it. */

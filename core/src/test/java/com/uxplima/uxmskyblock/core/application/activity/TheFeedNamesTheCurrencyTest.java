@@ -1,6 +1,5 @@
 package com.uxplima.uxmskyblock.core.application.activity;
 
-import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
@@ -10,6 +9,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
+import com.uxplima.uxmskyblock.core.domain.activity.ActivityAmount;
 import com.uxplima.uxmskyblock.core.domain.activity.ActivityEventType;
 import com.uxplima.uxmskyblock.core.domain.activity.ActivityVisibility;
 import com.uxplima.uxmskyblock.core.domain.event.EventId;
@@ -54,13 +54,14 @@ class TheFeedNamesTheCurrencyTest {
         projection.consume(moved(2550L, "VAULT"));
 
         verify(feed)
-                .record(
+                .recordMove(
                         eq("island-1"),
-                        any(),
+                        eq(PLAYER),
                         eq(ActivityEventType.BANK_DEPOSIT),
                         eq(ActivityVisibility.MEMBERS_ONLY),
                         eq("activity.bank_deposit"),
-                        eq(Map.of("player", "Rex", "amount", "25.5", "reason", "In")));
+                        eq(Map.of("player", "Rex", "amount", "25.5", "reason", "In")),
+                        eq(new ActivityAmount(ActivityAmount.PRIMARY, 2550L)));
     }
 
     @Test
@@ -69,12 +70,13 @@ class TheFeedNamesTheCurrencyTest {
         projection.consume(moved(-50L, "experience"));
 
         verify(feed)
-                .record(
+                .recordMove(
                         eq("island-1"),
-                        any(),
+                        eq(PLAYER),
                         eq(ActivityEventType.BANK_WITHDRAW),
                         eq(ActivityVisibility.MEMBERS_ONLY),
                         eq("activity.bank_held_withdraw"),
-                        eq(Map.of("player", "Rex", "amount", "50", "currency", "experience", "reason", "In")));
+                        eq(Map.of("player", "Rex", "amount", "50", "currency", "experience", "reason", "In")),
+                        eq(new ActivityAmount("experience", -50L)));
     }
 }

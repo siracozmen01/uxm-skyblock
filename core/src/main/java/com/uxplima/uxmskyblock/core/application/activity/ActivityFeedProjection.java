@@ -10,6 +10,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import com.uxplima.uxmskyblock.core.application.event.OutboxEventConsumer;
+import com.uxplima.uxmskyblock.core.domain.activity.ActivityAmount;
 import com.uxplima.uxmskyblock.core.domain.activity.ActivityEventType;
 import com.uxplima.uxmskyblock.core.domain.activity.ActivityVisibility;
 import com.uxplima.uxmskyblock.core.domain.event.OutboxEventRecord;
@@ -69,13 +70,14 @@ public final class ActivityFeedProjection implements OutboxEventConsumer {
         String reason = first(REASON, event.payload())
                 .map(ActivityFeedProjection::unescaped)
                 .orElse("");
+        ActivityEventType type = in ? ActivityEventType.BANK_DEPOSIT : ActivityEventType.BANK_WITHDRAW;
         if (currency.isPresent()) {
             // An operator currency is kept in whole units and stored by its id, which the reader's feed names as the
             // operator names it then: fifty experience does not read as fifty coins, nor as an id.
-            feed.record(
+            feed.recordMove(
                     event.aggregateId(),
-                    null,
-                    in ? ActivityEventType.BANK_DEPOSIT : ActivityEventType.BANK_WITHDRAW,
+                    playerUuid,
+                    type,
                     ActivityVisibility.MEMBERS_ONLY,
                     in ? "activity.bank_held_deposit" : "activity.bank_held_withdraw",
                     Map.of(
@@ -86,13 +88,14 @@ public final class ActivityFeedProjection implements OutboxEventConsumer {
                             "currency",
                             currency.get(),
                             "reason",
-                            reason));
+                            reason),
+                    new ActivityAmount(currency.get(), minorUnits));
             return;
         }
-        feed.record(
+        feed.recordMove(
                 event.aggregateId(),
-                null,
-                in ? ActivityEventType.BANK_DEPOSIT : ActivityEventType.BANK_WITHDRAW,
+                playerUuid,
+                type,
                 ActivityVisibility.MEMBERS_ONLY,
                 in ? "activity.bank_deposit" : "activity.bank_withdraw",
                 Map.of(
@@ -103,7 +106,8 @@ public final class ActivityFeedProjection implements OutboxEventConsumer {
                                 .stripTrailingZeros()
                                 .toPlainString(),
                         "reason",
-                        reason));
+                        reason),
+                new ActivityAmount(ActivityAmount.PRIMARY, minorUnits));
     }
 
     private static Optional<String> first(Pattern pattern, String payload) {

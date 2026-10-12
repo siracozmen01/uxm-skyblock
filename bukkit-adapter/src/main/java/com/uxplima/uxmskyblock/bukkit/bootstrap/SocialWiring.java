@@ -129,6 +129,13 @@ public final class SocialWiring {
                 persistence.homeStoragePort(), config.homeConfig().limitPolicy());
 
         this.activityFeedService = new ActivityFeedService(persistence.activityFeedStoragePort());
+        // Whoever did a thing is online doing it, so the profile they act under is one of the online players'.
+        var sessions = authority.sessionCoordinator();
+        this.activityFeedService.usePlayers(profile -> org.bukkit.Bukkit.getOnlinePlayers().stream()
+                .map(org.bukkit.entity.Player::getUniqueId)
+                .filter(online ->
+                        sessions.activeProfile(online).filter(profile::equals).isPresent())
+                .findFirst());
         this.notificationService = new NotificationService(persistence.notificationStoragePort());
         this.notificationListener = new IslandNotificationListener(
                 this.notificationService, scheduler, config.messages(), authority.sessionCoordinator());

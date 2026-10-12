@@ -167,6 +167,11 @@ final class IslandCommandWiring {
         var socialWindows = new com.uxplima.uxmskyblock.bukkit.menu.SocialWindows(integration.messages(), tree::typed);
         socialWindows.useMenuEngine(integration.menuEngine());
         tree.useSocialWindows(socialWindows);
+        // The feed is a window of its own, narrowed by member, kind and time, with the bank by member beside it.
+        var activityWindow = new com.uxplima.uxmskyblock.bukkit.menu.ActivityWindow(integration.messages());
+        activityWindow.useMenuEngine(integration.menuEngine());
+        authority.sessionCoordinator().whenProfileLeft((player, left) -> activityWindow.forget(player.getUniqueId()));
+        tree.useActivityWindow(activityWindow);
         // The kinds of island are a window, and a player with no island is met the way the operator chose.
         com.uxplima.uxmskyblock.bukkit.config.PresetChoices choices = gameplay.presetChoices();
         // A kind of a game mode the operator does not offer is not shown, and neither is one whose world this

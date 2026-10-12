@@ -44,6 +44,7 @@ final class OperationsSchemaMigrations {
         list.add(RecycleSchemaMigrationsV49.migration(dialect));
         list.add(ChunkBlockSchemaMigrationsV50.migration(dialect));
         list.add(IslandEdgeSchemaMigrationsV51.migration(dialect));
+        list.add(ActivityFeedSchemaMigrationsV52.migration(dialect));
         return List.copyOf(list);
     }
 }

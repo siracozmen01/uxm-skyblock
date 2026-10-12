@@ -451,6 +451,13 @@ public final class IslandCommandTree {
         this.socialWindows = windows;
     }
 
+    volatile com.uxplima.uxmskyblock.bukkit.menu.@Nullable ActivityWindow activityWindow;
+
+    /** Hands {@code /is activity} the window it opens. */
+    public void useActivityWindow(com.uxplima.uxmskyblock.bukkit.menu.@Nullable ActivityWindow window) {
+        this.activityWindow = window;
+    }
+
     /** Whether a kind of island can be made on this server: its world is loaded. */
     volatile java.util.function.Predicate<com.uxplima.uxmskyblock.core.domain.preset.StarterPreset> playableKinds =
             preset -> true;

@@ -322,34 +322,124 @@ class IslandActivityCommandsTest {
         verify(feed, org.mockito.Mockito.never()).getRecentActivities(anyString(), anyInt());
     }
 
+    /** A window that takes the feed and has no filter set. */
+    private static com.uxplima.uxmskyblock.bukkit.menu.ActivityWindow window(boolean opens) {
+        com.uxplima.uxmskyblock.bukkit.menu.ActivityWindow window =
+                mock(com.uxplima.uxmskyblock.bukkit.menu.ActivityWindow.class);
+        when(window.filterOf(any())).thenReturn(com.uxplima.uxmskyblock.bukkit.menu.ActivityWindow.Filter.everything());
+        when(window.showLines(any(), any(), any(), any())).thenReturn(opens);
+        when(window.showTotals(any(), any(), any())).thenReturn(opens);
+        return window;
+    }
+
+    private void pageOf(ActivityEvent... events) {
+        when(feed.page(any(), anyInt(), anyInt()))
+                .thenReturn(new ActivityFeedService.ActivityPage(List.of(events), 0, 1, events.length));
+    }
+
     @Test
     @DisplayName("The feed opens in its window, each line as the chat would write it, and nothing goes to chat")
     void theFeedOpensInItsWindow() throws Exception {
-        when(feed.getRecentActivities(anyString(), anyInt()))
-                .thenReturn(List.of(eventOf(
-                        "activity.bank_deposit",
-                        com.uxplima.uxmskyblock.core.domain.message.MessagePayload.pack(
-                                java.util.Map.of("player", "Ayse", "amount", "250")),
-                        Instant.now().minus(java.time.Duration.ofHours(2)))));
+        pageOf(eventOf(
+                "activity.bank_deposit",
+                com.uxplima.uxmskyblock.core.domain.message.MessagePayload.pack(
+                        java.util.Map.of("player", "Ayse", "amount", "250")),
+                Instant.now().minus(java.time.Duration.ofHours(2))));
         IslandActivityCommands commands =
                 new IslandActivityCommands(() -> feed, locations, inlineScheduler(), Messages.bundled(), sessions);
-        com.uxplima.uxmskyblock.bukkit.menu.SocialWindows window =
-                mock(com.uxplima.uxmskyblock.bukkit.menu.SocialWindows.class);
-        when(window.showActivity(any(), any())).thenReturn(true);
-        commands.useWindows(() -> window);
+        com.uxplima.uxmskyblock.bukkit.menu.ActivityWindow window = window(true);
+        commands.useWindow(() -> window);
         CommandDispatcher<CommandSourceStack> tree = new CommandDispatcher<>();
         tree.register(commands.build());
 
         runOn(tree, "activity");
 
-        org.mockito.ArgumentCaptor<List<com.uxplima.uxmskyblock.bukkit.menu.SocialWindows.Line>> lines =
+        org.mockito.ArgumentCaptor<List<com.uxplima.uxmskyblock.bukkit.menu.ActivityWindow.Line>> lines =
                 org.mockito.ArgumentCaptor.captor();
-        verify(window).showActivity(eq(player), lines.capture());
+        verify(window).showLines(eq(player), lines.capture(), any(), any());
         assertThat(lines.getValue()).singleElement().satisfies(line -> {
             assertThat(line.text()).contains("2h ago").contains("Ayse put 250 in the bank.");
             assertThat(line.ago()).isEqualTo("2h");
         });
         assertThat(player.nextMessage()).isNull();
+    }
+
+    @Test
+    @DisplayName(
+            "The window reads the caller's island under the filters they set, and names the members the feed knows")
+    void theWindowReadsUnderTheFilters() throws Exception {
+        UUID ali = UUID.randomUUID();
+        ActivityEvent aliMoved = new ActivityEvent(
+                UUID.randomUUID(),
+                ISLAND.value().toString(),
+                null,
+                ActivityEventType.BANK_DEPOSIT,
+                ActivityVisibility.MEMBERS_ONLY,
+                "activity.bank_deposit",
+                1,
+                com.uxplima.uxmskyblock.core.domain.message.MessagePayload.pack(java.util.Map.of("amount", "1")),
+                Instant.now(),
+                ali,
+                new com.uxplima.uxmskyblock.core.domain.activity.ActivityAmount("primary", 100));
+        pageOf(aliMoved);
+        IslandActivityCommands commands =
+                new IslandActivityCommands(() -> feed, locations, inlineScheduler(), Messages.bundled(), sessions);
+        com.uxplima.uxmskyblock.bukkit.menu.ActivityWindow window = window(true);
+        com.uxplima.uxmskyblock.bukkit.menu.ActivityWindow.Filter bank =
+                new com.uxplima.uxmskyblock.bukkit.menu.ActivityWindow.Filter(
+                        null, java.util.Set.of(ActivityEventType.BANK_DEPOSIT), "bank", null, "all");
+        when(window.filterOf(player.getUniqueId())).thenReturn(bank);
+        commands.useWindow(() -> window);
+        CommandDispatcher<CommandSourceStack> tree = new CommandDispatcher<>();
+        tree.register(commands.build());
+
+        runOn(tree, "activity");
+
+        verify(feed)
+                .page(
+                        eq(new com.uxplima.uxmskyblock.core.domain.activity.ActivityQuery(
+                                ISLAND.value().toString(),
+                                null,
+                                java.util.Set.of(ActivityEventType.BANK_DEPOSIT),
+                                null)),
+                        eq(0),
+                        anyInt());
+        org.mockito.ArgumentCaptor<List<UUID>> members = org.mockito.ArgumentCaptor.captor();
+        verify(window).showLines(eq(player), any(), members.capture(), any());
+        assertThat(members.getValue()).containsExactly(ali);
+        verify(window).onChange(any());
+    }
+
+    @Test
+    @DisplayName("The totals are each member's moves, the island's money in its units and a kept currency by its name")
+    void theTotalsAreWrittenForTheReader() throws Exception {
+        UUID ali = UUID.randomUUID();
+        when(feed.totals(any()))
+                .thenReturn(List.of(
+                        new com.uxplima.uxmskyblock.core.domain.activity.ActivityTotal(
+                                ali, ActivityEventType.BANK_DEPOSIT, "primary", 2550, 2),
+                        new com.uxplima.uxmskyblock.core.domain.activity.ActivityTotal(
+                                ali, ActivityEventType.BANK_WITHDRAW, "experience", 50, 1)));
+        IslandActivityCommands commands =
+                new IslandActivityCommands(() -> feed, locations, inlineScheduler(), Messages.bundled(), sessions);
+        commands.useCurrencyNames(
+                id -> id.equals("experience") ? Optional.of("@bank.currencies.experience") : Optional.empty());
+        com.uxplima.uxmskyblock.bukkit.menu.ActivityWindow window = window(true);
+        commands.useWindow(() -> window);
+
+        commands.show(player, com.uxplima.uxmskyblock.bukkit.menu.ActivityWindow.View.TOTALS);
+
+        org.mockito.ArgumentCaptor<List<com.uxplima.uxmskyblock.bukkit.menu.ActivityWindow.Total>> totals =
+                org.mockito.ArgumentCaptor.captor();
+        verify(window).showTotals(eq(player), totals.capture(), any());
+        assertThat(totals.getValue())
+                .extracting(
+                        com.uxplima.uxmskyblock.bukkit.menu.ActivityWindow.Total::in,
+                        com.uxplima.uxmskyblock.bukkit.menu.ActivityWindow.Total::amount,
+                        com.uxplima.uxmskyblock.bukkit.menu.ActivityWindow.Total::lines)
+                .containsExactly(
+                        org.assertj.core.groups.Tuple.tuple(true, "25.5", 2),
+                        org.assertj.core.groups.Tuple.tuple(false, "50 Experience", 1));
     }
 
     @Test
@@ -379,11 +469,11 @@ class IslandActivityCommandsTest {
     @Test
     @DisplayName("With the window gone, the feed is said in chat as it always was")
     void withoutTheWindowTheFeedIsSaid() throws Exception {
+        pageOf();
         IslandActivityCommands commands =
                 new IslandActivityCommands(() -> feed, locations, inlineScheduler(), Messages.bundled(), sessions);
-        com.uxplima.uxmskyblock.bukkit.menu.SocialWindows window =
-                mock(com.uxplima.uxmskyblock.bukkit.menu.SocialWindows.class);
-        commands.useWindows(() -> window);
+        com.uxplima.uxmskyblock.bukkit.menu.ActivityWindow window = window(false);
+        commands.useWindow(() -> window);
         CommandDispatcher<CommandSourceStack> tree = new CommandDispatcher<>();
         tree.register(commands.build());
 

@@ -5,8 +5,11 @@ import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
 
+import com.uxplima.uxmskyblock.core.domain.activity.ActivityAmount;
 import com.uxplima.uxmskyblock.core.domain.activity.ActivityEvent;
 import com.uxplima.uxmskyblock.core.domain.activity.ActivityEventType;
+import com.uxplima.uxmskyblock.core.domain.activity.ActivityQuery;
+import com.uxplima.uxmskyblock.core.domain.activity.ActivityTotal;
 import com.uxplima.uxmskyblock.core.domain.activity.ActivityVisibility;
 import com.uxplima.uxmskyblock.core.domain.identity.ProfileId;
 import org.jspecify.annotations.Nullable;
@@ -17,9 +20,19 @@ import org.jspecify.annotations.Nullable;
 public final class ActivityFeedService {
 
     private final ActivityFeedStoragePort storagePort;
+    private volatile java.util.function.Function<ProfileId, java.util.Optional<UUID>> players =
+            profile -> java.util.Optional.empty();
 
     public ActivityFeedService(ActivityFeedStoragePort storagePort) {
         this.storagePort = Objects.requireNonNull(storagePort, "storagePort must not be null");
+    }
+
+    /**
+     * Tells the feed which player a profile is, so each line names the player who did it and the feed can be
+     * narrowed to one member. A line whose profile names nobody the server knows is written without one.
+     */
+    public void usePlayers(java.util.function.Function<ProfileId, java.util.Optional<UUID>> players) {
+        this.players = Objects.requireNonNull(players, "players must not be null");
     }
 
     public ActivityEvent recordActivity(
@@ -46,7 +59,9 @@ public final class ActivityFeedService {
                 payloadTypeId,
                 payloadSchemaVersion,
                 payloadData,
-                Instant.now());
+                Instant.now(),
+                actorProfileId == null ? null : players.apply(actorProfileId).orElse(null),
+                null);
 
         storagePort.appendEvent(event);
         return event;
@@ -79,6 +94,72 @@ public final class ActivityFeedService {
                 messageKey,
                 1,
                 com.uxplima.uxmskyblock.core.domain.message.MessagePayload.pack(values));
+    }
+
+    /**
+     * Writes down a bank line: who moved how much of which currency, beside the sentence a reader sees.
+     *
+     * <p>The sentence alone could be read but not added up, and it named its player only by name, so
+     * the feed could neither be narrowed to one member nor say who put in and who took out how much.
+     */
+    public ActivityEvent recordMove(
+            String instanceId,
+            UUID player,
+            ActivityEventType eventType,
+            ActivityVisibility visibility,
+            String messageKey,
+            java.util.Map<String, String> values,
+            ActivityAmount amount) {
+        Objects.requireNonNull(instanceId, "instanceId must not be null");
+        Objects.requireNonNull(player, "player must not be null");
+        Objects.requireNonNull(eventType, "eventType must not be null");
+        Objects.requireNonNull(visibility, "visibility must not be null");
+        Objects.requireNonNull(messageKey, "messageKey must not be null");
+        Objects.requireNonNull(values, "values must not be null");
+        Objects.requireNonNull(amount, "amount must not be null");
+        ActivityEvent event = new ActivityEvent(
+                UUID.randomUUID(),
+                instanceId,
+                null,
+                eventType,
+                visibility,
+                messageKey,
+                1,
+                com.uxplima.uxmskyblock.core.domain.message.MessagePayload.pack(values),
+                Instant.now(),
+                player,
+                amount);
+        storagePort.appendEvent(event);
+        return event;
+    }
+
+    /** One page of the lines {@code query} reads, newest first, and how many it reads in all. */
+    public ActivityPage page(ActivityQuery query, int page, int size) {
+        Objects.requireNonNull(query, "query must not be null");
+        int perPage = Math.max(1, size);
+        int total = storagePort.count(query);
+        int pages = Math.max(1, (total + perPage - 1) / perPage);
+        int shown = Math.clamp(page, 0, pages - 1);
+        return new ActivityPage(storagePort.find(query, shown * perPage, perPage), shown, pages, total);
+    }
+
+    /** What the bank lines {@code query} reads moved, added up by player, way and currency, largest first. */
+    public List<ActivityTotal> totals(ActivityQuery query) {
+        Objects.requireNonNull(query, "query must not be null");
+        return storagePort.totals(query);
+    }
+
+    /**
+     * One page of a feed.
+     *
+     * @param page the page shown, from 0, after a page past the last was brought back to it
+     * @param pages how many pages there are, at least one
+     * @param total how many lines the query reads in all
+     */
+    public record ActivityPage(List<ActivityEvent> events, int page, int pages, int total) {
+        public ActivityPage {
+            events = List.copyOf(events);
+        }
     }
 
     /**

@@ -112,6 +112,7 @@ public final class ConfigurationLoader {
             "island-leaderboard.conf",
             "island-create.conf",
             "island-activity.conf",
+            "island-activity-totals.conf",
             "island-guestbook.conf",
             "island-bookmarks.conf",
             "island-alliances.conf",

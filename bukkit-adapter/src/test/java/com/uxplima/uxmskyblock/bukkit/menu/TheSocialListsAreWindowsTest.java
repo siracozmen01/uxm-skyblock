@@ -17,7 +17,7 @@ import org.junit.jupiter.api.io.TempDir;
 import org.mockbukkit.mockbukkit.entity.PlayerMock;
 
 /**
- * The feed, a guestbook, the bookmarks and the alliances are windows drawn from their files, one tile per line, and
+ * A guestbook, the bookmarks and the alliances are windows drawn from their files, one tile per line, and
  * a click runs the island command the tile stands for under the names this server gave it.
  */
 class TheSocialListsAreWindowsTest extends MockBukkitHarness {
@@ -35,11 +35,7 @@ class TheSocialListsAreWindowsTest extends MockBukkitHarness {
     void setUp() {
         ada = createPlayer("Ada");
         engine = ShippedTemplates.engineWith(
-                dataDir,
-                "island-activity.conf",
-                "island-guestbook.conf",
-                "island-bookmarks.conf",
-                "island-alliances.conf");
+                dataDir, "island-guestbook.conf", "island-bookmarks.conf", "island-alliances.conf");
         windows = new SocialWindows(Messages.bundled(), line -> {
             typed.add(line);
             return "unregistered " + line;
@@ -56,18 +52,6 @@ class TheSocialListsAreWindowsTest extends MockBukkitHarness {
 
     private void click(String verb, MenuRow row, ClickKind kind) {
         ShippedTemplates.click(engine, verb, MenuContext.of(ada, null, 0).withEntry(row), ada, kind, "");
-    }
-
-    @Test
-    @DisplayName("A line of the feed is a tile of the line as the feed writes it")
-    void aLineOfTheFeed() {
-        MenuRow row = SocialWindows.lineRows(List.of(new SocialWindows.Line("5m ago Bo put 50 in the bank.", "5m")))
-                .get(0);
-
-        assertThat(lore("island-activity.conf", "lines", row))
-                .contains("On your island")
-                .contains("5m ago Bo put 50 in the bank.")
-                .doesNotContain("<entry_");
     }
 
     @Test
@@ -142,14 +126,11 @@ class TheSocialListsAreWindowsTest extends MockBukkitHarness {
     @DisplayName("Each window opens from its file, and answers false with no engine so the command says it in chat")
     void eachWindowOpens() {
         SocialWindows bare = new SocialWindows(Messages.bundled(), line -> line);
-        assertThat(bare.showActivity(ada, List.of())).isFalse();
         assertThat(bare.showGuestbook(ada, List.of())).isFalse();
         assertThat(bare.showBookmarks(ada, List.of())).isFalse();
         assertThat(bare.showAlliances(ada, List.of(), List.of())).isFalse();
 
         engine.install();
-        assertThat(windows.showActivity(ada, List.of(new SocialWindows.Line("x", "1m"))))
-                .isTrue();
         assertThat(windows.showGuestbook(ada, List.of())).isTrue();
         assertThat(windows.showBookmarks(ada, List.of())).isTrue();
         assertThat(windows.showAlliances(ada, List.of(new SocialWindows.Place("Rock", "Cy")), List.of()))

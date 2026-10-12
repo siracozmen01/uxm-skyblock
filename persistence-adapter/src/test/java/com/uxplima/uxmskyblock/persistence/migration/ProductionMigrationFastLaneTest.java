@@ -712,7 +712,11 @@ class ProductionMigrationFastLaneTest {
                                 "payload_type_id",
                                 "payload_schema_version",
                                 "payload_data",
-                                "created_at");
+                                "created_at",
+                                // V52: who did the line, and what a bank line moved.
+                                "actor_player",
+                                "amount_currency",
+                                "amount_minor");
 
                 Set<String> notificationCols = getColumnNames(meta, "notifications");
                 assertThat(notificationCols)

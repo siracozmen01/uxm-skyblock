@@ -223,7 +223,7 @@ final class CommandGroupBuilder {
                 tree.schedulerPort,
                 tree.messages,
                 tree.sessionCoordinator);
-        activityCommands.useWindows(() -> tree.socialWindows);
+        activityCommands.useWindow(() -> tree.activityWindow);
         activityCommands.useCurrencyNames(id -> tree.economyBridge
                 .wallets()
                 .flatMap(wallets -> wallets.currency(id))
