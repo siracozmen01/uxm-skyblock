@@ -158,7 +158,7 @@ class TheMissionsAreDrawnFromTheirFileTest extends MockBukkitHarness {
     void openingUsesTheFile() {
         when(sessions.activeProfile(player.getUniqueId())).thenReturn(Optional.of(PROFILE));
         when(storage.findIslandIdByProfileId(PROFILE)).thenReturn(Optional.of(ISLAND));
-        when(missions.allMissions()).thenReturn(List.of(DIAMONDS));
+        when(missions.offeredMissions(any(), any(), any())).thenReturn(List.of(DIAMONDS));
         when(missions.currentProgress(eq(ISLAND), eq(PROFILE), org.mockito.ArgumentMatchers.any()))
                 .thenReturn(Map.of());
         SkyblockMenuEngine engine = mock(SkyblockMenuEngine.class);
@@ -201,7 +201,7 @@ class TheMissionsAreDrawnFromTheirFileTest extends MockBukkitHarness {
                 com.uxplima.uxmskyblock.core.domain.mission.MissionRepeat.DAILY);
         when(sessions.activeProfile(player.getUniqueId())).thenReturn(Optional.of(PROFILE));
         when(storage.findIslandIdByProfileId(PROFILE)).thenReturn(Optional.of(ISLAND));
-        when(missions.allMissions()).thenReturn(List.of(DIAMONDS, daily));
+        when(missions.offeredMissions(any(), any(), any())).thenReturn(List.of(DIAMONDS, daily));
         Map<MissionId, com.uxplima.uxmskyblock.core.domain.mission.MissionProgress> now = Map.of(
                 daily.id(),
                 new com.uxplima.uxmskyblock.core.domain.mission.MissionProgress(
@@ -272,7 +272,8 @@ class TheMissionsAreDrawnFromTheirFileTest extends MockBukkitHarness {
                 com.uxplima.uxmskyblock.core.domain.mission.MissionRepeat.DAILY);
         when(sessions.activeProfile(player.getUniqueId())).thenReturn(Optional.of(PROFILE));
         when(storage.findIslandIdByProfileId(PROFILE)).thenReturn(Optional.of(ISLAND));
-        when(missions.allMissions()).thenReturn(List.of(DIAMONDS, weekly, dailyMining, dailyFarming));
+        when(missions.offeredMissions(any(), any(), any()))
+                .thenReturn(List.of(DIAMONDS, weekly, dailyMining, dailyFarming));
         when(missions.currentProgress(eq(ISLAND), eq(PROFILE), org.mockito.ArgumentMatchers.any()))
                 .thenReturn(Map.of());
         SkyblockMenuEngine engine = mock(SkyblockMenuEngine.class);

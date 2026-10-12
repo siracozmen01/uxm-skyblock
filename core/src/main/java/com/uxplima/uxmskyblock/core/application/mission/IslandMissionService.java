@@ -11,6 +11,7 @@ import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Consumer;
 
+import com.uxplima.uxmskyblock.core.domain.gamemode.GameModeType;
 import com.uxplima.uxmskyblock.core.domain.identity.IslandId;
 import com.uxplima.uxmskyblock.core.domain.identity.ProfileId;
 import com.uxplima.uxmskyblock.core.domain.mission.MissionBranch;
@@ -61,6 +62,56 @@ public final class IslandMissionService {
 
     public IslandMissionService(IslandMissionStoragePort storagePort) {
         this(storagePort, null);
+    }
+
+    /**
+     * The mode an island plays, read the first time a mission that names its modes asks. An island never changes
+     * the mode it plays: a player who wants another mode makes another island. Until told, every island plays
+     * no mode in particular and is offered only the missions that name none.
+     */
+    private volatile java.util.function.Function<IslandId, Optional<GameModeType>> modeOf = island -> Optional.empty();
+
+    private final Map<IslandId, Optional<GameModeType>> modes = new ConcurrentHashMap<>();
+
+    /** Lets go of the mode kept for an island that was erased. */
+    public void forgetIsland(IslandId islandId) {
+        Objects.requireNonNull(islandId, "islandId must not be null");
+        modes.remove(islandId);
+    }
+
+    /** Tells this service how the mode an island plays is read. */
+    public void readModesWith(java.util.function.Function<IslandId, Optional<GameModeType>> reader) {
+        this.modeOf = Objects.requireNonNull(reader, "reader must not be null");
+        modes.clear();
+    }
+
+    /**
+     * Whether the island is offered the mission at {@code now}: it plays one of the mission's modes, or the mission
+     * names none, and the mission it follows, if any, is finished.
+     */
+    public boolean offered(
+            IslandId islandId, MissionDefinition def, Map<MissionId, MissionProgress> progress, Instant now) {
+        if (!def.modes().isEmpty()) {
+            Optional<GameModeType> mode = modes.computeIfAbsent(islandId, island -> modeOf.apply(island));
+            if (mode.isEmpty() || !def.playedIn(mode.get())) {
+                return false;
+            }
+        }
+        if (def.after().isEmpty()) {
+            return true;
+        }
+        MissionDefinition first = missionCatalog.get(def.after().get());
+        MissionProgress done = progress.get(def.after().get());
+        // A chain whose first link the file no longer holds is offered: nobody could ever finish what is not there.
+        return first == null || (done != null && current(first, done, now).completed());
+    }
+
+    /** Every mission the island is offered at {@code now}, for the profile's progress. */
+    public List<MissionDefinition> offeredMissions(IslandId islandId, ProfileId profileId, Instant now) {
+        Map<MissionId, MissionProgress> progress = findAllProgress(islandId, profileId);
+        return missionCatalog.values().stream()
+                .filter(def -> offered(islandId, def, progress, now))
+                .toList();
     }
 
     /** The zone a day and a week turn in, for the missions that come back. The server's own until told. */
@@ -207,6 +258,9 @@ public final class IslandMissionService {
             if (!matchesFilter(def.targetFilter(), target)) {
                 continue;
             }
+            if (!offered(islandId, def, playerProgress, now)) {
+                continue;
+            }
 
             Advance advance = advance(playerProgress, def, amount, now);
             if (advance == null) {
@@ -259,6 +313,9 @@ public final class IslandMissionService {
         }
 
         Map<MissionId, MissionProgress> playerProgress = findAllProgress(islandId, profileId);
+        if (!offered(islandId, def, playerProgress, now)) {
+            return Optional.empty();
+        }
         Advance advance = advance(playerProgress, def, amount, now);
         if (advance == null || advance.credited() <= 0) {
             return Optional.of(new MissionSubmission(

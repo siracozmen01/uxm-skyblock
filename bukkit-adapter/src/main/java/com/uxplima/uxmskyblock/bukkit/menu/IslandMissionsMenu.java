@@ -129,12 +129,16 @@ public final class IslandMissionsMenu {
                     missionService.currentProgress(islandId, profileId, java.time.Instant.now());
             // The file keeps no order among its missions, so the window keeps one of its own: the daily ones, the
             // weekly ones, then the challenges, each kind by branch and then by id.
-            List<MissionDefinition> all = missionService.allMissions().stream()
-                    .filter(def -> which == null || def.repeat() == which)
-                    .sorted(java.util.Comparator.comparingInt((MissionDefinition def) -> kindOrder(def.repeat()))
-                            .thenComparing(MissionDefinition::branch)
-                            .thenComparing(def -> def.id().value()))
-                    .toList();
+            // Only what the island is offered: a mission of another mode, or one whose chain is not reached yet,
+            // is not shown.
+            List<MissionDefinition> all =
+                    missionService.offeredMissions(islandId, profileId, java.time.Instant.now()).stream()
+                            .filter(def -> which == null || def.repeat() == which)
+                            .sorted(java.util.Comparator.comparingInt(
+                                            (MissionDefinition def) -> kindOrder(def.repeat()))
+                                    .thenComparing(MissionDefinition::branch)
+                                    .thenComparing(def -> def.id().value()))
+                            .toList();
 
             schedulerPort.onEntity(playerUuid, () -> {
                 if (!player.isOnline()) {

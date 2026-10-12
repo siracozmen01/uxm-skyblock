@@ -74,7 +74,7 @@ class MissionSubmissionReturnsItemsTest extends MockBukkitHarness {
                 Material.DIAMOND.name(),
                 10,
                 MissionReward.empty());
-        when(missionService.allMissions()).thenReturn(List.of(definition));
+        when(missionService.offeredMissions(any(), any(), any())).thenReturn(List.of(definition));
         when(missionService.findAllProgress(eq(islandId), eq(profileId))).thenReturn(java.util.Map.of());
     }
 

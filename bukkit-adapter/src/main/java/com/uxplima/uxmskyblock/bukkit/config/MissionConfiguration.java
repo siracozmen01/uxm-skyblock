@@ -7,6 +7,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 
+import com.uxplima.uxmskyblock.core.domain.gamemode.GameModeType;
 import com.uxplima.uxmskyblock.core.domain.mission.MissionBranch;
 import com.uxplima.uxmskyblock.core.domain.mission.MissionDefinition;
 import com.uxplima.uxmskyblock.core.domain.mission.MissionId;
@@ -201,6 +202,12 @@ public record MissionConfiguration(boolean enabled, List<MissionDefinition> miss
                 return MissionRepeat.ONCE;
             });
 
+            java.util.Optional<java.util.Set<GameModeType>> modes = modes(missionKey, mNode.node("modes"));
+            if (modes.isEmpty()) {
+                continue;
+            }
+            String after = mNode.node("after").getString("").strip();
+
             list.add(new MissionDefinition(
                     MissionId.of(missionKey),
                     branch,
@@ -210,7 +217,11 @@ public record MissionConfiguration(boolean enabled, List<MissionDefinition> miss
                     targetFilter,
                     requiredAmount,
                     reward,
-                    repeat));
+                    repeat,
+                    modes.get(),
+                    after.isEmpty() || after.equals(missionKey)
+                            ? java.util.Optional.empty()
+                            : java.util.Optional.of(MissionId.of(after))));
         }
 
         return new MissionConfiguration(enabled, Collections.unmodifiableList(list), zone);
@@ -218,6 +229,34 @@ public record MissionConfiguration(boolean enabled, List<MissionDefinition> miss
 
     private static final java.util.logging.Logger LOGGER =
             java.util.logging.Logger.getLogger(MissionConfiguration.class.getName());
+
+    /**
+     * The modes a mission names, none for every mode, or nothing when it names one no mode is called: a mission
+     * meant for a mode the file misspelt would otherwise be offered to every island.
+     */
+    static java.util.Optional<java.util.Set<GameModeType>> modes(String mission, ConfigurationNode written) {
+        java.util.Set<GameModeType> modes = java.util.EnumSet.noneOf(GameModeType.class);
+        // One mode may be written without the brackets.
+        List<String> names = written.isList()
+                ? written.childrenList().stream()
+                        .map(line -> line.getString(""))
+                        .toList()
+                : List.of(written.getString(""));
+        for (String each : names) {
+            String name = each.strip();
+            if (name.isEmpty()) {
+                continue;
+            }
+            try {
+                modes.add(GameModeType.valueOf(name.toUpperCase(Locale.ROOT)));
+            } catch (IllegalArgumentException unknown) {
+                LOGGER.warning(() -> "The mission " + mission + " names the mode '" + name
+                        + "', which no mode is called, so it is left out.");
+                return java.util.Optional.empty();
+            }
+        }
+        return java.util.Optional.of(modes);
+    }
 
     /** The zone a file names, "system" for the server's own, and the server's own for one it does not know. */
     static java.time.ZoneId zoneOf(String written) {

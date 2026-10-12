@@ -131,6 +131,10 @@ public final class GameplayCreationWiring {
         if (config.moduleSettings().isModuleEnabled("missions")) {
             this.missionService.registerMissions(config.missionConfig().missions());
             this.missionService.resetIn(config.missionConfig().resetZone());
+            // The mode an island plays is its owner's profile's, read once per island.
+            com.uxplima.uxmskyblock.core.application.island.IslandStoragePort islands = persistence.islandStoragePort();
+            this.missionService.readModesWith(island -> islands.findIslandById(island)
+                    .map(found -> gameModeHierarchyService.modeOf(found.ownerProfileId())));
             this.missionsMenu = new IslandMissionsMenu(
                     missionService,
                     persistence.islandStoragePort(),
