@@ -158,7 +158,7 @@ public final class ParkourRuns implements Listener {
         runs.remove(runner.getUniqueId());
         Duration time = Duration.between(run.started(), clock.instant());
         PlayerUuid who = PlayerUuid.of(runner.getUniqueId());
-        effectPlayer.fire(effects, "parkour-finished", runner);
+        effectPlayer.fire(effects, "parkour-finished", runner, said(time));
         scheduler.async(() -> {
             ParkourService.Finish finish;
             try {
@@ -176,11 +176,18 @@ public final class ParkourRuns implements Listener {
         switch (finish) {
             case ParkourService.Finish.First first -> {
                 messages.send(runner, "parkour.first", timed("time", first.time()));
-                effectPlayer.fire(effects, "parkour-record", runner);
+                effectPlayer.fire(effects, "parkour-record", runner, said(first.time()));
             }
             case ParkourService.Finish.Beaten beaten -> {
                 messages.send(runner, "parkour.beaten", timed("time", beaten.time()), timed("was", beaten.was()));
-                effectPlayer.fire(effects, "parkour-record", runner);
+                effectPlayer.fire(
+                        effects,
+                        "parkour-record",
+                        runner,
+                        Map.of(
+                                "time", format(beaten.time()),
+                                "millis", Long.toString(beaten.time().toMillis()),
+                                "was", format(beaten.was())));
             }
             case ParkourService.Finish.Slower slower ->
                 messages.send(runner, "parkour.slower", timed("time", slower.time()), timed("best", slower.best()));
@@ -227,6 +234,11 @@ public final class ParkourRuns implements Listener {
     public static String format(Duration time) {
         long millis = Math.max(0, time.toMillis());
         return String.format(Locale.ROOT, "%d:%02d.%03d", millis / 60_000, millis / 1000 % 60, millis % 1000);
+    }
+
+    /** What a finish says to its effect list: the time as the chat writes it, and in milliseconds. */
+    private static Map<String, String> said(Duration time) {
+        return Map.of("time", format(time), "millis", Long.toString(time.toMillis()));
     }
 
     private static net.kyori.adventure.text.minimessage.tag.resolver.TagResolver timed(String name, Duration time) {

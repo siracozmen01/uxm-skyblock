@@ -82,6 +82,9 @@ public final class TradeWindsWiring {
                 scheduler,
                 configuration.messages(),
                 clock);
+        harbour.useEffects(
+                new com.uxplima.uxmskyblock.bukkit.effect.InteractionEffectPlayer(scheduler, configuration.messages()),
+                configuration.effectsConfig());
         this.listener = new CargoHoldListener(holds);
         this.holdStill = new com.uxplima.uxmskyblock.bukkit.inventory.HoldStillListener(holds::moving);
         start();

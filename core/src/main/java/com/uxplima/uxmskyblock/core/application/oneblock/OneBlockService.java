@@ -10,6 +10,7 @@ import java.util.logging.Logger;
 import java.util.random.RandomGenerator;
 
 import com.uxplima.uxmskyblock.core.domain.identity.IslandId;
+import com.uxplima.uxmskyblock.core.domain.oneblock.OneBlockPhase;
 import com.uxplima.uxmskyblock.core.domain.oneblock.OneBlockPhases;
 import org.jspecify.annotations.Nullable;
 
@@ -26,9 +27,16 @@ public final class OneBlockService {
 
     private static final Logger LOGGER = Logger.getLogger(OneBlockService.class.getName());
 
-    /** What one break did: what the block becomes, what appears on it, and whether a phase began. */
+    /**
+     * What one break did: what the block becomes, what appears on it, whether a phase began, and the phase it
+     * finished when one did.
+     */
     public record Broken(
-            String nextBlock, Optional<String> creature, OneBlockPhases.Position position, boolean phaseBegan) {}
+            String nextBlock,
+            Optional<String> creature,
+            OneBlockPhases.Position position,
+            boolean phaseBegan,
+            Optional<OneBlockPhase> finished) {}
 
     /** An island's count while it is in memory: what is stored, and what was counted since. */
     private static final class Counted {
@@ -117,7 +125,10 @@ public final class OneBlockService {
                 phases.nextBlock(broken, random),
                 phases.nextCreature(broken, random),
                 phases.positionAt(broken),
-                phases.startsAPhase(broken)));
+                phases.startsAPhase(broken),
+                phases.startsAPhase(broken)
+                        ? Optional.of(phases.positionAt(broken - 1).phase())
+                        : Optional.empty()));
     }
 
     /**

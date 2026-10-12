@@ -25,6 +25,8 @@ import com.uxplima.uxmlib.gui.item.GuiItem;
 import com.uxplima.uxmlib.gui.style.MenuTitles;
 import com.uxplima.uxmskyblock.bukkit.bedrock.BedrockFormService;
 import com.uxplima.uxmskyblock.bukkit.config.TradeWindsConfiguration;
+import com.uxplima.uxmskyblock.bukkit.effect.InteractionEffectPlayer;
+import com.uxplima.uxmskyblock.bukkit.effect.InteractionEffects;
 import com.uxplima.uxmskyblock.bukkit.i18n.DurationText;
 import com.uxplima.uxmskyblock.bukkit.i18n.ItemNames;
 import com.uxplima.uxmskyblock.bukkit.i18n.Messages;
@@ -65,6 +67,8 @@ public final class Harbour {
     private final Clock clock;
     private @Nullable BedrockFormService forms;
     private volatile @Nullable SkyblockMenuEngine menuEngine;
+    private volatile @Nullable InteractionEffectPlayer effectPlayer;
+    private volatile InteractionEffects effects = InteractionEffects.none();
 
     /** The menu files that draw the ports and the market, and the lists they draw them from. */
     static final String SAIL_FILE = "tradewinds-sail";
@@ -96,6 +100,15 @@ public final class Harbour {
         this.scheduler = Objects.requireNonNull(scheduler, "scheduler");
         this.messages = Objects.requireNonNull(messages, "messages");
         this.clock = Objects.requireNonNull(clock, "clock");
+    }
+
+    /**
+     * Hands the harbour what {@code modules/effects.conf} fires for a vessel's crew. Without it a voyage fires
+     * nothing.
+     */
+    public void useEffects(InteractionEffectPlayer player, InteractionEffects written) {
+        this.effects = Objects.requireNonNull(written, "written");
+        this.effectPlayer = Objects.requireNonNull(player, "player");
     }
 
     /**
@@ -331,11 +344,27 @@ public final class Harbour {
                 messages.send(player, sailed.errorOrThrow(), name(player, port));
                 return;
             }
+            Instant arrives = sailed.orElseThrow();
             messages.send(
                     player,
                     "tradewinds.sail.sailed",
                     name(player, port),
-                    Placeholder.unparsed("time", time(player, sailed.orElseThrow())));
+                    Placeholder.unparsed("time", time(player, arrives)));
+            InteractionEffectPlayer fires = effectPlayer;
+            if (fires != null) {
+                fires.fire(
+                        effects,
+                        "vessel-sailed",
+                        player,
+                        Map.of(
+                                "port",
+                                port.id(),
+                                "seconds",
+                                Long.toString(Math.max(
+                                        0,
+                                        Duration.between(clock.instant(), arrives)
+                                                .toSeconds()))));
+            }
         });
     }
 

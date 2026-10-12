@@ -69,6 +69,9 @@ public final class StrangerRealmsWiring implements AutoCloseable {
                 org.bukkit.World::isChunkGenerated,
                 com.uxplima.uxmskyblock.bukkit.stranger.UpsideDownReach.copiedOnly(
                         config.upsideDown().lateCopy()));
+        reach.useEffects(
+                new com.uxplima.uxmskyblock.bukkit.effect.InteractionEffectPlayer(scheduler, configuration.messages()),
+                configuration.effectsConfig());
         this.compass = new com.uxplima.uxmskyblock.bukkit.stranger.WarpedCompass(
                 realms, scheduler, configuration.messages(), config.compass());
         if (config.enabled() && config.compass().enabled()) {

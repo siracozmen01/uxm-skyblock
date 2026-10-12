@@ -108,7 +108,10 @@ class EveryMilestoneFiresWhatWasWrittenTest {
                         "parkour-finished",
                         "parkour-record",
                         "loot-rare",
-                        "loot-legendary"));
+                        "loot-legendary",
+                        "oneblock-phase-finished",
+                        "vessel-sailed",
+                        "upside-down-mirrored"));
     }
 
     private static Set<String> firedInteractions() throws IOException {

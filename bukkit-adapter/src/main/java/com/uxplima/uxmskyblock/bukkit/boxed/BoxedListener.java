@@ -119,7 +119,13 @@ public final class BoxedListener implements Listener {
                                         "boxed.grew",
                                         Placeholder.unparsed("blocks", Integer.toString(grown.blocks())),
                                         Placeholder.unparsed("size", Integer.toString(across)));
-                                effectPlayer.fire(effects, "boxed-grew", player);
+                                effectPlayer.fire(
+                                        effects,
+                                        "boxed-grew",
+                                        player,
+                                        java.util.Map.of(
+                                                "blocks", Integer.toString(grown.blocks()),
+                                                "size", Integer.toString(across)));
                             });
                         });
             } catch (RuntimeException e) {

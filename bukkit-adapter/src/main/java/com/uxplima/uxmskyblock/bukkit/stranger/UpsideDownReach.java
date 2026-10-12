@@ -10,13 +10,17 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Function;
 import java.util.function.Predicate;
 
+import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.World;
+import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 import org.bukkit.event.world.ChunkLoadEvent;
 
+import com.uxplima.uxmskyblock.bukkit.effect.InteractionEffectPlayer;
+import com.uxplima.uxmskyblock.bukkit.effect.InteractionEffects;
 import com.uxplima.uxmskyblock.core.application.scheduler.SchedulerPort;
 import org.jspecify.annotations.Nullable;
 
@@ -49,6 +53,11 @@ public final class UpsideDownReach implements Listener {
     private final Predicate<Material> copied;
     private final Set<String> asked = ConcurrentHashMap.newKeySet();
     private final Set<String> mirroring = ConcurrentHashMap.newKeySet();
+    private volatile @Nullable InteractionEffectPlayer effectPlayer;
+    private volatile InteractionEffects effects = InteractionEffects.none();
+
+    /** How near the mirrored chunk's middle a player in the Upside Down stands to hear it, in blocks. */
+    static final int HEARD_WITHIN = 48;
 
     public UpsideDownReach(
             Realms realms,
@@ -63,6 +72,15 @@ public final class UpsideDownReach implements Listener {
         this.worlds = Objects.requireNonNull(worlds, "worlds must not be null");
         this.made = Objects.requireNonNull(made, "made must not be null");
         this.copied = Objects.requireNonNull(copied, "copied must not be null");
+    }
+
+    /**
+     * Hands it what {@code modules/effects.conf} fires, as {@code upside-down-mirrored}, for each player in the
+     * Upside Down near a chunk when it is first mirrored. Without it a mirror fires nothing.
+     */
+    public void useEffects(InteractionEffectPlayer player, InteractionEffects written) {
+        this.effects = Objects.requireNonNull(written, "written");
+        this.effectPlayer = Objects.requireNonNull(player, "player");
     }
 
     /**
@@ -89,6 +107,35 @@ public final class UpsideDownReach implements Listener {
         return name.length() >= before.length() + after.length() && name.startsWith(before) && name.endsWith(after);
     }
 
+    /**
+     * Fires {@code upside-down-mirrored} for each player in {@code upsideDown} near the chunk, on their own thread.
+     * Says {@code %chunk_x%} and {@code %chunk_z%}.
+     */
+    private void heard(World upsideDown, int chunkX, int chunkZ) {
+        InteractionEffectPlayer fires = effectPlayer;
+        if (fires == null) {
+            return;
+        }
+        InteractionEffects written = effects;
+        double middleX = (chunkX << 4) + 8;
+        double middleZ = (chunkZ << 4) + 8;
+        Map<String, String> says = Map.of("chunk_x", Integer.toString(chunkX), "chunk_z", Integer.toString(chunkZ));
+        for (Player player : upsideDown.getPlayers()) {
+            scheduler.onEntity(player.getUniqueId(), () -> {
+                Location at = player.getLocation();
+                if (player.isOnline() && at != null && near(at, upsideDown, middleX, middleZ)) {
+                    fires.fire(written, "upside-down-mirrored", player, says);
+                }
+            });
+        }
+    }
+
+    private static boolean near(Location at, World world, double x, double z) {
+        double dx = at.getX() - x;
+        double dz = at.getZ() - z;
+        return world.equals(at.getWorld()) && dx * dx + dz * dz <= (double) HEARD_WITHIN * HEARD_WITHIN;
+    }
+
     @EventHandler(priority = EventPriority.MONITOR)
     public void onChunkLoad(ChunkLoadEvent event) {
         World world = event.getWorld();
@@ -107,8 +154,10 @@ public final class UpsideDownReach implements Listener {
             }
             World land = worlds.apply(place.landWorld());
             if (land != null) {
-                scheduler.onRegion(
-                        land.getName(), chunkX, chunkZ, () -> mirror.mirror(land, world, chunkX, chunkZ, copied));
+                scheduler.onRegion(land.getName(), chunkX, chunkZ, () -> {
+                    mirror.mirror(land, world, chunkX, chunkZ, copied);
+                    heard(world, chunkX, chunkZ);
+                });
             }
             return;
         }
@@ -122,8 +171,10 @@ public final class UpsideDownReach implements Listener {
             }
             // Laying the mirror makes the chunk, and the Upside Down's own load of it must not lay it again.
             mirroring.add(key);
-            scheduler.onRegion(
-                    world.getName(), chunkX, chunkZ, () -> mirror.mirror(world, upsideDown, chunkX, chunkZ, copied));
+            scheduler.onRegion(world.getName(), chunkX, chunkZ, () -> {
+                mirror.mirror(world, upsideDown, chunkX, chunkZ, copied);
+                heard(upsideDown, chunkX, chunkZ);
+            });
         });
     }
 

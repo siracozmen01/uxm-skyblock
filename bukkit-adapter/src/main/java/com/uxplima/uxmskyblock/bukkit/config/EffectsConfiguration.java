@@ -62,6 +62,9 @@ public final class EffectsConfiguration {
         defaults.put("member-joined", parseAll("member-joined", List.of("[sound] entity.player.levelup 1.0 1.4")));
         defaults.put("upgrade-bought", parseAll("upgrade-bought", List.of("[sound] entity.player.levelup 1.0 1.0")));
         defaults.put(
+                "oneblock-phase-finished",
+                parseAll("oneblock-phase-finished", List.of("[sound] block.amethyst_block.chime 1.0 1.0")));
+        defaults.put(
                 "oneblock-phase-began",
                 parseAll(
                         "oneblock-phase-began",
@@ -118,6 +121,10 @@ public final class EffectsConfiguration {
                 parseAll(
                         "loot-legendary",
                         List.of("[sound] ui.toast.challenge_complete 1.0 1.4", "[particle] TOTEM_OF_UNDYING 30 0.6")));
+        defaults.put("vessel-sailed", parseAll("vessel-sailed", List.of("[sound] entity.boat.paddle_water 1.0 0.8")));
+        defaults.put(
+                "upside-down-mirrored",
+                parseAll("upside-down-mirrored", List.of("[sound] block.sculk.spread 0.4 0.6")));
         return new InteractionEffects(defaults);
     }
 

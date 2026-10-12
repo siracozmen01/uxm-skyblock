@@ -79,6 +79,7 @@ class ABoxedIslandIsPlayedInItsBoxTest extends MockBukkitHarness {
     private final Map<IslandId, Long> stored = new HashMap<>();
     private final Set<String> earned = new HashSet<>();
     private final List<IslandId> changed = new ArrayList<>();
+    private final List<String> fired = new ArrayList<>();
 
     @SuppressWarnings("NullAway.Init")
     private World boxedWorld;
@@ -152,12 +153,22 @@ class ABoxedIslandIsPlayedInItsBoxTest extends MockBukkitHarness {
                 })
                 .when(scheduler)
                 .onEntity(any(PlayerUuid.class), any(Runnable.class));
+        server.getCommandMap().register("probe", new org.bukkit.command.Command("probe") {
+            @Override
+            public boolean execute(org.bukkit.command.CommandSender sender, String label, String[] args) {
+                fired.add(String.join(" ", args));
+                return true;
+            }
+        });
         listener = new BoxedListener(
                 service,
                 islands,
                 scheduler,
                 Messages.bundled(),
-                InteractionEffects.none(),
+                new InteractionEffects(java.util.Map.of(
+                        "boxed-grew",
+                        com.uxplima.uxmlib.condition.action.ActionList.parse(
+                                List.of("[console] probe grew %blocks% %size%")))),
                 new InteractionEffectPlayer(),
                 uuid -> Optional.of(profile),
                 id -> id.equals(profile) ? Optional.of(islandId) : Optional.empty(),
@@ -193,6 +204,7 @@ class ABoxedIslandIsPlayedInItsBoxTest extends MockBukkitHarness {
         assertThat(changed).containsExactly(islandId);
         assertThat(said(player))
                 .anySatisfy(line -> assertThat(line).contains("2").contains("15×15"));
+        assertThat(fired).describedAs("how far it grew and how wide it is now").containsExactly("grew 2 15");
     }
 
     @Test

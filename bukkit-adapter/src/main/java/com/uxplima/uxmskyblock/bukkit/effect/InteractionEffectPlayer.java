@@ -1,11 +1,13 @@
 package com.uxplima.uxmskyblock.bukkit.effect;
 
+import java.util.Map;
 import java.util.Objects;
 
 import org.bukkit.Server;
 import org.bukkit.entity.Player;
 
 import com.uxplima.uxmlib.condition.ItemStore;
+import com.uxplima.uxmlib.condition.OperandResolver;
 import com.uxplima.uxmlib.condition.Wallet;
 import com.uxplima.uxmlib.condition.action.ActionContext;
 import com.uxplima.uxmlib.condition.action.ActionCostException;
@@ -73,16 +75,26 @@ public final class InteractionEffectPlayer {
      * thread that owns them, which is where all four callers already are.
      */
     public void fire(InteractionEffects effects, String interaction, Player player) {
+        fire(effects, interaction, player, Map.of());
+    }
+
+    /**
+     * Fires one interaction for one player, each {@code %name%} of {@code says} in its lines read as the value
+     * given. A value is something the event knows, a number or a name from the operator's own files, and is put
+     * in before any other placeholder is read.
+     */
+    public void fire(InteractionEffects effects, String interaction, Player player, Map<String, String> says) {
         Objects.requireNonNull(effects, "effects must not be null");
         Objects.requireNonNull(interaction, "interaction must not be null");
         Objects.requireNonNull(player, "player must not be null");
+        Objects.requireNonNull(says, "says must not be null");
 
         ActionList list = effects.of(interaction);
         if (list.actions().isEmpty()) {
             return;
         }
         try {
-            list.run(contextFor(player));
+            list.run(contextFor(player, says));
         } catch (ActionCostException unpaid) {
             // A price nobody can pay is the operator's own gate doing its job. The engine charges
             // every cost before it runs anything, so nothing has happened and nobody is half
@@ -98,10 +110,10 @@ public final class InteractionEffectPlayer {
     }
 
     /** The context an action reads: who it is about, who hears it, and what they are holding. */
-    private ActionContext contextFor(Player player) {
+    private ActionContext contextFor(Player player, Map<String, String> says) {
         Server server = player.getServer();
         SchedulerPort scheduler = this.schedulerPort;
-        ActionContext.Builder builder = ActionContext.builder(Operands.standard())
+        ActionContext.Builder builder = ActionContext.builder(resolver(says))
                 // The subject, which the engine also makes the target audience.
                 .player(player)
                 // An island's own interaction reaches the player it happened to. Nothing here is
@@ -129,5 +141,24 @@ public final class InteractionEffectPlayer {
             builder.later(scheduler::asyncAfter);
         }
         return builder.build();
+    }
+
+    /** The family's standard operands, after the event's own placeholders are put in. */
+    static OperandResolver resolver(Map<String, String> says) {
+        OperandResolver standard = Operands.standard();
+        if (says.isEmpty()) {
+            return standard;
+        }
+        Map<String, String> held = Map.copyOf(says);
+        return OperandResolver.ofBiFunction((player, template) -> standard.resolve(player, fill(template, held)));
+    }
+
+    /** {@code template} with each {@code %name%} of {@code says} as its value. */
+    static String fill(String template, Map<String, String> says) {
+        String filled = template;
+        for (Map.Entry<String, String> said : says.entrySet()) {
+            filled = filled.replace("%" + said.getKey() + "%", said.getValue());
+        }
+        return filled;
     }
 }

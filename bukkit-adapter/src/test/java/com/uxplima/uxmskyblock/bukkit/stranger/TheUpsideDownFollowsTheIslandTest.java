@@ -59,6 +59,9 @@ class TheUpsideDownFollowsTheIslandTest extends MockBukkitHarness {
     @SuppressWarnings("NullAway.Init")
     private UpsideDownReach reach;
 
+    private boolean holdPlayers;
+    private final List<Runnable> heldForPlayers = new ArrayList<>();
+
     @BeforeEach
     void setUp() {
         land = server.addSimpleWorld("realms");
@@ -104,6 +107,16 @@ class TheUpsideDownFollowsTheIslandTest extends MockBukkitHarness {
                 })
                 .when(scheduler)
                 .onRegion(anyString(), anyInt(), anyInt(), any(Runnable.class));
+        doAnswer(call -> {
+                    if (holdPlayers) {
+                        heldForPlayers.add(call.getArgument(1, Runnable.class));
+                    } else {
+                        call.getArgument(1, Runnable.class).run();
+                    }
+                    return null;
+                })
+                .when(scheduler)
+                .onEntity(any(UUID.class), any(Runnable.class));
         Realms realms = new Realms(service, islands, () -> UPSIDE_DOWN, () -> List.of("realms"));
         UpsideDownStart mirror = new UpsideDownStart(
                 service,
@@ -118,6 +131,52 @@ class TheUpsideDownFollowsTheIslandTest extends MockBukkitHarness {
                 worlds::get,
                 (world, x, z) -> made.contains(world.getName() + ":" + x + "," + z),
                 UpsideDownReach.copiedOnly(List.of("dirt", "GRASS_BLOCK", "*_LOG", " ")));
+    }
+
+    @Test
+    @DisplayName(
+            "A player in the Upside Down near a chunk hears it mirrored, once; one far off or on the land does not")
+    void aMirrorIsHeardNearby() {
+        List<String> fired = new ArrayList<>();
+        server.getCommandMap().register("probe", new org.bukkit.command.Command("probe") {
+            @Override
+            public boolean execute(org.bukkit.command.CommandSender sender, String label, String[] args) {
+                fired.add(String.join(" ", args));
+                return true;
+            }
+        });
+        reach.useEffects(
+                new com.uxplima.uxmskyblock.bukkit.effect.InteractionEffectPlayer(),
+                new com.uxplima.uxmskyblock.bukkit.effect.InteractionEffects(Map.of(
+                        "upside-down-mirrored",
+                        com.uxplima.uxmlib.condition.action.ActionList.parse(
+                                List.of("[player] probe %chunk_x% %chunk_z%")))));
+        org.mockbukkit.mockbukkit.entity.PlayerMock near = server.addPlayer("Near");
+        near.teleport(new org.bukkit.Location(upsideDown, 40 + UpsideDownReach.HEARD_WITHIN - 9, Y, 8));
+        org.mockbukkit.mockbukkit.entity.PlayerMock far = server.addPlayer("Far");
+        far.teleport(new org.bukkit.Location(upsideDown, 40 + UpsideDownReach.HEARD_WITHIN + 1, Y, 8));
+        org.mockbukkit.mockbukkit.entity.PlayerMock corner = server.addPlayer("Corner");
+        corner.teleport(new org.bukkit.Location(upsideDown, -14, Y, -24));
+        org.mockbukkit.mockbukkit.entity.PlayerMock ashore = server.addPlayer("Ashore");
+        ashore.teleport(new org.bukkit.Location(land, 40, Y, 8));
+
+        load(land, 2, 0, false);
+        load(land, 2, 0, false);
+        load(upsideDown, -2, -2, true);
+
+        assertThat(fired)
+                .describedAs("the late mirror of 2,0 heard by Near, the Upside Down's own -2,-2 by Corner")
+                .containsExactly("2 0", "-2 -2");
+
+        fired.clear();
+        holdPlayers = true;
+        load(land, 1, 0, false);
+        near.teleport(new org.bukkit.Location(land, 24, Y, 8));
+        corner.teleport(new org.bukkit.Location(land, 24, Y, 8));
+        heldForPlayers.forEach(Runnable::run);
+        assertThat(fired)
+                .describedAs("a player who left the Upside Down before their turn came hears nothing")
+                .isEmpty();
     }
 
     private void load(World world, int chunkX, int chunkZ, boolean fresh) {

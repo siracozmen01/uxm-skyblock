@@ -60,6 +60,8 @@ class TheOneBlockComesBackTest extends MockBukkitHarness {
     @SuppressWarnings("NullAway.Init")
     private World world;
 
+    private final List<String> fired = new ArrayList<>();
+
     @SuppressWarnings("NullAway.Init")
     private OneBlockListener listener;
 
@@ -105,12 +107,25 @@ class TheOneBlockComesBackTest extends MockBukkitHarness {
         doAnswer(call -> regionTasks.add(call.getArgument(3, Runnable.class)))
                 .when(scheduler)
                 .onRegion(anyString(), anyInt(), anyInt(), any(Runnable.class));
+        server.getCommandMap().register("probe", new org.bukkit.command.Command("probe") {
+            @Override
+            public boolean execute(org.bukkit.command.CommandSender sender, String label, String[] args) {
+                fired.add(String.join(" ", args));
+                return true;
+            }
+        });
         listener = new OneBlockListener(
                 service,
                 islands,
                 scheduler,
                 Messages.bundled(),
-                InteractionEffects.none(),
+                new InteractionEffects(Map.of(
+                        "oneblock-phase-finished",
+                        com.uxplima.uxmlib.condition.action.ActionList.parse(
+                                List.of("[console] probe finished %phase%")),
+                        "oneblock-phase-began",
+                        com.uxplima.uxmlib.condition.action.ActionList.parse(
+                                List.of("[console] probe began %phase% %blocks%")))),
                 new InteractionEffectPlayer(null, Messages.bundled()));
     }
 
@@ -128,7 +143,9 @@ class TheOneBlockComesBackTest extends MockBukkitHarness {
     }
 
     @Test
-    @DisplayName("The break that starts a phase tells the player the phase by its title, and draws from it")
+    @DisplayName(
+            "The break that starts a phase tells the player the phase by its title, fires the phase finished and the"
+                    + " one begun, and draws from it")
     void aNewPhaseIsAnnounced() {
         Block block = world.getBlockAt(0, 100, 0);
         block.setType(Material.GRASS_BLOCK);
@@ -137,7 +154,12 @@ class TheOneBlockComesBackTest extends MockBukkitHarness {
         while (player.nextComponentMessage() != null) {
             // What the first break said, if anything, is not what this test is about.
         }
+        assertThat(fired).describedAs("a break inside a phase fires neither").isEmpty();
         breakIt(block);
+
+        assertThat(fired)
+                .describedAs("the phase finished, then the one begun and how long it lasts")
+                .containsExactly("finished plains", "began underground 5");
 
         assertThat(block.getType()).isEqualTo(Material.IRON_ORE);
         assertThat(PlainTextComponentSerializer.plainText()

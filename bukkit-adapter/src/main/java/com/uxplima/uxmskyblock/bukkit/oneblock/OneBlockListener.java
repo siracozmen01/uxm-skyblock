@@ -1,5 +1,6 @@
 package com.uxplima.uxmskyblock.bukkit.oneblock;
 
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 
@@ -36,7 +37,8 @@ import com.uxplima.uxmskyblock.core.domain.island.Island;
  * island's protection refused never reaches here. Once it has gone through, the block is set again in
  * the region that owns it, after the break has finished, and a creature the phase draws stands on it.
  * The first break of a new phase tells the player which phase it is, and fires what the operator wrote
- * for {@code oneblock-phase-began} in {@code modules/effects.conf}.
+ * for {@code oneblock-phase-finished}, then {@code oneblock-phase-began}, in {@code modules/effects.conf}. Both
+ * say {@code %phase%}, the phase's key; the one begun says {@code %blocks%}, how many breaks it lasts.
  */
 public final class OneBlockListener implements Listener {
 
@@ -87,8 +89,19 @@ public final class OneBlockListener implements Listener {
         // Set once the break has finished: set now, the break would clear it again.
         scheduler.onRegion(world.getName(), x >> 4, z >> 4, () -> comeBack(world, x, y, z, next));
         if (next.phaseBegan()) {
+            next.finished()
+                    .ifPresent(finished -> effectPlayer.fire(
+                            effects, "oneblock-phase-finished", player, Map.of("phase", finished.key())));
             messages.send(player, "oneblock.phase_began", Placeholder.unparsed("phase", title(player, next)));
-            effectPlayer.fire(effects, "oneblock-phase-began", player);
+            effectPlayer.fire(
+                    effects,
+                    "oneblock-phase-began",
+                    player,
+                    Map.of(
+                            "phase",
+                            next.position().phase().key(),
+                            "blocks",
+                            Long.toString(next.position().phaseLength())));
         }
     }
 

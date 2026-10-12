@@ -96,6 +96,8 @@ class ACourseIsRunTest extends MockBukkitHarness {
     @SuppressWarnings("NullAway.Init")
     private Island course;
 
+    private final List<String> fired = new ArrayList<>();
+
     @BeforeEach
     void setUpCourse() {
         world = server.addSimpleWorld("skyblock");
@@ -162,13 +164,26 @@ class ACourseIsRunTest extends MockBukkitHarness {
                 })
                 .when(scheduler)
                 .onEntity(any(PlayerUuid.class), any(Runnable.class));
+        server.getCommandMap().register("probe", new org.bukkit.command.Command("probe") {
+            @Override
+            public boolean execute(org.bukkit.command.CommandSender sender, String label, String[] args) {
+                fired.add(String.join(" ", args));
+                return true;
+            }
+        });
         runs = new ParkourRuns(
                 service,
                 islands,
                 scheduler,
                 ParkourConfiguration.defaultConfiguration(),
                 Messages.bundled(),
-                InteractionEffects.none(),
+                new InteractionEffects(Map.of(
+                        "parkour-finished",
+                        com.uxplima.uxmlib.condition.action.ActionList.parse(
+                                List.of("[console] probe finished %time% %millis%")),
+                        "parkour-record",
+                        com.uxplima.uxmlib.condition.action.ActionList.parse(
+                                List.of("[console] probe record %time% %millis% %was%")))),
                 new InteractionEffectPlayer(),
                 clock);
         runnerMock = createPlayer("Runner");
@@ -189,6 +204,7 @@ class ACourseIsRunTest extends MockBukkitHarness {
     @Test
     @DisplayName("A run is timed from stepping off the start to the finish, and each finish is weighed")
     void aRunIsTimed() {
+        fired.clear();
         List<String> started = new ArrayList<>();
         runs.whenStarted(who -> started.add(who.getName()));
         step(0);
@@ -220,6 +236,14 @@ class ACourseIsRunTest extends MockBukkitHarness {
         step(10);
         assertThat(said()).contains("0:40.000").contains("0:25.250");
         assertThat(service.top(course.id(), 3).getFirst().runs()).isEqualTo(3);
+        assertThat(fired)
+                .describedAs("each finish says its time; a record says it again, and the time it beat")
+                .containsExactly(
+                        "finished 0:30.000 30000",
+                        "record 0:30.000 30000 %was%",
+                        "finished 0:25.250 25250",
+                        "record 0:25.250 25250 0:30.000",
+                        "finished 0:40.000 40000");
     }
 
     @Test

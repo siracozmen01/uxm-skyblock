@@ -186,12 +186,35 @@ class TheCrewSailsAndTradesTest extends MockBukkitHarness {
     @Test
     @DisplayName("Choosing a port sets the vessel sailing and says when it arrives")
     void choosingAPortSetsSail() {
+        List<String> fired = listen();
         when(market.sail(vessel, SALTMARSH)).thenReturn(Result.ok(NOW.plusSeconds(90)));
 
         harbour.setSail(ada, vessel, SALTMARSH);
 
         verify(market).sail(vessel, SALTMARSH);
         assertThat(said()).contains("sails for Saltmarsh");
+        assertThat(fired)
+                .describedAs("the port sailed for and the voyage's length")
+                .containsExactly("sailed " + SALTMARSH.id() + " 90");
+    }
+
+    /** Hands the harbour a {@code vessel-sailed} list that records what it says. */
+    private List<String> listen() {
+        List<String> fired = new ArrayList<>();
+        server.getCommandMap().register("probe", new org.bukkit.command.Command("probe") {
+            @Override
+            public boolean execute(org.bukkit.command.CommandSender sender, String label, String[] args) {
+                fired.add(String.join(" ", args));
+                return true;
+            }
+        });
+        harbour.useEffects(
+                new com.uxplima.uxmskyblock.bukkit.effect.InteractionEffectPlayer(),
+                new com.uxplima.uxmskyblock.bukkit.effect.InteractionEffects(Map.of(
+                        "vessel-sailed",
+                        com.uxplima.uxmlib.condition.action.ActionList.parse(
+                                List.of("[console] probe sailed %port% %seconds%")))));
+        return fired;
     }
 
     @Test
@@ -264,6 +287,7 @@ class TheCrewSailsAndTradesTest extends MockBukkitHarness {
     @Test
     @DisplayName("A member's role decides: this trader opens the market, and neither buys, sells nor steers")
     void theRoleDecides() {
+        List<String> fired = listen();
         Port.Good wheat = BAY.goods().get(0);
         when(market.where(vessel)).thenReturn(new PortMarket.Where.Docked(BAY.id()));
 
@@ -277,6 +301,7 @@ class TheCrewSailsAndTradesTest extends MockBukkitHarness {
         verify(market, never()).buy(any(), any(), any(), any());
         verify(market, never()).sell(any(), any(), any(), any());
         verify(market, never()).sail(any(), any());
+        assertThat(fired).describedAs("nobody set sail").isEmpty();
         StringBuilder all = new StringBuilder();
         Component line;
         while ((line = bo.nextComponentMessage()) != null) {
