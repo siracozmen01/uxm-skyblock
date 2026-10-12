@@ -97,6 +97,9 @@ final class ProfileSwitchFlow {
             if (!player.isOnline() || session.isFenced()) {
                 return;
             }
+            // Closed first: a window that writes the player's state itself writes as it closes, and the switch
+            // waits for that write to land.
+            player.closeInventory();
             if (!session.inPlay(nanoClock.getAsLong()) || session.selfWriteOutstanding()) {
                 // Another change of what the player holds is under way: a crossing between groups of worlds,
                 // or a window's write. A switch started now would land in its middle.

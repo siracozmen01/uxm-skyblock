@@ -571,6 +571,37 @@ class EachWorldKeepsWhatAPlayerCarriesTest extends MockBukkitHarness {
     }
 
     @Test
+    @DisplayName("A window that writes as it closes is closed before the crossing, which then waits for its write")
+    void aWindowClosedByTheCrossingIsWaitedFor() {
+        org.bukkit.inventory.Inventory vault = server.createInventory(null, 27);
+        server.getPluginManager()
+                .registerEvents(
+                        new org.bukkit.event.Listener() {
+                            @org.bukkit.event.EventHandler
+                            @SuppressWarnings("UnusedMethod") // called by the server's event bus
+                            public void onClose(org.bukkit.event.inventory.InventoryCloseEvent event) {
+                                if (event.getInventory().equals(vault)) {
+                                    session().selfWriteBegun();
+                                }
+                            }
+                        },
+                        org.mockbukkit.mockbukkit.MockBukkit.createMockPlugin());
+        ada.getInventory().setItem(0, new ItemStack(Material.DIAMOND));
+        ada.teleport(new Location(boxed, 0, 64, 0));
+        // Open as the crossing starts, so only the crossing's own close writes it.
+        ada.openInventory(vault);
+        assertThat(session().selfWriteOutstanding()).isFalse();
+
+        assertThat(states.arrived(ada)).isFalse();
+
+        assertThat(ada.getOpenInventory().getTopInventory()).isNotEqualTo(vault);
+        assertThat(store.crossings).isZero();
+        session().selfWriteLanded();
+        assertThat(states.arrived(ada)).isTrue();
+        assertThat(ada.getInventory().getItem(0)).isNull();
+    }
+
+    @Test
     @DisplayName("Each profile carries for its own group and keeps its own things")
     void eachProfileKeepsItsOwn() {
         to(boxed);

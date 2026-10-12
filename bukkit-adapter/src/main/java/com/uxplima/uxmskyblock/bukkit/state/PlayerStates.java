@@ -177,13 +177,14 @@ public final class PlayerStates {
             }
             return false;
         }
-        if (from.equals(to.get())
-                || session == null
-                || session.isFenced()
-                || !sessions.inPlay(uuid)
-                || session.selfWriteOutstanding()) {
-            // Out of play the player's state is about to be replaced, by a join, a profile switch or a crossing,
-            // and a window's write still to land holds what they held before.
+        if (from.equals(to.get()) || session == null || session.isFenced() || !sessions.inPlay(uuid)) {
+            // Out of play the player's state is about to be replaced, by a join, a profile switch or a crossing.
+            return false;
+        }
+        // Closed before anything is read: a window that writes the player's state itself writes as it closes,
+        // and that write, still to land, holds what they held before. The crossing waits for it.
+        player.closeInventory();
+        if (session.selfWriteOutstanding()) {
             return false;
         }
         SWAPPING.add(uuid);
@@ -196,7 +197,6 @@ public final class PlayerStates {
         UUID uuid = player.getUniqueId();
         // A creative place's seal is lifted first, so what was made there never reaches another group.
         SealedInventory.lift(player, codec);
-        player.closeInventory();
         // Nothing the player holds is used until what they pick up replaces it.
         session.leavePlay();
         ProfileInventoryRecord leaving = BukkitInventorySerializer.snapshotPlayer(

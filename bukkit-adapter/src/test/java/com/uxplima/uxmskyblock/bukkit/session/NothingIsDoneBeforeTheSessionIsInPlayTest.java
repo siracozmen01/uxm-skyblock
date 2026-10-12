@@ -143,6 +143,30 @@ class NothingIsDoneBeforeTheSessionIsInPlayTest extends MockBukkitHarness {
         assertThat(session.inPlay(System.nanoTime())).isTrue();
 
         session.selfWriteLanded();
+        org.bukkit.inventory.Inventory vault = server.createInventory(null, 27);
+        server.getPluginManager()
+                .registerEvents(
+                        new org.bukkit.event.Listener() {
+                            @org.bukkit.event.EventHandler
+                            @SuppressWarnings("UnusedMethod") // called by the server's event bus
+                            public void onClose(org.bukkit.event.inventory.InventoryCloseEvent event) {
+                                if (event.getInventory().equals(vault)) {
+                                    session.selfWriteBegun();
+                                }
+                            }
+                        },
+                        MockBukkit.createMockPlugin());
+        player.openInventory(vault);
+        coordinator.switchProfile(player, other);
+        eventually(() -> {
+            server.getScheduler().performOneTick();
+            assertThat(player.nextMessage())
+                    .describedAs("the window the switch closed writes first")
+                    .contains("could not be switched");
+        });
+        assertThat(session.activeProfileId()).isEqualTo(before);
+
+        session.selfWriteLanded();
         coordinator.switchProfile(player, other);
         eventually(() -> {
             server.getScheduler().performOneTick();
