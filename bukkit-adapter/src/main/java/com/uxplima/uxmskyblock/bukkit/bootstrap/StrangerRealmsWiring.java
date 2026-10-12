@@ -26,7 +26,6 @@ public final class StrangerRealmsWiring implements AutoCloseable {
 
     private final StrangerRealmsConfiguration config;
     private final StrangerRealmsService service;
-    private final SchedulerPort scheduler;
     private final String upsideDownWorld;
     private final UpsideDownSpawns spawns;
     private final com.uxplima.uxmskyblock.bukkit.stranger.Glimmer glimmer;
@@ -36,6 +35,8 @@ public final class StrangerRealmsWiring implements AutoCloseable {
     private @org.jspecify.annotations.Nullable AutoCloseable borderBeat;
 
     private final com.uxplima.uxmskyblock.core.application.stranger.StrangerClaims claims;
+    private final UpsideDownStart mirror;
+    private final com.uxplima.uxmskyblock.bukkit.stranger.UpsideDownReach reach;
 
     public StrangerRealmsWiring(
             ConfigurationWiring configuration,
@@ -44,7 +45,7 @@ public final class StrangerRealmsWiring implements AutoCloseable {
             IslandProtectionListener islands) {
         this.config =
                 Objects.requireNonNull(configuration.strangerRealmsConfig(), "strangerRealmsConfig must not be null");
-        this.scheduler = Objects.requireNonNull(scheduler, "scheduler must not be null");
+        Objects.requireNonNull(scheduler, "scheduler must not be null");
         this.service = new StrangerRealmsService(persistence.strangerRealmsPort());
         this.claims = new com.uxplima.uxmskyblock.core.application.stranger.StrangerClaims(
                 service, persistence.islandStoragePort(), config.claim());
@@ -59,6 +60,15 @@ public final class StrangerRealmsWiring implements AutoCloseable {
                 config.mobs(),
                 (at, type) -> at.getWorld().spawnEntity(at, type, CreatureSpawnEvent.SpawnReason.CUSTOM));
         this.glimmer = new com.uxplima.uxmskyblock.bukkit.stranger.Glimmer(realms, scheduler, config.glimmer());
+        this.mirror = new UpsideDownStart(service, scheduler, config.upsideDown(), () -> upsideDownWorld);
+        this.reach = new com.uxplima.uxmskyblock.bukkit.stranger.UpsideDownReach(
+                realms,
+                mirror,
+                scheduler,
+                org.bukkit.Bukkit::getWorld,
+                org.bukkit.World::isChunkGenerated,
+                com.uxplima.uxmskyblock.bukkit.stranger.UpsideDownReach.copiedUnless(
+                        valuable(configuration.levelConfig()), holdsThings()));
         this.compass = new com.uxplima.uxmskyblock.bukkit.stranger.WarpedCompass(
                 realms, scheduler, configuration.messages(), config.compass());
         if (config.enabled() && config.compass().enabled()) {
@@ -91,6 +101,51 @@ public final class StrangerRealmsWiring implements AutoCloseable {
     /** What the Upside Down makes of the creatures born in it, while StrangerRealms is enabled. */
     public UpsideDownSpawns spawns() {
         return spawns;
+    }
+
+    /** The blocks levels.conf gives a level weight or a price: what is worth something on an island. */
+    static java.util.Set<String> valuable(com.uxplima.uxmskyblock.bukkit.config.LevelConfiguration levels) {
+        java.util.Set<String> worth = new java.util.HashSet<>();
+        levels.blockWeights().forEach((block, weight) -> {
+            if (weight > 0) {
+                worth.add(keyed(block));
+            }
+        });
+        levels.basePricesMinorUnits().forEach((block, price) -> {
+            if (price > 0) {
+                worth.add(keyed(block));
+            }
+        });
+        return worth;
+    }
+
+    /** A block as levels.conf writes it, with the game's namespace when it was written without one. */
+    private static String keyed(String block) {
+        String written = block.strip().toLowerCase(java.util.Locale.ROOT);
+        return written.contains(":") ? written : "minecraft:" + written;
+    }
+
+    /**
+     * Whether a block holds things, such as a chest or a furnace, asked once a material. A material the server
+     * cannot answer for is taken to hold things, so it is never copied.
+     */
+    private static java.util.function.Predicate<org.bukkit.Material> holdsThings() {
+        java.util.Map<org.bukkit.Material, Boolean> known = new java.util.concurrent.ConcurrentHashMap<>();
+        return material -> known.computeIfAbsent(material, block -> {
+            if (!block.isBlock() || block.isAir()) {
+                return false;
+            }
+            try {
+                return block.createBlockData().createBlockState() instanceof org.bukkit.block.TileState;
+            } catch (RuntimeException e) {
+                return true;
+            }
+        });
+    }
+
+    /** The Upside Down following the island's land past where it was first laid. */
+    public com.uxplima.uxmskyblock.bukkit.stranger.UpsideDownReach reach() {
+        return reach;
     }
 
     /** The glimmer between the land and the Upside Down. */
@@ -180,8 +235,6 @@ public final class StrangerRealmsWiring implements AutoCloseable {
 
     /** The action that mirrors the land into the Upside Down, while StrangerRealms is enabled. */
     public List<CreationActionProvider<IslandStart>> startActions() {
-        return config.enabled()
-                ? List.of(new UpsideDownStart(service, scheduler, config.upsideDown(), () -> upsideDownWorld))
-                : List.of();
+        return config.enabled() ? List.<CreationActionProvider<IslandStart>>of(mirror) : List.of();
     }
 }

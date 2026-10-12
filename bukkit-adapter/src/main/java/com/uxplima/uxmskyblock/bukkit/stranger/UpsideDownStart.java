@@ -5,6 +5,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.Predicate;
 import java.util.function.Supplier;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -108,8 +109,6 @@ public final class UpsideDownStart implements CreationActionProvider<IslandStart
                     + ", which dimensions.conf names for the Nether, is not loaded.");
             return;
         }
-        int bottom = Math.max(source.getMinHeight(), target.getMinHeight());
-        int top = Math.min(source.getMaxHeight(), target.getMaxHeight());
         int radius = upsideDown.radius();
         int centreChunkX = start.centerX() >> 4;
         int centreChunkZ = start.centerZ() >> 4;
@@ -117,28 +116,50 @@ public final class UpsideDownStart implements CreationActionProvider<IslandStart
             for (int chunkZ = (start.centerZ() - radius) >> 4; chunkZ <= (start.centerZ() + radius) >> 4; chunkZ++) {
                 int cx = chunkX;
                 int cz = chunkZ;
-                Runnable mirror = () -> {
-                    BlockData[] copy = read(source, cx, cz, bottom, top);
-                    scheduler.onRegion(targetName, cx, cz, () -> write(target, cx, cz, bottom, top, copy));
-                };
                 if (cx == centreChunkX && cz == centreChunkZ) {
-                    mirror.run();
+                    mirror(source, target, cx, cz);
                 } else {
-                    scheduler.onRegion(source.getName(), cx, cz, mirror);
+                    scheduler.onRegion(source.getName(), cx, cz, () -> mirror(source, target, cx, cz));
                 }
             }
         }
     }
 
+    /**
+     * Mirrors one chunk of the land into the Upside Down: read here, on the thread of the land's region, and laid
+     * on the thread of the region that owns it in the Upside Down.
+     */
+    void mirror(World source, World target, int chunkX, int chunkZ) {
+        mirror(source, target, chunkX, chunkZ, material -> true);
+    }
+
+    /**
+     * Mirrors one chunk, laying air wherever the land holds a block {@code copied} refuses. Land mirrored after the
+     * island was made may carry what its players put there, and a block copied across would be had twice.
+     */
+    void mirror(World source, World target, int chunkX, int chunkZ, Predicate<Material> copied) {
+        int bottom = Math.max(source.getMinHeight(), target.getMinHeight());
+        int top = Math.min(source.getMaxHeight(), target.getMaxHeight());
+        BlockData[] copy = read(source, chunkX, chunkZ, bottom, top, copied);
+        scheduler.onRegion(target.getName(), chunkX, chunkZ, () -> write(target, chunkX, chunkZ, bottom, top, copy));
+    }
+
     /** The chunk's blocks from the bottom to the top, distressed, on the thread that owns the chunk. */
     BlockData[] read(World source, int chunkX, int chunkZ, int bottom, int top) {
+        return read(source, chunkX, chunkZ, bottom, top, material -> true);
+    }
+
+    /** The chunk's blocks, distressed, with air for every block {@code copied} refuses. */
+    BlockData[] read(World source, int chunkX, int chunkZ, int bottom, int top, Predicate<Material> copied) {
+        BlockData air = Material.AIR.createBlockData();
         BlockData[] copy = new BlockData[16 * 16 * (top - bottom)];
         int index = 0;
         for (int y = bottom; y < top; y++) {
             for (int x = 0; x < 16; x++) {
                 for (int z = 0; z < 16; z++) {
-                    copy[index++] = distress(source.getBlockAt((chunkX << 4) + x, y, (chunkZ << 4) + z)
-                            .getBlockData());
+                    BlockData found = source.getBlockAt((chunkX << 4) + x, y, (chunkZ << 4) + z)
+                            .getBlockData();
+                    copy[index++] = copied.test(found.getMaterial()) ? distress(found) : air;
                 }
             }
         }

@@ -86,4 +86,28 @@ class OnlyStrangerLandIsBorderedTest {
                 StartTemplateBundle.shipped(),
                 world);
     }
+
+    @Test
+    @DisplayName("What is worth something is every block levels.conf weighs or prices, named with the game's namespace")
+    void whatIsWorthSomething() {
+        com.uxplima.uxmskyblock.bukkit.config.LevelConfiguration shipped =
+                com.uxplima.uxmskyblock.bukkit.config.LevelConfiguration.defaultConfiguration();
+        com.uxplima.uxmskyblock.bukkit.config.LevelConfiguration levels =
+                new com.uxplima.uxmskyblock.bukkit.config.LevelConfiguration(
+                        shipped.pointsPerLevel(),
+                        shipped.bankMinorUnitsPerPoint(),
+                        shipped.defaultSpawnerWeight(),
+                        shipped.questWeight(),
+                        shipped.dampingFactor(),
+                        java.util.Map.of("minecraft:diamond_block", 900L, "Gold_Block", 450L, "minecraft:dirt", 0L),
+                        java.util.Map.of("minecraft:emerald_block", 120000L),
+                        shipped.spawnerWeights(),
+                        shipped.leaderboardFreshness(),
+                        shipped.leaderboardRebuildInterval(),
+                        shipped.recalculationCooldown());
+
+        assertThat(StrangerRealmsWiring.valuable(levels))
+                .containsExactlyInAnyOrder(
+                        "minecraft:diamond_block", "minecraft:gold_block", "minecraft:emerald_block");
+    }
 }
