@@ -1,14 +1,13 @@
 package com.uxplima.uxmskyblock.bukkit.config;
 
-import java.math.BigDecimal;
-import java.math.RoundingMode;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Locale;
 import java.util.Optional;
 import java.util.logging.Logger;
 
 import com.uxplima.uxmskyblock.core.domain.chunkblock.ChunkRequirement;
+import com.uxplima.uxmskyblock.core.domain.requirement.Requirement;
+import com.uxplima.uxmskyblock.core.domain.requirement.RequirementLines;
 
 /**
  * The lines of what a ChunkBlock chunk costs, as {@code modules/chunkblock.conf} writes them:
@@ -22,7 +21,8 @@ import com.uxplima.uxmskyblock.core.domain.chunkblock.ChunkRequirement;
  * </pre>
  *
  * Money is written in whole units, cents after a point, and kept in minor units. A line paid from the player is
- * handed in by whoever pays; one paid from the island comes out of its bank.
+ * handed in by whoever pays; one paid from the island comes out of its bank. The lines are those of
+ * {@link RequirementLines}, so a line may say {@code take} in front.
  */
 public final class ChunkCostLines {
 
@@ -45,63 +45,34 @@ public final class ChunkCostLines {
         return List.copyOf(lines);
     }
 
-    /** The line {@code written} says, or nothing for one that says none. */
+    /**
+     * The line {@code written} says, or nothing for one that says none. The line is read by the grammar every mode
+     * shares; a chunk is paid for, so a line to hand over reads as its price and a level as the level it waits
+     * for. A line only to have, a permission or a wait is no price.
+     */
     public static Optional<ChunkRequirement> parse(String written) {
-        String[] words = written.strip().split("\\s+");
-        if (words.length < 2) {
-            return Optional.empty();
-        }
-        try {
-            return switch (words[0].toLowerCase(Locale.ROOT)) {
-                case "money" ->
-                    words.length <= 3
-                            ? source(words, 2).map(from -> new ChunkRequirement.Money(minor(words[1]), from))
-                            : Optional.empty();
-                case "currency" ->
-                    words.length >= 3 && words.length <= 4
-                            ? source(words, 3)
-                                    .map(from -> new ChunkRequirement.Currency(
-                                            words[1].toLowerCase(Locale.ROOT), Long.parseLong(words[2]), from))
-                            : Optional.empty();
-                case "item", "items" ->
-                    words.length == 3
-                            ? Optional.of(new ChunkRequirement.Items(words[1], Long.parseLong(words[2])))
-                            : Optional.empty();
-                case "points" ->
-                    words.length == 2
-                            ? Optional.of(new ChunkRequirement.Points(Long.parseLong(words[1])))
-                            : Optional.empty();
-                case "level" ->
-                    words.length == 2
-                            ? Optional.of(new ChunkRequirement.Level(
-                                    words[1].equalsIgnoreCase("ladder")
-                                            ? ChunkRequirement.Level.LADDER
-                                            : Long.parseLong(words[1])))
-                            : Optional.empty();
-                default -> Optional.empty();
-            };
-        } catch (IllegalArgumentException | ArithmeticException wrong) {
-            return Optional.empty();
-        }
+        return RequirementLines.parse(written).flatMap(ChunkCostLines::price);
     }
 
-    /** Whose purse the line at {@code index} names, the player's when it names none. */
-    private static Optional<ChunkRequirement.Source> source(String[] words, int index) {
-        if (words.length <= index) {
-            return Optional.of(ChunkRequirement.Source.PLAYER);
+    private static Optional<ChunkRequirement> price(Requirement line) {
+        if (line instanceof Requirement.Level level) {
+            return Optional.of(new ChunkRequirement.Level(level.level()));
         }
-        return switch (words[index].toLowerCase(Locale.ROOT)) {
-            case "player" -> Optional.of(ChunkRequirement.Source.PLAYER);
-            case "island", "bank" -> Optional.of(ChunkRequirement.Source.ISLAND);
+        if (line.mode() != Requirement.Mode.TAKE) {
+            return Optional.empty();
+        }
+        return switch (line) {
+            case Requirement.Money money ->
+                Optional.of(new ChunkRequirement.Money(money.minor(), source(money.from())));
+            case Requirement.Currency currency ->
+                Optional.of(new ChunkRequirement.Currency(currency.id(), currency.amount(), source(currency.from())));
+            case Requirement.Items items -> Optional.of(new ChunkRequirement.Items(items.material(), items.amount()));
+            case Requirement.Points points -> Optional.of(new ChunkRequirement.Points(points.amount()));
             default -> Optional.empty();
         };
     }
 
-    /** {@code 2500.5} as 250050 minor units. */
-    static long minor(String written) {
-        return new BigDecimal(written)
-                .movePointRight(2)
-                .setScale(0, RoundingMode.HALF_UP)
-                .longValueExact();
+    private static ChunkRequirement.Source source(Requirement.Source from) {
+        return from == Requirement.Source.ISLAND ? ChunkRequirement.Source.ISLAND : ChunkRequirement.Source.PLAYER;
     }
 }

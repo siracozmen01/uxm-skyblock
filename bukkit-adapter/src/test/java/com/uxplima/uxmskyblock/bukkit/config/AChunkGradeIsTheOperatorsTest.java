@@ -50,6 +50,20 @@ class AChunkGradeIsTheOperatorsTest {
     }
 
     @Test
+    @DisplayName(
+            "A chunk's lines are the grammar every mode shares: one may say take, and what is only had is no price")
+    void theSharedGrammar() {
+        assertThat(ChunkCostLines.parse("take money 3 island"))
+                .contains(new ChunkRequirement.Money(300, Source.ISLAND));
+        assertThat(ChunkCostLines.parse("take item minecraft:dirt 2"))
+                .contains(new ChunkRequirement.Items("minecraft:dirt", 2));
+        assertThat(ChunkCostLines.parse("have level 4")).contains(new ChunkRequirement.Level(4));
+        for (String only : List.of("have money 3", "have points 2", "permission a.b", "wait 1h", "take level 3")) {
+            assertThat(ChunkCostLines.parse(only)).describedAs(only).isEmpty();
+        }
+    }
+
+    @Test
     @DisplayName("A line that says no price reads as none")
     void aWrongLineIsNone() {
         for (String wrong : List.of(
