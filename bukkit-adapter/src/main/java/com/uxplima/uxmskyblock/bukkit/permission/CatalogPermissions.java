@@ -63,6 +63,10 @@ public enum CatalogPermissions {
             "uxmskyblock.admin.parkour.resettimes",
             "Forget the runs on a Parkour course, of every runner or of one",
             PermissionDefault.OP),
+    ADMIN_LOOT_MARK(
+            "uxmskyblock.admin.loot.mark",
+            "Give a container a loot table, filled when it is first opened",
+            PermissionDefault.OP),
     ADMIN_ONEBLOCK_RESPAWN(
             "uxmskyblock.admin.oneblock.respawn", "Lay a OneBlock island's block again", PermissionDefault.OP),
 

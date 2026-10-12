@@ -264,7 +264,7 @@ final class IslandCommandWiring {
         tree.useLifecycle(gameplay.playerLifecycle());
         tree.useGameModes(gameplay.gameModeHierarchyService()::modeOf);
         tree.useLeaderboards(gameplay.leaderboardMetrics());
-        tree.useModeAdmin(modeAdmin(gameplay, authority, integration.messages()));
+        tree.useModeAdmin(modeAdmin(config, gameplay, authority, integration.messages()));
         // A OneBlock island's standing, as the operator's menu file draws it and as placeholders.
         var oneBlockPanel = gameplay.oneBlockWiring().panel(integration.menuEngine());
         // A ChunkBlock island's chunks, as the operator's menu file draws them, the unlock and placeholders.
@@ -381,7 +381,10 @@ final class IslandCommandWiring {
 
     /** {@code /isadmin}: a branch for each mode this server runs. */
     private static com.uxplima.uxmskyblock.bukkit.command.ModeAdminCommands modeAdmin(
-            GameplayWiring gameplay, AuthorityWiring authority, com.uxplima.uxmskyblock.bukkit.i18n.Messages messages) {
+            ConfigurationWiring config,
+            GameplayWiring gameplay,
+            AuthorityWiring authority,
+            com.uxplima.uxmskyblock.bukkit.i18n.Messages messages) {
         java.util.List<com.uxplima.uxmskyblock.bukkit.command.ModeAdminCommands.Mode> modes =
                 new java.util.ArrayList<>();
         if (gameplay.oneBlockWiring().enabled()) {
@@ -407,6 +410,8 @@ final class IslandCommandWiring {
                     name -> java.util.Optional.ofNullable(org.bukkit.Bukkit.getOfflinePlayerIfCached(name))
                             .map(org.bukkit.OfflinePlayer::getUniqueId)));
         }
+        // Loot tables serve every mode, so their branch is always there.
+        modes.add(new com.uxplima.uxmskyblock.bukkit.loot.LootAdmin(config::lootTables));
         if (gameplay.boxedWiring().enabled()) {
             modes.add(new com.uxplima.uxmskyblock.bukkit.boxed.BoxedAdmin(
                     gameplay.boxedWiring().service(), gameplay.boxedWiring().edgeMover()));
