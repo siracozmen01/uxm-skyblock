@@ -5,6 +5,7 @@ import java.util.Random;
 import java.util.function.Supplier;
 import java.util.logging.Logger;
 
+import org.bukkit.GameMode;
 import org.bukkit.NamespacedKey;
 import org.bukkit.block.Block;
 import org.bukkit.block.BlockState;
@@ -20,6 +21,7 @@ import org.bukkit.inventory.InventoryHolder;
 import org.bukkit.persistence.PersistentDataContainer;
 import org.bukkit.persistence.PersistentDataType;
 
+import com.uxplima.uxmskyblock.bukkit.creative.SealedInventory;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -67,9 +69,16 @@ public final class LootContainers implements Listener {
                 : null;
     }
 
-    @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
+    /**
+     * Fills only an opening every other listener let through: island protection, the session and the crossing
+     * gates all refuse at a lower or the same priority, and a refused visitor must not find what the table
+     * gives. A spectator, and a player sealed in a creative place, leave it waiting for the next player.
+     */
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onOpen(InventoryOpenEvent event) {
-        if (!(event.getPlayer() instanceof Player player)) {
+        if (!(event.getPlayer() instanceof Player player)
+                || player.getGameMode() == GameMode.SPECTATOR
+                || SealedInventory.holds(player)) {
             return;
         }
         Inventory inventory = event.getInventory();
