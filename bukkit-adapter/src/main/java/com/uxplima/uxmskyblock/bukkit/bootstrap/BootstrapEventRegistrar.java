@@ -20,6 +20,15 @@ public final class BootstrapEventRegistrar {
             AuthorityWiring authorityWiring,
             ConfigurationWiring configWiring) {
         CatalogPermissions.registerAll(pm);
+        // What a player carries is kept apart for each group of worlds, as modules/player-state.conf says.
+        pm.registerEvents(
+                new com.uxplima.uxmskyblock.bukkit.state.PlayerStateListener(
+                        new com.uxplima.uxmskyblock.bukkit.state.PlayerStates(
+                                configWiring::carriedStateConfig,
+                                () -> presetWorlds(configWiring),
+                                new com.uxplima.uxmskyblock.bukkit.creative.ServerInventoryCodec(),
+                                new com.uxplima.uxmskyblock.bukkit.state.ServerAdvancements())),
+                plugin);
         if (featureModuleWiring.moduleRegistry().isModuleEnabled("core")) {
             pm.registerEvents(gameplayWiring.protectionListener(), plugin);
             pm.registerEvents(gameplayWiring.playerLifecycle(), plugin);
@@ -156,5 +165,14 @@ public final class BootstrapEventRegistrar {
         // Every rule about arrivals is in; the watch hears teleports on Paper and looks for them on Folia.
         pm.registerEvents(gameplayWiring.arrivalWatch(), plugin);
         gameplayWiring.startArrivals();
+    }
+
+    /** The worlds the presets make islands in: each its own group of what a player carries, unless the file says. */
+    static java.util.List<String> presetWorlds(ConfigurationWiring configWiring) {
+        String islandWorld = configWiring.nodeConfig().worldName();
+        return configWiring.presetConfig().presets().stream()
+                .map(preset -> preset.worldOr(islandWorld))
+                .distinct()
+                .toList();
     }
 }

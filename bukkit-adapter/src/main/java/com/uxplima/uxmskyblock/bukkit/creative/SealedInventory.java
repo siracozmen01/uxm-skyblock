@@ -48,6 +48,15 @@ public final class SealedInventory {
         this.owner = Objects.requireNonNull(owner, "owner must not be null");
     }
 
+    /**
+     * Gives the player back what any place kept aside, whichever place it was. Used where the player leaves every
+     * place at once, such as for another world, before anything they hold now is taken anywhere.
+     */
+    public static boolean lift(Player player, InventoryCodec codec) {
+        String by = player.getPersistentDataContainer().get(OWNER, PersistentDataType.STRING);
+        return by != null && new SealedInventory(codec, by).unseal(player);
+    }
+
     /** Whether the player has something kept aside. */
     public boolean isSealed(Player player) {
         return holds(player);
@@ -78,8 +87,7 @@ public final class SealedInventory {
         data.set(EXP, PersistentDataType.FLOAT, player.getExp());
         List<String> effects = new ArrayList<>();
         for (PotionEffect effect : player.getActivePotionEffects()) {
-            effects.add(effect.getType().getKey().asString() + " " + effect.getAmplifier() + " " + effect.getDuration()
-                    + " " + effect.isAmbient() + " " + effect.hasParticles() + " " + effect.hasIcon());
+            effects.add(effectLine(effect));
         }
         data.set(EFFECTS, PersistentDataType.LIST.strings(), effects);
         // The items last: their mark is what says the player is sealed.
@@ -147,7 +155,14 @@ public final class SealedInventory {
         return GameMode.SURVIVAL;
     }
 
-    private static @org.jspecify.annotations.Nullable PotionEffect effectWritten(String written) {
+    /** An effect as a seal writes it: its type, amplifier, duration, and whether it is ambient, shows particles and an icon. */
+    public static String effectLine(PotionEffect effect) {
+        return effect.getType().getKey().asString() + " " + effect.getAmplifier() + " " + effect.getDuration() + " "
+                + effect.isAmbient() + " " + effect.hasParticles() + " " + effect.hasIcon();
+    }
+
+    /** The effect a line {@link #effectLine} wrote, or nothing for a line it cannot read. */
+    public static @org.jspecify.annotations.Nullable PotionEffect effectWritten(String written) {
         String[] parts = written.split(" ", -1);
         if (parts.length != 6) {
             return null;

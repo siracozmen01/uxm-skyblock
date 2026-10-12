@@ -453,6 +453,12 @@ public final class ConfigurationLoader {
                 "walls.conf",
                 com.uxplima.uxmskyblock.bukkit.wall.WallConfiguration::load,
                 com.uxplima.uxmskyblock.bukkit.wall.WallConfiguration.defaultConfiguration()));
+        wiring.useCarriedStateConfig(loadConfig(
+                plugin,
+                dataDir,
+                "player-state.conf",
+                com.uxplima.uxmskyblock.bukkit.config.CarriedStateConfiguration::load,
+                com.uxplima.uxmskyblock.bukkit.config.CarriedStateConfiguration.defaultConfiguration()));
         wiring.validate();
         return wiring;
     }

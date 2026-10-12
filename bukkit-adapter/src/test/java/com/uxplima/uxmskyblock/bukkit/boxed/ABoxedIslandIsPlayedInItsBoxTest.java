@@ -196,6 +196,47 @@ class ABoxedIslandIsPlayedInItsBoxTest extends MockBukkitHarness {
     }
 
     @Test
+    @DisplayName("An advancement handed back as a player crosses between groups of worlds grows nothing")
+    void anAdvancementHandedBackGrowsNothing() {
+        service.start(islandId);
+        PlayerMock player = createPlayer("Traveller");
+        server.addSimpleWorld("elsewhere");
+        com.uxplima.uxmskyblock.bukkit.state.PlayerStates states =
+                new com.uxplima.uxmskyblock.bukkit.state.PlayerStates(
+                        () -> com.uxplima.uxmskyblock.bukkit.config.CarriedStateConfiguration.SHIPPED,
+                        () -> java.util.List.of(player.getWorld().getName(), "elsewhere"),
+                        new com.uxplima.uxmskyblock.bukkit.creative.InventoryCodec() {
+                            @Override
+                            public byte[] write(org.bukkit.inventory.ItemStack[] items) {
+                                return new byte[0];
+                            }
+
+                            @Override
+                            public org.bukkit.inventory.ItemStack[] read(byte[] bytes) {
+                                return new org.bukkit.inventory.ItemStack[0];
+                            }
+                        },
+                        new com.uxplima.uxmskyblock.bukkit.state.PlayerStates.Advancements() {
+                            @Override
+                            public java.util.Set<String> earned(Player who) {
+                                return java.util.Set.of();
+                            }
+
+                            @Override
+                            public void earn(Player who, java.util.Set<String> criteria) {
+                                listener.onAdvancement(done(who, "story/mine_stone"));
+                            }
+                        });
+        states.arrived(player);
+
+        player.teleport(new org.bukkit.Location(server.getWorld("elsewhere"), 0, 64, 0));
+        assertThat(states.arrived(player)).isTrue();
+
+        assertThat(service.radius(islandId)).hasValue(5);
+        assertThat(changed).isEmpty();
+    }
+
+    @Test
     @DisplayName("In a Boxed world nobody breaks or walks where no box reaches, and elsewhere nothing changes")
     void outsideTheBoxIsClosed() {
         service.start(islandId);

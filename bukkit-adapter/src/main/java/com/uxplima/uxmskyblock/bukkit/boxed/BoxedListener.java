@@ -93,6 +93,10 @@ public final class BoxedListener implements Listener {
     @EventHandler(priority = EventPriority.MONITOR)
     public void onAdvancement(PlayerAdvancementDoneEvent event) {
         Player player = event.getPlayer();
+        if (com.uxplima.uxmskyblock.bukkit.state.PlayerStates.isSwapping(player)) {
+            // Handed back as the player crossed into another group of worlds: earned before, counted then.
+            return;
+        }
         String advancement = event.getAdvancement().getKey().asString();
         if (service.rules().blocksFor(advancement) <= 0) {
             return;

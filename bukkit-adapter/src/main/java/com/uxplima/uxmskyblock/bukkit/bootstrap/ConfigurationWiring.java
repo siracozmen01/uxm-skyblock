@@ -614,6 +614,19 @@ public final class ConfigurationWiring {
         this.wallConfig = Objects.requireNonNull(config, "config must not be null");
     }
 
+    /** What a player carries in each group of worlds, {@code modules/player-state.conf}, shipped until handed over. */
+    private volatile com.uxplima.uxmskyblock.bukkit.config.CarriedStateConfiguration carriedStateConfig =
+            com.uxplima.uxmskyblock.bukkit.config.CarriedStateConfiguration.defaultConfiguration();
+
+    public com.uxplima.uxmskyblock.bukkit.config.CarriedStateConfiguration carriedStateConfig() {
+        return carriedStateConfig;
+    }
+
+    /** Hands over {@code modules/player-state.conf} as the server read it. */
+    public void useCarriedStateConfig(com.uxplima.uxmskyblock.bukkit.config.CarriedStateConfiguration config) {
+        this.carriedStateConfig = Objects.requireNonNull(config, "config must not be null");
+    }
+
     /** Whether islands can be ChunkBlock islands, and what each chunk costs in level. */
     public com.uxplima.uxmskyblock.bukkit.config.ChunkBlockConfiguration chunkBlockConfig() {
         return chunkBlockConfig;
