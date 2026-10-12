@@ -42,7 +42,7 @@ class UpgradeWordsTest extends MockBukkitHarness {
         assertThat(values)
                 .containsEntry("member_limit_now", "Up to 8 members")
                 .containsEntry("member_limit_next", "Up to 12 members")
-                .containsEntry("member_limit_cost", "1000.00")
+                .containsEntry("member_limit_cost", "1,000.00")
                 .containsEntry("member_limit_max", "4")
                 .containsEntry("warp_slots_now", "Up to 4 warps");
     }

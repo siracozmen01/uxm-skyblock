@@ -283,17 +283,19 @@ public final class IslandBankruptcyListener implements Listener, ArrivalGate {
                         return;
                     }
                     if (record.status() == BankruptcyStatus.GRACE) {
-                        double debt = record.debtMinorUnits() / 100.0;
                         messages.send(
                                 player,
                                 "bank.grace_warning",
-                                Placeholder.unparsed("debt", String.format(java.util.Locale.ROOT, "%.2f", debt)));
+                                Placeholder.unparsed(
+                                        "debt",
+                                        com.uxplima.uxmskyblock.bukkit.i18n.MoneyText.of(record.debtMinorUnits())));
                     } else if (record.status() == BankruptcyStatus.LOCKED) {
-                        double debt = record.debtMinorUnits() / 100.0;
                         messages.send(
                                 player,
                                 "bank.locked_warning",
-                                Placeholder.unparsed("debt", String.format(java.util.Locale.ROOT, "%.2f", debt)));
+                                Placeholder.unparsed(
+                                        "debt",
+                                        com.uxplima.uxmskyblock.bukkit.i18n.MoneyText.of(record.debtMinorUnits())));
                     }
                 };
 

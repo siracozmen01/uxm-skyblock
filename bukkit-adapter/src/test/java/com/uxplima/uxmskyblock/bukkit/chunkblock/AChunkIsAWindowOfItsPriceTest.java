@@ -227,8 +227,8 @@ class AChunkIsAWindowOfItsPriceTest extends MockBukkitHarness {
                 .containsEntry("material", "OAK_LOG");
         assertThat(rows.get(1).words())
                 .containsEntry("what", "Money")
-                .containsEntry("needed", "2500.50")
-                .containsEntry("left", "2500.50")
+                .containsEntry("needed", "2,500.50")
+                .containsEntry("left", "2,500.50")
                 .containsEntry("from", "Paid from the island bank")
                 .containsEntry("material", "GOLD_INGOT");
         assertThat(rows.get(2).words())

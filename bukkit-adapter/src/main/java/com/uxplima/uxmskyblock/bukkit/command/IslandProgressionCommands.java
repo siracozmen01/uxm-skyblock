@@ -213,9 +213,9 @@ public final class IslandProgressionCommands {
         return Placeholder.unparsed(name, String.format(Locale.ROOT, "%,d", value));
     }
 
-    /** Minor units are stored as an integer; a player reads them as money. */
+    /** Minor units are stored as an integer; a player reads them as money, as the server writes it. */
     private static String money(long minorUnits) {
-        return String.format(Locale.ROOT, "%,.2f", minorUnits / 100.0);
+        return com.uxplima.uxmskyblock.bukkit.i18n.MoneyText.of(minorUnits);
     }
 
     private void send(Audience audience, Component component) {
@@ -500,7 +500,8 @@ public final class IslandProgressionCommands {
                 : messages.renderPlain(
                         reader,
                         "leaderboard.score_money",
-                        Placeholder.unparsed("amount", String.format(Locale.ROOT, "%,.2f", entry.score() / 100.0)));
+                        Placeholder.unparsed(
+                                "amount", com.uxplima.uxmskyblock.bukkit.i18n.MoneyText.of(entry.score())));
     }
 
     /** Where the reader's own island stands, as the leaderboard window says it. */

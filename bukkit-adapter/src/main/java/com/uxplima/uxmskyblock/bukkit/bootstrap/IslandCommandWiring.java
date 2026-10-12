@@ -111,6 +111,11 @@ final class IslandCommandWiring {
                 config.roleConfig());
         // Every currency the bank keeps, its money among them, is a tile of the bank window with a window of its own.
         var economy = integration.economyBridge();
+        // Every amount of money is written the way bank.money.format says, the economy plugin's own way as shipped.
+        // The economy is asked each time, since an economy plugin may register after this plugin starts.
+        com.uxplima.uxmskyblock.bukkit.i18n.MoneyText.use(com.uxplima.uxmskyblock.bukkit.i18n.MoneyText.writer(
+                config.bankConfig().money().format(),
+                amount -> economy.isEconomyAvailable() ? economy.format(amount) : null));
         var bankCurrencies = new com.uxplima.uxmskyblock.bukkit.menu.BankCurrencyList(
                 integration.messages(),
                 () -> config.bankConfig().money(),

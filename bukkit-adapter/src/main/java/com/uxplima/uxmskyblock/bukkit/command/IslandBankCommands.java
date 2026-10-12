@@ -317,7 +317,11 @@ public final class IslandBankCommands {
             }
             economyBridge.depositToIslandBank(player, profileId, amount, serverNodeId, outcome -> {
                 if (outcome instanceof BankTransactionOutcome.Success) {
-                    send(player, "bank.deposit_success", Placeholder.unparsed("amount", Long.toString(amount)));
+                    send(
+                            player,
+                            "bank.deposit_success",
+                            Placeholder.unparsed(
+                                    "amount", com.uxplima.uxmskyblock.bukkit.i18n.MoneyText.ofUnits(amount)));
                     moved.accept(player, MONEY);
                     IslandBankruptcyService bService = bankruptcyServiceProvider.get();
                     if (bService != null && bService.policy().autoRemediateOnDeposit()) {
@@ -416,7 +420,11 @@ public final class IslandBankCommands {
             }
             economyBridge.withdrawFromIslandBank(player, profileId, amount, serverNodeId, outcome -> {
                 if (outcome instanceof BankTransactionOutcome.Success) {
-                    send(player, "bank.withdraw_success", Placeholder.unparsed("amount", Long.toString(amount)));
+                    send(
+                            player,
+                            "bank.withdraw_success",
+                            Placeholder.unparsed(
+                                    "amount", com.uxplima.uxmskyblock.bukkit.i18n.MoneyText.ofUnits(amount)));
                     moved.accept(player, MONEY);
                 } else if (outcome instanceof BankTransactionOutcome.InsufficientFunds) {
                     send(player, "bank.withdraw_insufficient");

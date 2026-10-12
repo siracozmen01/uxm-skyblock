@@ -103,6 +103,15 @@ class BankCurrencySpecTest {
                         bank.money { display-name = "Coins", icon = "SUNFLOWER", order = 50, quick = [5] }
                         """))).isEqualTo(new BankMoneySpec("Coins", "SUNFLOWER", 50, List.of(5L)));
         assertThat(BankMoneySpec.load(read("bank.upkeep.enabled = false"))).isEqualTo(BankMoneySpec.DEFAULT);
+        assertThat(BankMoneySpec.DEFAULT.format())
+                .describedAs("the economy writes it as shipped")
+                .isEqualTo("economy");
+        assertThat(BankMoneySpec.load(read("bank.money.format = \"<amount> coins\""))
+                        .format())
+                .isEqualTo("<amount> coins");
+        assertThat(BankMoneySpec.load(read("bank.money.format = \" \"")).format())
+                .describedAs("a blank format is the economy's")
+                .isEqualTo("economy");
     }
 
     @Test
