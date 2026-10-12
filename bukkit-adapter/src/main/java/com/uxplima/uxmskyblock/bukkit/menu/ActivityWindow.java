@@ -35,7 +35,7 @@ import org.jspecify.annotations.Nullable;
  * {@code skyblock:activity-since:7d} shows the last seven days. So an operator adds, removes and renames the
  * filters without a line of Java. Each viewer keeps their own filters until they leave.
  */
-public final class ActivityWindow {
+public final class ActivityWindow implements org.bukkit.event.Listener {
 
     private static final Logger LOGGER = Logger.getLogger(ActivityWindow.class.getName());
 
@@ -174,6 +174,12 @@ public final class ActivityWindow {
     public void forget(UUID viewer) {
         filters.remove(viewer);
         members.remove(viewer);
+    }
+
+    /** A player who leaves the server leaves their filters behind. */
+    @org.bukkit.event.EventHandler
+    public void onQuit(org.bukkit.event.player.PlayerQuitEvent event) {
+        forget(event.getPlayer().getUniqueId());
     }
 
     /**

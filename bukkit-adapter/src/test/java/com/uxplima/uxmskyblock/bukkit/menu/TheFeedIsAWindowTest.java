@@ -160,8 +160,13 @@ class TheFeedIsAWindowTest extends MockBukkitHarness {
         click(ActivityWindow.KIND, "bank=BANK_DEPOSIT");
 
         assertThat(window.filterOf(bo.getUniqueId()).types()).isEmpty();
-        window.forget(ada.getUniqueId());
-        assertThat(window.filterOf(ada.getUniqueId()).types()).isEmpty();
+        window.onQuit(new org.bukkit.event.player.PlayerQuitEvent(
+                ada,
+                net.kyori.adventure.text.Component.empty(),
+                org.bukkit.event.player.PlayerQuitEvent.QuitReason.DISCONNECTED));
+        assertThat(window.filterOf(ada.getUniqueId()).types())
+                .describedAs("gone with the player")
+                .isEmpty();
     }
 
     @Test

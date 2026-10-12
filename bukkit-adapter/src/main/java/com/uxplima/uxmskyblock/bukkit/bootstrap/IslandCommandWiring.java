@@ -170,7 +170,11 @@ final class IslandCommandWiring {
         // The feed is a window of its own, narrowed by member, kind and time, with the bank by member beside it.
         var activityWindow = new com.uxplima.uxmskyblock.bukkit.menu.ActivityWindow(integration.messages());
         activityWindow.useMenuEngine(integration.menuEngine());
+        // A player's filters last until they leave the server, or switch to another profile and island.
         authority.sessionCoordinator().whenProfileLeft((player, left) -> activityWindow.forget(player.getUniqueId()));
+        if (plugin.getServer() != null) {
+            plugin.getServer().getPluginManager().registerEvents(activityWindow, plugin);
+        }
         tree.useActivityWindow(activityWindow);
         // The kinds of island are a window, and a player with no island is met the way the operator chose.
         com.uxplima.uxmskyblock.bukkit.config.PresetChoices choices = gameplay.presetChoices();
