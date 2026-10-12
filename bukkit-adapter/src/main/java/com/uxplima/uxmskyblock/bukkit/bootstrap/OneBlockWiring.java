@@ -34,7 +34,11 @@ public final class OneBlockWiring implements AutoCloseable {
                             java.util.UUID, java.util.Optional<com.uxplima.uxmskyblock.core.domain.identity.ProfileId>>
                     activeProfile) {
         this.config = Objects.requireNonNull(configuration.oneBlockConfig(), "oneBlockConfig must not be null");
-        this.service = new OneBlockService(persistence.oneBlockProgressPort(), config.phases(), new SplittableRandom());
+        this.service = new OneBlockService(
+                persistence.oneBlockProgressPort(),
+                persistence.oneBlockRewardPort(),
+                config.phases(),
+                new SplittableRandom());
         this.saving = scheduler.repeatAsync(service::flush, config.saveInterval(), config.saveInterval());
         this.listener = new com.uxplima.uxmskyblock.bukkit.oneblock.OneBlockListener(
                 service,

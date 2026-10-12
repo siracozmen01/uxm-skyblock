@@ -26,6 +26,7 @@ import com.uxplima.uxmskyblock.bukkit.mission.ModeMissions;
 import com.uxplima.uxmskyblock.core.application.oneblock.OneBlockProgressPort;
 import com.uxplima.uxmskyblock.core.application.oneblock.OneBlockService;
 import com.uxplima.uxmskyblock.core.application.scheduler.SchedulerPort;
+import com.uxplima.uxmskyblock.core.domain.identity.IslandId;
 import com.uxplima.uxmskyblock.core.domain.island.Island;
 import com.uxplima.uxmskyblock.core.domain.mission.MissionTriggerType;
 
@@ -112,9 +113,14 @@ public final class OneBlockListener implements Listener {
         // Set once the break has finished: set now, the break would clear it again.
         OneBlockDraws drawn = draws;
         OneBlockMoments happens = moments;
+        IslandId islandId = island.get().id();
+        String phase = next.position().phase().key();
+        String momentKey = "moment:" + next.position().intoPhase();
+        // A moment the island was paid in this pass, before a crash or an operator set its count back, is not had.
         java.util.Optional<com.uxplima.uxmskyblock.bukkit.config.OneBlockMoment> moment = happens == null
                 ? java.util.Optional.empty()
-                : happens.at(next.position().phase().key(), next.position().intoPhase());
+                : happens.at(phase, next.position().intoPhase())
+                        .filter(m -> service.claim(islandId, phase, momentKey, next.nextCycle()));
         scheduler.onRegion(world.getName(), x >> 4, z >> 4, () -> {
             comeBack(
                     drawn,
@@ -130,16 +136,22 @@ public final class OneBlockListener implements Listener {
             }
         });
         if (happens != null) {
-            moment.ifPresent(m -> happens.forTheBreaker(
-                    effectPlayer,
-                    effects,
-                    m,
+            moment.ifPresent(m -> paid(
+                    islandId,
+                    phase,
+                    momentKey,
+                    next.nextCycle(),
                     player,
-                    Map.of(
-                            "phase",
-                            next.position().phase().key(),
-                            "break",
-                            Long.toString(next.position().intoPhase()))));
+                    () -> happens.forTheBreaker(
+                            effectPlayer,
+                            effects,
+                            m,
+                            player,
+                            Map.of(
+                                    "phase",
+                                    phase,
+                                    "break",
+                                    Long.toString(next.position().intoPhase())))));
         }
         ModeMissions counts = missions;
         // The block broken belonged to the phase it finished, when it finished one.
@@ -159,12 +171,21 @@ public final class OneBlockListener implements Listener {
             next.finished().ifPresent(finished -> {
                 Map<String, String> says = Map.of("phase", finished.key(), "cycle", cycle);
                 // The phase's own lists, or the shipped one when it wrote none.
-                if (written == null
-                        || !written.run(effectPlayer, finished.key(), "finished", island.get(), player, says)) {
-                    effectPlayer.fire(effects, "oneblock-phase-finished", player, says);
-                }
+                pay(islandId, finished.key(), "finished", next.cycle(), player, () -> {
+                    if (written == null
+                            || !written.run(effectPlayer, finished.key(), "finished", island.get(), player, says)) {
+                        effectPlayer.fire(effects, "oneblock-phase-finished", player, says);
+                    }
+                });
                 if (written != null && next.cycle() == 0) {
-                    written.run(effectPlayer, finished.key(), "first-finished", island.get(), player, says);
+                    pay(
+                            islandId,
+                            finished.key(),
+                            "first-finished",
+                            0,
+                            player,
+                            () -> written.run(
+                                    effectPlayer, finished.key(), "first-finished", island.get(), player, says));
                 }
             });
             messages.send(player, "oneblock.phase_began", Placeholder.unparsed("phase", title(player, next)));
@@ -173,12 +194,31 @@ public final class OneBlockListener implements Listener {
                     next.position().phase().key(),
                     "blocks",
                     Long.toString(next.position().phaseLength()));
-            if (written == null
-                    || !written.run(
-                            effectPlayer, next.position().phase().key(), "began", island.get(), player, began)) {
-                effectPlayer.fire(effects, "oneblock-phase-began", player, began);
-            }
+            pay(islandId, phase, "began", next.nextCycle(), player, () -> {
+                if (written == null || !written.run(effectPlayer, phase, "began", island.get(), player, began)) {
+                    effectPlayer.fire(effects, "oneblock-phase-began", player, began);
+                }
+            });
         }
+    }
+
+    /** Pays a reward of a phase once in its pass: claimed here, then recorded and paid as {@link #paid} does. */
+    private void pay(IslandId islandId, String phase, String reward, long cycle, Player player, Runnable payment) {
+        if (service.claim(islandId, phase, reward, cycle)) {
+            paid(islandId, phase, reward, cycle, player, payment);
+        }
+    }
+
+    /**
+     * Records a reward claimed off the region threads, then pays it on the player's own: a reward storage already
+     * holds in that pass, or could not record, is not paid.
+     */
+    private void paid(IslandId islandId, String phase, String reward, long cycle, Player player, Runnable payment) {
+        scheduler.async(() -> {
+            if (service.record(islandId, phase, reward, cycle)) {
+                scheduler.onEntity(player.getUniqueId(), payment);
+            }
+        });
     }
 
     private static boolean isTheBlock(OneBlockProgressPort.OneBlockIsland island, Block block) {

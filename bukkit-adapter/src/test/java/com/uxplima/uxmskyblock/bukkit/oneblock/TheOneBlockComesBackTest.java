@@ -108,6 +108,19 @@ class TheOneBlockComesBackTest extends MockBukkitHarness {
         doAnswer(call -> regionTasks.add(call.getArgument(3, Runnable.class)))
                 .when(scheduler)
                 .onRegion(anyString(), anyInt(), anyInt(), any(Runnable.class));
+        // A phase's lists are recorded off the region and paid on the breaker's thread: both at once here.
+        doAnswer(call -> {
+                    call.getArgument(0, Runnable.class).run();
+                    return null;
+                })
+                .when(scheduler)
+                .async(any(Runnable.class));
+        doAnswer(call -> {
+                    call.getArgument(1, Runnable.class).run();
+                    return null;
+                })
+                .when(scheduler)
+                .onEntity(any(UUID.class), any(Runnable.class));
         server.getCommandMap().register("probe", new org.bukkit.command.Command("probe") {
             @Override
             public boolean execute(org.bukkit.command.CommandSender sender, String label, String[] args) {

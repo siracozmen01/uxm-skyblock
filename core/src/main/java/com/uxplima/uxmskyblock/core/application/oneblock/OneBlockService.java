@@ -29,7 +29,8 @@ public final class OneBlockService {
 
     /**
      * What one break did: what the block becomes, what appears on it, whether a phase began, the phase it finished
-     * when one did, and the pass through the phases the broken block belonged to, from 0.
+     * when one did, the pass through the phases the broken block belonged to, from 0, and the pass the block it turns
+     * into belongs to, one more than that when the break went round to the first phase again.
      */
     public record Broken(
             String nextBlock,
@@ -37,7 +38,8 @@ public final class OneBlockService {
             OneBlockPhases.Position position,
             boolean phaseBegan,
             Optional<OneBlockPhase> finished,
-            long cycle) {}
+            long cycle,
+            long nextCycle) {}
 
     /** What an operator's change did to an island's count. */
     public record Changed(long was, long now) {}
@@ -49,6 +51,8 @@ public final class OneBlockService {
         final AtomicLong unwritten = new AtomicLong();
         /** Whether an operator set the count since the last write, so the next write sets it whole. */
         final java.util.concurrent.atomic.AtomicBoolean replaced = new java.util.concurrent.atomic.AtomicBoolean();
+        /** The last pass each reward of a phase was paid in, keyed by {@link #paidKey}. */
+        final Map<String, Long> paid = new ConcurrentHashMap<>();
 
         Counted(OneBlockProgressPort.OneBlockIsland stored) {
             this.stored = stored;
@@ -57,6 +61,7 @@ public final class OneBlockService {
     }
 
     private final OneBlockProgressPort progress;
+    private final OneBlockRewardPort rewards;
     private final OneBlockPhases phases;
     private final RandomGenerator random;
     private final Map<IslandId, Counted> counted = new ConcurrentHashMap<>();
@@ -75,7 +80,13 @@ public final class OneBlockService {
     private final java.util.Set<IslandId> notOneBlock = ConcurrentHashMap.newKeySet();
 
     public OneBlockService(OneBlockProgressPort progress, OneBlockPhases phases, RandomGenerator random) {
+        this(progress, OneBlockRewardPort.NONE, phases, random);
+    }
+
+    public OneBlockService(
+            OneBlockProgressPort progress, OneBlockRewardPort rewards, OneBlockPhases phases, RandomGenerator random) {
         this.progress = Objects.requireNonNull(progress, "progress must not be null");
+        this.rewards = Objects.requireNonNull(rewards, "rewards must not be null");
         this.phases = Objects.requireNonNull(phases, "phases must not be null");
         this.random = Objects.requireNonNull(random, "random must not be null");
     }
@@ -141,7 +152,59 @@ public final class OneBlockService {
                 phases.startsAPhase(broken)
                         ? Optional.of(phases.positionAt(broken - 1).phase())
                         : Optional.empty(),
-                phases.cycleOf(broken - 1)));
+                phases.cycleOf(broken - 1),
+                phases.cycleOf(broken)));
+    }
+
+    /**
+     * Whether the island is still owed {@code reward} of {@code phase} in {@code cycle}, and if it is, marks it paid
+     * in memory, so the reward is paid once. Asks storage nothing: it is answered on the thread that owns the block.
+     * A reward paid in a later pass is not owed again in an earlier one, so a count set back pays nothing twice.
+     */
+    public boolean claim(IslandId islandId, String phase, String reward, long cycle) {
+        Counted held = held(islandId);
+        if (held == null) {
+            return false;
+        }
+        boolean[] owed = {false};
+        held.paid.compute(paidKey(phase, reward), (key, last) -> {
+            if (last != null && last >= cycle) {
+                return last;
+            }
+            owed[0] = true;
+            return cycle;
+        });
+        return owed[0];
+    }
+
+    /**
+     * Records in storage that the island was paid what {@link #claim} granted. Run off the region threads, before
+     * the reward is paid: a reward storage already holds in that pass, written by another node or before a crash
+     * that rolled the count back, is not paid, and neither is one storage could not record.
+     *
+     * @return whether the reward is paid now
+     */
+    public boolean record(IslandId islandId, String phase, String reward, long cycle) {
+        try {
+            return rewards.pay(islandId, phase, reward, cycle);
+        } catch (RuntimeException failed) {
+            LOGGER.log(
+                    Level.WARNING,
+                    failed,
+                    () -> "Recording the OneBlock reward " + phase + "/" + reward + " of island " + islandId
+                            + " failed, so it is not paid.");
+            return false;
+        }
+    }
+
+    private static String paidKey(String phase, String reward) {
+        return phase + '\n' + reward;
+    }
+
+    private static void remember(Counted held, java.util.List<OneBlockRewardPort.Paid> paid) {
+        for (OneBlockRewardPort.Paid one : paid) {
+            held.paid.merge(paidKey(one.phase(), one.reward()), one.cycle(), Math::max);
+        }
     }
 
     /**
@@ -235,6 +298,17 @@ public final class OneBlockService {
         for (OneBlockProgressPort.OneBlockIsland island : all) {
             counted.putIfAbsent(island.islandId(), new Counted(island));
         }
+        Map<IslandId, java.util.List<OneBlockRewardPort.Paid>> paid = new java.util.HashMap<>();
+        for (OneBlockRewardPort.Paid one : rewards.findAll()) {
+            paid.computeIfAbsent(one.islandId(), id -> new java.util.ArrayList<>())
+                    .add(one);
+        }
+        paid.forEach((islandId, those) -> {
+            Counted held = counted.get(islandId);
+            if (held != null) {
+                remember(held, those);
+            }
+        });
         primed = true;
         return all.size();
     }
@@ -246,6 +320,8 @@ public final class OneBlockService {
      */
     public String start(IslandId islandId, int x, int y, int z) {
         progress.start(islandId, x, y, z);
+        // An island that starts over is owed every reward again.
+        rewards.clear(islandId);
         notOneBlock.remove(islandId);
         counted.put(islandId, new Counted(new OneBlockProgressPort.OneBlockIsland(islandId, x, y, z, 0)));
         return phases.nextBlock(0, random);
@@ -295,6 +371,11 @@ public final class OneBlockService {
             notOneBlock.add(islandId);
             return null;
         }
-        return counted.computeIfAbsent(islandId, id -> new Counted(stored.get()));
+        java.util.List<OneBlockRewardPort.Paid> paid = rewards.find(islandId);
+        return counted.computeIfAbsent(islandId, id -> {
+            Counted read = new Counted(stored.get());
+            remember(read, paid);
+            return read;
+        });
     }
 }

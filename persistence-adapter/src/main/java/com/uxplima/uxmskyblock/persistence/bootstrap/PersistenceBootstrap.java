@@ -132,6 +132,7 @@ public final class PersistenceBootstrap implements AutoCloseable {
     private final SqlHomeStorageAdapter homeStorageAdapter;
     private final SqlActivityFeedAdapter activityFeedAdapter;
     private final com.uxplima.uxmskyblock.persistence.oneblock.SqlOneBlockProgressAdapter oneBlockProgressAdapter;
+    private final com.uxplima.uxmskyblock.persistence.oneblock.SqlOneBlockRewardAdapter oneBlockRewardAdapter;
     private final com.uxplima.uxmskyblock.persistence.lifecycle.SqlLifecycleOwedEffectsAdapter
             lifecycleOwedEffectsAdapter;
     private final SqlNotificationAdapter notificationAdapter;
@@ -213,6 +214,8 @@ public final class PersistenceBootstrap implements AutoCloseable {
         this.activityFeedAdapter = new SqlActivityFeedAdapter(database.dataSource());
         this.oneBlockProgressAdapter =
                 new com.uxplima.uxmskyblock.persistence.oneblock.SqlOneBlockProgressAdapter(database.dataSource());
+        this.oneBlockRewardAdapter =
+                new com.uxplima.uxmskyblock.persistence.oneblock.SqlOneBlockRewardAdapter(database.dataSource());
         this.lifecycleOwedEffectsAdapter =
                 new com.uxplima.uxmskyblock.persistence.lifecycle.SqlLifecycleOwedEffectsAdapter(database.dataSource());
         this.notificationAdapter = new SqlNotificationAdapter(database.dataSource());
@@ -569,6 +572,11 @@ public final class PersistenceBootstrap implements AutoCloseable {
     /** Where each OneBlock island's block stands and how often it has been broken. */
     public com.uxplima.uxmskyblock.core.application.oneblock.OneBlockProgressPort oneBlockProgressPort() {
         return oneBlockProgressAdapter;
+    }
+
+    /** What each OneBlock island has been paid, so a reward is paid once in each pass through the phases. */
+    public com.uxplima.uxmskyblock.core.application.oneblock.OneBlockRewardPort oneBlockRewardPort() {
+        return oneBlockRewardAdapter;
     }
 
     public NotificationStoragePort notificationStoragePort() {

@@ -67,12 +67,14 @@ class AOneBlockMomentHappensAtItsBreakTest extends MockBukkitHarness {
     private PlayerMock player;
     private OneBlockListener listener;
     private OneBlockConfiguration config;
+    private OneBlockService service;
+    private Island island;
 
     @BeforeEach
     void setUp() throws Exception {
         world = server.addSimpleWorld("skyblock");
         player = createPlayer("Breaker");
-        Island island = Island.create(
+        island = Island.create(
                 IslandId.of(UUID.randomUUID()),
                 IslandBounds.fromCenterAndRadius(0, 0, 50),
                 new PlayerUuid(player.getUniqueId()),
@@ -96,7 +98,7 @@ class AOneBlockMomentHappensAtItsBreakTest extends MockBukkitHarness {
                     }
                 } ]
                 """));
-        OneBlockService service = new OneBlockService(memory(), config.phases(), new SplittableRandom(3));
+        service = new OneBlockService(memory(), config.phases(), new SplittableRandom(3));
         service.start(island.id(), 0, 100, 0);
         SchedulerPort scheduler = mock(SchedulerPort.class);
         doAnswer(call -> regionTasks.add(call.getArgument(3, Runnable.class)))
@@ -108,6 +110,18 @@ class AOneBlockMomentHappensAtItsBreakTest extends MockBukkitHarness {
                 })
                 .when(scheduler)
                 .asyncAfter(any(Duration.class), any(Runnable.class));
+        doAnswer(call -> {
+                    call.getArgument(0, Runnable.class).run();
+                    return null;
+                })
+                .when(scheduler)
+                .async(any(Runnable.class));
+        doAnswer(call -> {
+                    call.getArgument(1, Runnable.class).run();
+                    return null;
+                })
+                .when(scheduler)
+                .onEntity(any(UUID.class), any(Runnable.class));
         server.getCommandMap().register("probe", new org.bukkit.command.Command("probe") {
             @Override
             public boolean execute(org.bukkit.command.CommandSender sender, String label, String[] args) {
@@ -188,6 +202,26 @@ class AOneBlockMomentHappensAtItsBreakTest extends MockBukkitHarness {
 
         breakIt(block);
         assertThat(fired).describedAs("the next break is no moment").hasSize(2);
+    }
+
+    @Test
+    @DisplayName("A moment had in this pass is not had again when an operator sets the count back")
+    void onceInAPass() {
+        Block block = world.getBlockAt(0, 100, 0);
+        block.setType(Material.DIRT);
+        breakIt(block);
+        breakIt(block);
+        assertThat(block.getType()).isEqualTo(Material.CHEST);
+
+        service.setBroken(island.id(), 0);
+        breakIt(block);
+        breakIt(block);
+
+        assertThat(block.getType())
+                .describedAs("the draw, not the moment's chest")
+                .isEqualTo(Material.DIRT);
+        assertThat(fired).hasSize(2);
+        assertThat(world.getEntitiesByClass(Zombie.class)).hasSize(1);
     }
 
     @Test

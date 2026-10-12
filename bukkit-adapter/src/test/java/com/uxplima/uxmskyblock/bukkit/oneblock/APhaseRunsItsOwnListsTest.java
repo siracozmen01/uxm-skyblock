@@ -57,13 +57,17 @@ class APhaseRunsItsOwnListsTest extends MockBukkitHarness {
     private World world;
     private PlayerMock breaker;
     private OneBlockListener listener;
+    private OneBlockService service;
+    private Island island;
+    /** Rewards storage refuses, as phase/reward, as when another node or a run before a crash recorded them. */
+    private final java.util.Set<String> refused = new java.util.HashSet<>();
 
     @BeforeEach
     void setUp() throws Exception {
         world = server.addSimpleWorld("skyblock");
         breaker = createPlayer("Breaker");
         PlayerMock mate = createPlayer("Mate");
-        Island island = Island.create(
+        island = Island.create(
                         IslandId.of(UUID.randomUUID()),
                         IslandBounds.fromCenterAndRadius(0, 0, 50),
                         new PlayerUuid(breaker.getUniqueId()),
@@ -101,12 +105,18 @@ class APhaseRunsItsOwnListsTest extends MockBukkitHarness {
                             began { members = [ "[player] probe began %phase% %blocks%" ] }
                         } ]
                         """));
-        OneBlockService service = new OneBlockService(memory(), config.phases(), new SplittableRandom(3));
+        service = new OneBlockService(memory(), rewards(), config.phases(), new SplittableRandom(3));
         service.start(island.id(), 0, 100, 0);
         SchedulerPort scheduler = mock(SchedulerPort.class);
         doAnswer(call -> regionTasks.add(call.getArgument(3, Runnable.class)))
                 .when(scheduler)
                 .onRegion(anyString(), anyInt(), anyInt(), any(Runnable.class));
+        doAnswer(call -> {
+                    call.getArgument(0, Runnable.class).run();
+                    return null;
+                })
+                .when(scheduler)
+                .async(any(Runnable.class));
         doAnswer(call -> entityTasks.add(call.getArgument(1, Runnable.class)))
                 .when(scheduler)
                 .onEntity(any(UUID.class), any(Runnable.class));
@@ -139,10 +149,13 @@ class APhaseRunsItsOwnListsTest extends MockBukkitHarness {
         due.forEach(Runnable::run);
     }
 
+    /** Runs what was handed to each player's thread, and what that handed on in turn. */
     private void membersHear() {
-        List<Runnable> due = new ArrayList<>(entityTasks);
-        entityTasks.clear();
-        due.forEach(Runnable::run);
+        while (!entityTasks.isEmpty()) {
+            List<Runnable> due = new ArrayList<>(entityTasks);
+            entityTasks.clear();
+            due.forEach(Runnable::run);
+        }
     }
 
     @Test
@@ -153,12 +166,13 @@ class APhaseRunsItsOwnListsTest extends MockBukkitHarness {
         block.setType(Material.DIRT);
 
         breakIt(block);
-        assertThat(fired).isEmpty();
         breakIt(block);
-
-        assertThat(fired).containsExactly("Breaker finished meadow 0", "Breaker first meadow");
-        assertThat(entityTasks).describedAs("the offline member hears nothing").hasSize(4);
+        assertThat(fired)
+                .describedAs("paid on the breaker's thread, once recorded")
+                .isEmpty();
         membersHear();
+
+        assertThat(fired.subList(0, 2)).containsExactly("Breaker finished meadow 0", "Breaker first meadow");
         assertThat(fired.subList(2, fired.size()))
                 .describedAs("each member on their own thread, in no order")
                 .containsExactlyInAnyOrder(
@@ -190,6 +204,56 @@ class APhaseRunsItsOwnListsTest extends MockBukkitHarness {
         assertThat(fired.subList(1, fired.size()))
                 .containsExactlyInAnyOrder(
                         "Breaker heard meadow", "Mate heard meadow", "Breaker began cave 2", "Mate began cave 2");
+    }
+
+    @Test
+    @DisplayName(
+            "A count set back pays nothing twice, and a list storage holds already is not run, nor the shipped one")
+    void paidOnce() {
+        Block block = world.getBlockAt(0, 100, 0);
+        block.setType(Material.DIRT);
+        breakIt(block);
+        breakIt(block);
+        membersHear();
+        fired.clear();
+
+        service.setBroken(island.id(), 0);
+        breakIt(block);
+        breakIt(block);
+        membersHear();
+        assertThat(fired).describedAs("meadow finished again in the same pass").isEmpty();
+
+        refused.add("meadow/finished");
+        refused.add("cave/began");
+        service.setBroken(island.id(), 4 * 2);
+        breakIt(block);
+        breakIt(block);
+        membersHear();
+        assertThat(fired)
+                .describedAs("claimed here, but held in storage already")
+                .isEmpty();
+    }
+
+    private com.uxplima.uxmskyblock.core.application.oneblock.OneBlockRewardPort rewards() {
+        return new com.uxplima.uxmskyblock.core.application.oneblock.OneBlockRewardPort() {
+            @Override
+            public List<Paid> findAll() {
+                return List.of();
+            }
+
+            @Override
+            public List<Paid> find(IslandId islandId) {
+                return List.of();
+            }
+
+            @Override
+            public boolean pay(IslandId islandId, String phase, String reward, long cycle) {
+                return !refused.contains(phase + "/" + reward);
+            }
+
+            @Override
+            public void clear(IslandId islandId) {}
+        };
     }
 
     private OneBlockProgressPort memory() {
