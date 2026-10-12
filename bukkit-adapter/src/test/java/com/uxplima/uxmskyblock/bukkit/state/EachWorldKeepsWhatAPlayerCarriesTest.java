@@ -171,9 +171,30 @@ class EachWorldKeepsWhatAPlayerCarriesTest extends MockBukkitHarness {
         startSession(states, profile);
     }
 
+    /** The island each block column of the shared Nether belongs to, by its home world. */
+    private final Map<Integer, String> netherIslands = new HashMap<>();
+
+    private final PlayerStates.Worlds worlds = new PlayerStates.Worlds() {
+        @Override
+        public List<String> presetWorlds() {
+            return List.of("world", "boxed");
+        }
+
+        @Override
+        public String islandWorld() {
+            return "world";
+        }
+
+        @Override
+        public java.util.Optional<String> homeOf(Location place) {
+            return place.getWorld() != null && place.getWorld().getName().equals("skyblock_nether")
+                    ? java.util.Optional.ofNullable(netherIslands.get(place.getBlockX()))
+                    : java.util.Optional.empty();
+        }
+    };
+
     private PlayerStates states(PlayerStates.Advancements with) {
-        return new PlayerStates(
-                config::get, () -> List.of("world", "boxed"), codec, with, store, sessionsView, scheduler);
+        return new PlayerStates(config::get, worlds, codec, with, store, sessionsView, scheduler);
     }
 
     /** The session puts the profile's state on Ada and the carried group is read, as a join does. */
@@ -279,21 +300,44 @@ class EachWorldKeepsWhatAPlayerCarriesTest extends MockBukkitHarness {
     }
 
     @Test
-    @DisplayName("A world no group names keeps what the player brought, whichever group it was")
-    void anUnnamedWorldKeepsWhatWasBrought() {
+    @DisplayName("A world no group names belongs to the server's own island world, so nothing carries through it")
+    void anUnnamedWorldBelongsToTheIslandWorld() {
+        ada.getInventory().setItem(0, new ItemStack(Material.DIAMOND));
         to(boxed);
         ada.getInventory().setItem(0, new ItemStack(Material.OAK_LOG));
 
-        assertThat(to(nether)).isFalse();
-        assertThat(ada.getInventory().getItem(0)).isEqualTo(new ItemStack(Material.OAK_LOG));
-        assertThat(states.carried(ada)).contains("boxed");
+        assertThat(to(nether)).isTrue();
 
-        assertThat(to(main))
-                .describedAs("the Boxed things are put down in Boxed, not in the Nether")
-                .isTrue();
-        assertThat(ada.getInventory().getItem(0)).isNull();
+        assertThat(states.carried(ada)).contains("world");
+        assertThat(ada.getInventory().getItem(0))
+                .describedAs("the Boxed logs are put down in Boxed, not carried into a shared world")
+                .isEqualTo(new ItemStack(Material.DIAMOND));
+        assertThat(to(main)).describedAs("the same group as the island world").isFalse();
         assertThat(to(boxed)).isTrue();
         assertThat(ada.getInventory().getItem(0)).isEqualTo(new ItemStack(Material.OAK_LOG));
+    }
+
+    @Test
+    @DisplayName("In the Nether every mode shares, a player carries for the island they stand over")
+    void theSharedNetherFollowsTheIsland() {
+        netherIslands.put(5000, "boxed");
+        ada.getInventory().setItem(0, new ItemStack(Material.DIAMOND));
+        to(boxed);
+        ada.getInventory().setItem(0, new ItemStack(Material.OAK_LOG));
+        to(main);
+
+        ada.teleport(new Location(nether, 5000, 64, 0));
+        assertThat(states.arrived(ada)).isTrue();
+
+        assertThat(states.carried(ada)).contains("boxed");
+        assertThat(ada.getInventory().getItem(0))
+                .describedAs("over the Boxed island's Nether, the Boxed things")
+                .isEqualTo(new ItemStack(Material.OAK_LOG));
+        ada.teleport(new Location(nether, 0, 64, 0));
+        assertThat(states.arrived(ada))
+                .describedAs("away from every island, the island world's group")
+                .isTrue();
+        assertThat(ada.getInventory().getItem(0)).isEqualTo(new ItemStack(Material.DIAMOND));
     }
 
     @Test
@@ -306,6 +350,9 @@ class EachWorldKeepsWhatAPlayerCarriesTest extends MockBukkitHarness {
         ada.getInventory().setItem(0, new ItemStack(Material.DIAMOND));
 
         assertThat(to(boxed)).isFalse();
+        assertThat(to(nether))
+                .describedAs("a world no group names belongs to the island world's group, main")
+                .isFalse();
         assertThat(ada.getInventory().getItem(0)).isEqualTo(new ItemStack(Material.DIAMOND));
 
         config.set(new CarriedStateConfiguration(false, Map.of(), CarriedStateConfiguration.Keeps.ALL));
@@ -575,8 +622,8 @@ class EachWorldKeepsWhatAPlayerCarriesTest extends MockBukkitHarness {
         assertThat(drop.isCancelled()).isTrue();
         ada.teleport(new Location(nether, 0, 64, 0));
         assertThat(states.pending(ada))
-                .describedAs("a world no group names keeps what the player brought")
-                .isFalse();
+                .describedAs("held in a world no group names as well")
+                .isTrue();
         ada.teleport(new Location(main, 0, 64, 0));
 
         store.unreachable = false;

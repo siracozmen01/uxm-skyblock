@@ -28,7 +28,7 @@ public final class BootstrapEventRegistrar {
         com.uxplima.uxmskyblock.bukkit.state.PlayerStates states =
                 new com.uxplima.uxmskyblock.bukkit.state.PlayerStates(
                         configWiring::carriedStateConfig,
-                        () -> presetWorlds(configWiring),
+                        worlds(configWiring, gameplayWiring.protectionListener()),
                         new com.uxplima.uxmskyblock.bukkit.creative.ServerInventoryCodec(),
                         new com.uxplima.uxmskyblock.bukkit.state.ServerAdvancements(),
                         authorityWiring.carriedStates(),
@@ -207,6 +207,20 @@ public final class BootstrapEventRegistrar {
         // Every rule about arrivals is in; the watch hears teleports on Paper and looks for them on Folia.
         pm.registerEvents(gameplayWiring.arrivalWatch(), plugin);
         gameplayWiring.startArrivals();
+    }
+
+    /** The worlds a player's group is found by, as the configuration and the islands stand. */
+    static com.uxplima.uxmskyblock.bukkit.state.PlayerStates.Worlds worlds(
+            ConfigurationWiring configWiring,
+            com.uxplima.uxmskyblock.bukkit.listener.IslandProtectionListener islands) {
+        return new com.uxplima.uxmskyblock.bukkit.state.ServerWorlds(
+                () -> presetWorlds(configWiring),
+                () -> configWiring.nodeConfig().worldName(),
+                () -> configWiring.dimensionConfig().mappings().values().stream()
+                        .map(com.uxplima.uxmskyblock.core.domain.dimension.DimensionMapping::worldName)
+                        .toList(),
+                configWiring::islandWorlds,
+                (world, x, z) -> islands.findIslandAt(world, x, z).isPresent());
     }
 
     /** The worlds the presets make islands in: each its own group of what a player carries, unless the file says. */

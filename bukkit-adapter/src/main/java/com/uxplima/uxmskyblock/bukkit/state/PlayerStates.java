@@ -51,6 +51,21 @@ public final class PlayerStates {
         void earn(Player player, Set<String> criteria);
     }
 
+    /** The worlds a group is found by. */
+    public interface Worlds {
+        /** The worlds the presets make islands in, each a group when the file names none. */
+        List<String> presetWorlds();
+
+        /** The server's own island world, whose group a world no group names belongs to. */
+        String islandWorld();
+
+        /**
+         * The home world of the island a place in a dimension world belongs to, or nothing outside a dimension
+         * world or away from every island.
+         */
+        Optional<String> homeOf(org.bukkit.Location place);
+    }
+
     /** The sessions a crossing is written under. */
     public interface Sessions {
         @Nullable ActiveSession session(UUID player);
@@ -62,7 +77,7 @@ public final class PlayerStates {
     }
 
     private final Supplier<CarriedStateConfiguration> config;
-    private final Supplier<List<String>> presetWorlds;
+    private final Worlds worlds;
     private final InventoryCodec codec;
     private final Advancements advancements;
     private final CarriedStatePort store;
@@ -71,17 +86,16 @@ public final class PlayerStates {
     private final Map<UUID, String> carried = new ConcurrentHashMap<>();
     private final Set<UUID> reading = ConcurrentHashMap.newKeySet();
 
-    /** @param presetWorlds the worlds the presets make islands in, each a group when the file names none */
     public PlayerStates(
             Supplier<CarriedStateConfiguration> config,
-            Supplier<List<String>> presetWorlds,
+            Worlds worlds,
             InventoryCodec codec,
             Advancements advancements,
             CarriedStatePort store,
             Sessions sessions,
             SchedulerPort scheduler) {
         this.config = Objects.requireNonNull(config, "config must not be null");
-        this.presetWorlds = Objects.requireNonNull(presetWorlds, "presetWorlds must not be null");
+        this.worlds = Objects.requireNonNull(worlds, "worlds must not be null");
         this.codec = Objects.requireNonNull(codec, "codec must not be null");
         this.advancements = Objects.requireNonNull(advancements, "advancements must not be null");
         this.store = Objects.requireNonNull(store, "store must not be null");
@@ -125,11 +139,11 @@ public final class PlayerStates {
             return;
         }
         ProfileId profile = session.activeProfileId();
-        Optional<String> here = groupHere(player, config.get());
+        String here = groupHere(player, config.get());
         scheduler.async(() -> {
             Optional<String> group;
             try {
-                group = store.carriedGroup(profile).or(() -> here.map(first -> store.carryFirst(profile, first)));
+                group = Optional.of(store.carriedGroup(profile).orElseGet(() -> store.carryFirst(profile, here)));
             } catch (RuntimeException e) {
                 reading.remove(uuid);
                 LOGGER.log(Level.WARNING, e, () -> "The group " + profile + " carries for could not be read");
@@ -163,12 +177,8 @@ public final class PlayerStates {
         if (!settings.enabled()) {
             return false;
         }
-        Optional<String> to = groupHere(player, settings);
+        String to = groupHere(player, settings);
         UUID uuid = player.getUniqueId();
-        if (to.isEmpty()) {
-            // A world no group names keeps what the player brought.
-            return false;
-        }
         ActiveSession session = sessions.session(uuid);
         String from = carried.get(uuid);
         if (from == null) {
@@ -177,7 +187,7 @@ public final class PlayerStates {
             }
             return false;
         }
-        if (from.equals(to.get()) || session == null || session.isFenced() || !sessions.inPlay(uuid)) {
+        if (from.equals(to) || session == null || session.isFenced() || !sessions.inPlay(uuid)) {
             // Out of play the player's state is about to be replaced, by a join, a profile switch or a crossing.
             return false;
         }
@@ -188,7 +198,7 @@ public final class PlayerStates {
             return false;
         }
         SWAPPING.add(uuid);
-        cross(player, session, from, to.get(), settings);
+        cross(player, session, from, to, settings);
         return true;
     }
 
@@ -259,9 +269,9 @@ public final class PlayerStates {
     }
 
     /**
-     * Whether the player stands in a world of another group than the one whose things they carry, or one a group
-     * names before the group they carry for is read, or is crossing now. Nothing they carry may be put down there
-     * before the swap.
+     * Whether the player stands where another group than the one whose things they carry plays, or anywhere before
+     * the group they carry for is read, or is crossing now. Nothing they carry may be put down there before the
+     * swap.
      */
     public boolean pending(Player player) {
         CarriedStateConfiguration settings = config.get();
@@ -271,13 +281,30 @@ public final class PlayerStates {
         if (SWAPPING.contains(player.getUniqueId())) {
             return true;
         }
-        Optional<String> here = groupHere(player, settings);
         String from = carried.get(player.getUniqueId());
         // Before the group is read nothing is known to be the player's here, so they are held.
-        return here.isPresent() && (from == null || !here.get().equals(from));
+        return from == null || !groupHere(player, settings).equals(from);
     }
 
-    private Optional<String> groupHere(Player player, CarriedStateConfiguration settings) {
-        return settings.groupOf(player.getWorld().getName(), presetWorlds.get());
+    /**
+     * The group of where the player stands. Every world belongs to one: the one the file or the presets name it
+     * in; in a dimension world, that of the island the place belongs to; else that of the server's own island
+     * world. A world shared by two groups would be a way to carry things from one to the other.
+     */
+    private String groupHere(Player player, CarriedStateConfiguration settings) {
+        List<String> presets = worlds.presetWorlds();
+        Optional<String> named = settings.groupOf(player.getWorld().getName(), presets);
+        if (named.isPresent()) {
+            return named.get();
+        }
+        org.bukkit.Location place = player.getLocation();
+        Optional<String> island = place == null
+                ? Optional.empty()
+                : worlds.homeOf(place).flatMap(home -> settings.groupOf(home, presets));
+        if (island.isPresent()) {
+            return island.get();
+        }
+        String own = worlds.islandWorld();
+        return settings.groupOf(own, presets).orElse(own);
     }
 }

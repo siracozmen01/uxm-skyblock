@@ -211,6 +211,11 @@ public final class IslandProtectionListener implements Listener {
         return spatialIndex.findIslandAt(location);
     }
 
+    /** The island in {@code worldName} whose land holds the block column at {@code x}, {@code z}. */
+    public Optional<Island> findIslandAt(String worldName, int x, int z) {
+        return spatialIndex.findIslandAt(worldName, x, z);
+    }
+
     public void setNodeIdentitySupplier(Supplier<CurrentNodeProcessIdentity> nodeIdentitySupplier) {
         this.nodeIdentitySupplier = nodeIdentitySupplier;
     }

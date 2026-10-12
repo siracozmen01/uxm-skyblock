@@ -33,7 +33,22 @@ public final class CarriedStateFixture {
         store.inventories.put(profile, ProfileInventoryRecord.createDefault(profile, new byte[0], new byte[0]));
         PlayerStates states = new PlayerStates(
                 () -> CarriedStateConfiguration.SHIPPED,
-                () -> presetWorlds,
+                new PlayerStates.Worlds() {
+                    @Override
+                    public List<String> presetWorlds() {
+                        return presetWorlds;
+                    }
+
+                    @Override
+                    public String islandWorld() {
+                        return presetWorlds.get(0);
+                    }
+
+                    @Override
+                    public java.util.Optional<String> homeOf(org.bukkit.Location place) {
+                        return java.util.Optional.empty();
+                    }
+                },
                 new InventoryCodec() {
                     @Override
                     public byte[] write(ItemStack[] items) {
