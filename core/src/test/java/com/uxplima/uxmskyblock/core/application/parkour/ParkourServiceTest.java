@@ -54,6 +54,16 @@ class ParkourServiceTest {
         }
 
         @Override
+        public int clear(IslandId cleared, java.util.Optional<PlayerUuid> runner) {
+            int before = bests.size();
+            bests.keySet()
+                    .removeIf(key -> key.startsWith(cleared + "/")
+                            && runner.map(one -> key.equals(cleared + "/" + one))
+                                    .orElse(true));
+            return before - bests.size();
+        }
+
+        @Override
         public List<ParkourPort.Runs> mostRun(int limit) {
 
             return List.of();
@@ -81,6 +91,26 @@ class ParkourServiceTest {
                 .isEqualTo(new ParkourService.Finish.Slower(Duration.ofSeconds(25), Duration.ofSeconds(25)));
         assertThat(service.top(course, 0)).extracting(ParkourPort.Best::millis).containsExactly(25_000L);
         assertThat(service.top(course, 5).getFirst().runs()).isEqualTo(3);
+    }
+
+    @Test
+    @DisplayName("An operator forgets one runner's runs on a course, or every runner's, and the next finish is a first")
+    void runsAreForgotten() {
+        PlayerUuid other = PlayerUuid.of(UUID.randomUUID());
+        IslandId elsewhere = IslandId.of(UUID.randomUUID());
+        service.finish(course, runner, Duration.ofSeconds(30));
+        service.finish(course, other, Duration.ofSeconds(40));
+        service.finish(elsewhere, runner, Duration.ofSeconds(50));
+
+        assertThat(service.clear(course, java.util.Optional.of(runner))).isEqualTo(1);
+        assertThat(service.finish(course, runner, Duration.ofSeconds(35)))
+                .isEqualTo(new ParkourService.Finish.First(Duration.ofSeconds(35)));
+        assertThat(service.clear(course, java.util.Optional.empty())).isEqualTo(2);
+        assertThat(service.finish(course, other, Duration.ofSeconds(45)))
+                .isEqualTo(new ParkourService.Finish.First(Duration.ofSeconds(45)));
+        assertThat(service.finish(elsewhere, runner, Duration.ofSeconds(55)))
+                .describedAs("another course keeps its runs")
+                .isEqualTo(new ParkourService.Finish.Slower(Duration.ofSeconds(55), Duration.ofSeconds(50)));
     }
 
     @Test

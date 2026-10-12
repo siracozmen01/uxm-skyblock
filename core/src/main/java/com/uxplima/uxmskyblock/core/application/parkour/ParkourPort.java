@@ -28,6 +28,12 @@ public interface ParkourPort {
     /** Counts a finished run, keeping the time as the runner's best when it beats the one kept. */
     void finish(IslandId course, PlayerUuid runner, long millis);
 
+    /**
+     * Forgets the runs on the course, of {@code runner} alone when one is named, as an operator does; their next
+     * finish is their first. Says how many runners' records went.
+     */
+    int clear(IslandId course, java.util.Optional<PlayerUuid> runner);
+
     /** The course's best runners, fastest first. */
     List<Best> top(IslandId course, int limit);
 

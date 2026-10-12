@@ -398,6 +398,15 @@ final class IslandCommandWiring {
                     gameplay.tradeWindsWiring().service(),
                     gameplay.tradeWindsWiring().config()));
         }
+        if (gameplay.strangerRealmsWiring().enabled()) {
+            modes.add(gameplay.strangerRealmsWiring().admin());
+        }
+        if (gameplay.parkourWiring().enabled()) {
+            modes.add(new com.uxplima.uxmskyblock.bukkit.parkour.ParkourAdmin(
+                    gameplay.parkourWiring().service(),
+                    name -> java.util.Optional.ofNullable(org.bukkit.Bukkit.getOfflinePlayerIfCached(name))
+                            .map(org.bukkit.OfflinePlayer::getUniqueId)));
+        }
         if (gameplay.boxedWiring().enabled()) {
             modes.add(new com.uxplima.uxmskyblock.bukkit.boxed.BoxedAdmin(
                     gameplay.boxedWiring().service(), gameplay.boxedWiring().edgeMover()));

@@ -55,6 +55,14 @@ public enum CatalogPermissions {
             PermissionDefault.OP),
     ADMIN_TRADEWINDS_MOVEPORT(
             "uxmskyblock.admin.tradewinds.moveport", "Put a TradeWinds vessel in a port at once", PermissionDefault.OP),
+    ADMIN_REALMS_REMIRROR(
+            "uxmskyblock.admin.realms.remirror",
+            "Lay a StrangerRealms island's Upside Down again from its land",
+            PermissionDefault.OP),
+    ADMIN_PARKOUR_RESETTIMES(
+            "uxmskyblock.admin.parkour.resettimes",
+            "Forget the runs on a Parkour course, of every runner or of one",
+            PermissionDefault.OP),
     ADMIN_ONEBLOCK_RESPAWN(
             "uxmskyblock.admin.oneblock.respawn", "Lay a OneBlock island's block again", PermissionDefault.OP),
 

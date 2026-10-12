@@ -97,6 +97,17 @@ public final class StrangerRealmsWiring implements AutoCloseable {
         return service;
     }
 
+    /** {@code /isadmin realms}, which lays an island's Upside Down again as a late mirror does. */
+    public com.uxplima.uxmskyblock.bukkit.stranger.StrangerRealmsAdmin admin() {
+        return new com.uxplima.uxmskyblock.bukkit.stranger.StrangerRealmsAdmin(
+                service,
+                mirror,
+                () -> upsideDownWorld,
+                org.bukkit.Bukkit::getWorld,
+                com.uxplima.uxmskyblock.bukkit.stranger.UpsideDownReach.copiedOnly(
+                        config.upsideDown().lateCopy()));
+    }
+
     public StrangerRealmsConfiguration config() {
         return config;
     }

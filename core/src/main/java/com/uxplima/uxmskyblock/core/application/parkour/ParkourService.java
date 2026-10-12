@@ -88,6 +88,14 @@ public final class ParkourService {
         return port.mostRun(Math.max(1, limit));
     }
 
+    /**
+     * Forgets the runs on the course, of {@code runner} alone when one is named, as an operator does. Off the main
+     * thread. Says how many runners' records went.
+     */
+    public int clear(IslandId course, java.util.Optional<PlayerUuid> runner) {
+        return port.clear(course, runner);
+    }
+
     /** The course's best runners, fastest first. Off the main thread. */
     public List<ParkourPort.Best> top(IslandId course, int limit) {
         return port.top(course, Math.max(1, limit));

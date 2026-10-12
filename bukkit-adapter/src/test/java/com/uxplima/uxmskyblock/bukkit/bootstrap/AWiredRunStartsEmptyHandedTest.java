@@ -123,6 +123,11 @@ class AWiredRunStartsEmptyHandedTest extends MockBukkitHarness {
             public void finish(IslandId islandId, PlayerUuid runner, long millis) {}
 
             @Override
+            public int clear(IslandId cleared, java.util.Optional<PlayerUuid> runner) {
+                throw new UnsupportedOperationException("nothing here clears a course");
+            }
+
+            @Override
             public List<ParkourPort.Runs> mostRun(int limit) {
                 return List.of();
             }

@@ -423,6 +423,13 @@ class GameModeSchemaDialectPortabilityTest {
                     .containsExactly(
                             new com.uxplima.uxmskyblock.core.application.parkour.ParkourPort.Best(runner, 25_000, 3),
                             new com.uxplima.uxmskyblock.core.application.parkour.ParkourPort.Best(second, 50_000, 1));
+            // An operator forgets a runner's runs on the course, then puts them back as they were.
+            com.uxplima.uxmskyblock.core.domain.identity.PlayerUuid third =
+                    com.uxplima.uxmskyblock.core.domain.identity.PlayerUuid.of(java.util.UUID.randomUUID());
+            parkour.finish(islandId, third, 70_000);
+            assertThat(parkour.clear(islandId, java.util.Optional.of(third))).isEqualTo(1);
+            assertThat(parkour.best(islandId, third)).isEmpty();
+            assertThat(parkour.best(islandId, runner)).hasValue(25_000);
             assertThat(parkour.mostRun(5)).singleElement().satisfies(most -> {
                 assertThat(most.course()).isEqualTo(islandId);
                 assertThat(most.runs())
@@ -471,6 +478,12 @@ class GameModeSchemaDialectPortabilityTest {
             assertThat(standings.mostChunks(1)).hasSize(1);
             assertThat(standings.mostBroken(5))
                     .allSatisfy(s -> assertThat(s.name()).isNotBlank());
+            assertThat(parkour.clear(other, java.util.Optional.empty()))
+                    .describedAs("every runner's runs on the course")
+                    .isEqualTo(1);
+            assertThat(standings.fastestCourses(5))
+                    .extracting(s -> s.islandId())
+                    .containsExactly(islandId);
             islands.deleteIsland(other);
             assertThat(standings.mostBroken(5)).extracting(s -> s.islandId()).containsExactly(islandId);
             assertThat(stranger.farthestReach())
@@ -494,6 +507,7 @@ class GameModeSchemaDialectPortabilityTest {
             assertThat(voyagesTable.voyage(islandId)).isEmpty();
             assertThat(parkour.top(islandId, 5)).isEmpty();
             assertThat(parkour.mostRun(5)).isEmpty();
+            assertThat(parkour.clear(islandId, java.util.Optional.empty())).isZero();
             assertThat(oneBlock.find(islandId)).isEmpty();
             assertThat(chunks.find(islandId)).isEmpty();
             assertThat(standings.mostBroken(5)).isEmpty();

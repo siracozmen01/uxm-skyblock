@@ -78,6 +78,11 @@ class ParkourRunsMetricTest {
             }
 
             @Override
+            public int clear(IslandId cleared, java.util.Optional<PlayerUuid> runner) {
+                throw new UnsupportedOperationException("nothing here clears a course");
+            }
+
+            @Override
             public List<Runs> mostRun(int limit) {
                 asked.add(limit);
                 return List.of(new Runs(busy, "Tower", 12), new Runs(quiet, "Garden", 3));

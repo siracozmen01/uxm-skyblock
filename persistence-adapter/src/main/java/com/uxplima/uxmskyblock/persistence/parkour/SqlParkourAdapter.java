@@ -144,6 +144,25 @@ public final class SqlParkourAdapter implements ParkourPort {
     }
 
     @Override
+    public int clear(IslandId course, java.util.Optional<PlayerUuid> runner) {
+        Objects.requireNonNull(course, "course must not be null");
+        Objects.requireNonNull(runner, "runner must not be null");
+        String sql = runner.isPresent()
+                ? "DELETE FROM parkour_records WHERE island_id = ? AND player_uuid = ?"
+                : "DELETE FROM parkour_records WHERE island_id = ?";
+        try (Connection conn = dataSource.getConnection();
+                PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setString(1, course.value().toString());
+            if (runner.isPresent()) {
+                ps.setString(2, runner.get().value().toString());
+            }
+            return ps.executeUpdate();
+        } catch (SQLException e) {
+            throw new IllegalStateException("Could not forget the runs on course " + course, e);
+        }
+    }
+
+    @Override
     public List<Runs> mostRun(int limit) {
         List<Runs> most = new ArrayList<>();
         try (Connection conn = dataSource.getConnection();
