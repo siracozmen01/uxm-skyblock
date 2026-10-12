@@ -33,9 +33,15 @@ public final class OneBlockAdmin implements ModeAdminCommands.Mode {
     static final String KEY = "oneblock";
 
     private final OneBlockService service;
+    private final OneBlockDraws draws;
 
     public OneBlockAdmin(OneBlockService service) {
+        this(service, OneBlockDraws.PLAIN);
+    }
+
+    public OneBlockAdmin(OneBlockService service, OneBlockDraws draws) {
         this.service = Objects.requireNonNull(service, "service must not be null");
+        this.draws = Objects.requireNonNull(draws, "draws must not be null");
     }
 
     @Override
@@ -182,15 +188,13 @@ public final class OneBlockAdmin implements ModeAdminCommands.Mode {
             if (loaded == null) {
                 return;
             }
-            OneBlockListener.lay(loaded, x, y, z, block.get());
+            OneBlockListener.lay(draws, loaded, x, y, z, block.get());
             if (say) {
                 admin.send(
                         sender,
                         "isadmin.oneblock.respawned",
                         Placeholder.unparsed("target", target),
-                        Placeholder.unparsed(
-                                "block",
-                                OneBlockStart.blockOf(block.get()).name().toLowerCase(java.util.Locale.ROOT)));
+                        Placeholder.unparsed("block", draws.named(block.get())));
             }
         });
     }

@@ -21,9 +21,15 @@ public final class OneBlockStart implements CreationActionProvider<IslandStart> 
     public static final String ACTION = "uxm:oneblock";
 
     private final OneBlockService service;
+    private final OneBlockDraws draws;
 
     public OneBlockStart(OneBlockService service) {
+        this(service, OneBlockDraws.PLAIN);
+    }
+
+    public OneBlockStart(OneBlockService service, OneBlockDraws draws) {
         this.service = Objects.requireNonNull(service, "service must not be null");
+        this.draws = Objects.requireNonNull(draws, "draws must not be null");
     }
 
     @Override
@@ -34,7 +40,7 @@ public final class OneBlockStart implements CreationActionProvider<IslandStart> 
     @Override
     public void apply(IslandStart start) {
         String first = service.start(start.islandId(), start.centerX(), start.y(), start.centerZ());
-        start.world().getBlockAt(start.centerX(), start.y(), start.centerZ()).setType(blockOf(first));
+        draws.lay(start.world(), start.centerX(), start.y(), start.centerZ(), first);
     }
 
     /** The block a phase drew, or dirt when the operator wrote something that is not a block. */

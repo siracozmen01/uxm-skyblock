@@ -5,12 +5,9 @@ import java.util.Objects;
 import java.util.Optional;
 
 import org.bukkit.Location;
-import org.bukkit.NamespacedKey;
-import org.bukkit.Registry;
 import org.bukkit.World;
 import org.bukkit.block.Block;
 import org.bukkit.entity.Entity;
-import org.bukkit.entity.EntityType;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
@@ -51,6 +48,7 @@ public final class OneBlockListener implements Listener {
     private final InteractionEffects effects;
     private final InteractionEffectPlayer effectPlayer;
     private volatile ModeMissions missions = ModeMissions.NONE;
+    private volatile OneBlockDraws draws = OneBlockDraws.PLAIN;
 
     public OneBlockListener(
             OneBlockService service,
@@ -65,6 +63,11 @@ public final class OneBlockListener implements Listener {
         this.messages = Objects.requireNonNull(messages, "messages must not be null");
         this.effects = Objects.requireNonNull(effects, "effects must not be null");
         this.effectPlayer = Objects.requireNonNull(effectPlayer, "effectPlayer must not be null");
+    }
+
+    /** Tells it how the operator's pool entries are put into the world: states, spawners and creatures. */
+    public void useDraws(OneBlockDraws draws) {
+        this.draws = Objects.requireNonNull(draws, "draws must not be null");
     }
 
     /** Tells it where a break of the block and a phase reached count, for the missions that ask for them. */
@@ -95,7 +98,8 @@ public final class OneBlockListener implements Listener {
         Player player = event.getPlayer();
         OneBlockService.Broken next = broken.get();
         // Set once the break has finished: set now, the break would clear it again.
-        scheduler.onRegion(world.getName(), x >> 4, z >> 4, () -> comeBack(world, x, y, z, next));
+        OneBlockDraws drawn = draws;
+        scheduler.onRegion(world.getName(), x >> 4, z >> 4, () -> comeBack(drawn, world, x, y, z, next, player));
         ModeMissions counts = missions;
         // The block broken belonged to the phase it finished, when it finished one.
         counts.counted(
@@ -135,20 +139,16 @@ public final class OneBlockListener implements Listener {
      */
     static final double CAUGHT_WITHIN = 3.0;
 
-    private static void comeBack(World world, int x, int y, int z, OneBlockService.Broken next) {
-        lay(world, x, y, z, next.nextBlock());
-        next.creature().ifPresent(creature -> {
-            NamespacedKey key = NamespacedKey.fromString(creature.toLowerCase(java.util.Locale.ROOT));
-            EntityType type = key == null ? null : Registry.ENTITY_TYPE.get(key);
-            if (type != null && type.isSpawnable()) {
-                world.spawnEntity(new Location(world, x + 0.5, y + 1, z + 0.5), type);
-            }
-        });
+    private static void comeBack(
+            OneBlockDraws draws, World world, int x, int y, int z, OneBlockService.Broken next, Player breaker) {
+        lay(draws, world, x, y, z, next.nextBlock());
+        next.creature()
+                .ifPresent(creature -> draws.spawn(new Location(world, x + 0.5, y + 1, z + 0.5), creature, breaker));
     }
 
     /** Lays the block as {@code block} and puts whoever dropped while it was gone back on top. On the block's region. */
-    static void lay(World world, int x, int y, int z, String block) {
-        world.getBlockAt(x, y, z).setType(OneBlockStart.blockOf(block));
+    static void lay(OneBlockDraws draws, World world, int x, int y, int z, String block) {
+        draws.lay(world, x, y, z, block);
         putBackOnTop(world, x, y, z);
     }
 

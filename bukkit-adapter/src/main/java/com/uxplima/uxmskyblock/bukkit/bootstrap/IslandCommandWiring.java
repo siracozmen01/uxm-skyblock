@@ -389,7 +389,8 @@ final class IslandCommandWiring {
                 new java.util.ArrayList<>();
         if (gameplay.oneBlockWiring().enabled()) {
             modes.add(new com.uxplima.uxmskyblock.bukkit.oneblock.OneBlockAdmin(
-                    gameplay.oneBlockWiring().service()));
+                    gameplay.oneBlockWiring().service(),
+                    gameplay.oneBlockWiring().draws()));
         }
         if (gameplay.chunkBlockWiring().enabled()) {
             modes.add(new com.uxplima.uxmskyblock.bukkit.chunkblock.ChunkBlockAdmin(

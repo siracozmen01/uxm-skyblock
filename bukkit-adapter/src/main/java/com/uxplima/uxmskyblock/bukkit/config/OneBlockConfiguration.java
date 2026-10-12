@@ -32,18 +32,26 @@ import org.spongepowered.configurate.ConfigurationNode;
  * @param phases the phases, in order
  * @param saveInterval how often the breaks counted in memory are added to the stored count
  * @param icons each phase's icon, a block or item name, by the phase's name
+ * @param entries the pool entries written as more than a name
  */
 public record OneBlockConfiguration(
-        boolean enabled, OneBlockPhases phases, java.time.Duration saveInterval, Map<String, String> icons) {
+        boolean enabled,
+        OneBlockPhases phases,
+        java.time.Duration saveInterval,
+        Map<String, String> icons,
+        OneBlockEntries entries) {
 
     /** The icon of a phase whose file names none. */
     public static final String DEFAULT_ICON = "GRASS_BLOCK";
+
+    /** The slots a creature's equipment is written by. */
+    public static final List<String> SLOTS = List.of("head", "chest", "legs", "feet", "hand", "off-hand");
 
     /** The name a phase file may have: what the language files key its name by. */
     static final java.util.regex.Pattern NAME = java.util.regex.Pattern.compile("[a-z0-9_-]{1,64}");
 
     public OneBlockConfiguration(boolean enabled, OneBlockPhases phases, java.time.Duration saveInterval) {
-        this(enabled, phases, saveInterval, Map.of());
+        this(enabled, phases, saveInterval, Map.of(), OneBlockEntries.NONE);
     }
 
     /** How often counted breaks are written, when the file names no interval. */
@@ -58,6 +66,7 @@ public record OneBlockConfiguration(
             throw new IllegalArgumentException("The save interval must be positive: " + saveInterval);
         }
         icons = Map.copyOf(icons);
+        Objects.requireNonNull(entries, "entries");
     }
 
     /** The icon of the phase called {@code key}. */
@@ -101,6 +110,8 @@ public record OneBlockConfiguration(
                 saveInterval(root.node("save-interval").getString());
         List<OneBlockPhase> phases = new ArrayList<>();
         Map<String, String> icons = new LinkedHashMap<>();
+        Map<String, OneBlockEntries.Block> blockEntries = new LinkedHashMap<>();
+        Map<String, OneBlockEntries.Creature> creatureEntries = new LinkedHashMap<>();
         // A list, because the phases are gone through in order and a HOCON object keeps none.
         for (ConfigurationNode listed : root.node("phases").childrenList()) {
             ConfigurationNode phase = listed.isMap() ? listed : phaseFile(listed.getString(""), phasesFolder);
@@ -109,7 +120,7 @@ public record OneBlockConfiguration(
             }
             String key = listed.isMap() ? phase.node("name").getString("") : listed.getString("");
             icons.put(key, icon(key, phase.node("icon").getString(DEFAULT_ICON)));
-            Map<String, Double> blocks = pool(key, phase.node("blocks"), true);
+            Map<String, Double> blocks = blocks(key, phase.node("blocks"), blockEntries);
             if (blocks.isEmpty()) {
                 LOGGER.warning(() -> "OneBlock phase '" + key + "' has no block the server knows and is left out.");
                 continue;
@@ -119,7 +130,7 @@ public record OneBlockConfiguration(
                         key,
                         phase.node("length").getLong(0),
                         new WeightedPool(blocks),
-                        new WeightedPool(pool(key, phase.node("creatures"), false)),
+                        new WeightedPool(creatures(key, phase.node("creatures"), creatureEntries)),
                         phase.node("creature-chance").getDouble(0)));
             } catch (IllegalArgumentException unusable) {
                 LOGGER.warning(() -> "OneBlock phase '" + key + "' is left out: " + unusable.getMessage());
@@ -129,7 +140,12 @@ public record OneBlockConfiguration(
             LOGGER.warning("modules/oneblock.conf holds no usable phase, so the built in one is used.");
             return new OneBlockConfiguration(enabled, defaultConfiguration().phases(), saveInterval);
         }
-        return new OneBlockConfiguration(enabled, new OneBlockPhases(phases, after), saveInterval, icons);
+        return new OneBlockConfiguration(
+                enabled,
+                new OneBlockPhases(phases, after),
+                saveInterval,
+                icons,
+                new OneBlockEntries(blockEntries, creatureEntries));
     }
 
     /** The phase file of {@code name}, or nothing, said in the console, when there is none to read. */
@@ -196,21 +212,124 @@ public record OneBlockConfiguration(
         }
     }
 
-    /** The weights under {@code node}, keyed by the server's own names, keeping only names it knows. */
-    private static Map<String, Double> pool(String phase, ConfigurationNode node, boolean blocks) {
+    /**
+     * The block weights under {@code node}. A name is the server's own, or a block with its states as
+     * {@code oak_stairs[facing=north]}; an entry written as an object is put in {@code entries} under the name it is
+     * drawn by, {@code <phase>/<entry>}. Only what the server knows is kept.
+     */
+    private static Map<String, Double> blocks(
+            String phase, ConfigurationNode node, Map<String, OneBlockEntries.Block> entries) {
         Map<String, Double> weights = new LinkedHashMap<>();
         for (Map.Entry<Object, ? extends ConfigurationNode> entry :
                 node.childrenMap().entrySet()) {
             String written = String.valueOf(entry.getKey());
-            String known = blocks ? blockName(written) : creatureName(written);
-            if (known == null) {
-                LOGGER.warning(() -> "OneBlock phase '" + phase + "' names '" + written + "', which is not a "
-                        + (blocks ? "block" : "creature that can be spawned") + ", and it is left out.");
+            ConfigurationNode value = entry.getValue();
+            if (value.isMap()) {
+                String data = value.node("block").getString(written);
+                String spawns = value.node("spawns").getString();
+                String known = blockData(data);
+                if (known == null || (spawns != null && creatureName(spawns) == null)) {
+                    LOGGER.warning(() -> "OneBlock phase '" + phase + "' has the entry '" + written + "', whose block '"
+                            + data + "'" + (spawns == null ? "" : " or creature '" + spawns + "'")
+                            + " the server does not know, and it is left out.");
+                    continue;
+                }
+                String drawn = phase + "/" + written;
+                entries.put(drawn, new OneBlockEntries.Block(known, spawns == null ? null : creatureName(spawns)));
+                weights.merge(drawn, value.node("weight").getDouble(1), Double::sum);
                 continue;
             }
-            weights.merge(known, entry.getValue().getDouble(0), Double::sum);
+            String known = blockData(written);
+            if (known == null) {
+                LOGGER.warning(() -> "OneBlock phase '" + phase + "' names '" + written
+                        + "', which is not a block, and it is left out.");
+                continue;
+            }
+            weights.merge(known, value.getDouble(0), Double::sum);
         }
         return weights;
+    }
+
+    /**
+     * The creature weights under {@code node}. A name is the server's own; an entry written as an object, with a
+     * type, a name, a scale and equipment, is put in {@code entries} under {@code <phase>/<entry>}.
+     */
+    private static Map<String, Double> creatures(
+            String phase, ConfigurationNode node, Map<String, OneBlockEntries.Creature> entries) {
+        Map<String, Double> weights = new LinkedHashMap<>();
+        for (Map.Entry<Object, ? extends ConfigurationNode> entry :
+                node.childrenMap().entrySet()) {
+            String written = String.valueOf(entry.getKey());
+            ConfigurationNode value = entry.getValue();
+            if (value.isMap()) {
+                OneBlockEntries.Creature creature = creature(phase, written, value);
+                if (creature == null) {
+                    continue;
+                }
+                String drawn = phase + "/" + written;
+                entries.put(drawn, creature);
+                weights.merge(drawn, value.node("weight").getDouble(1), Double::sum);
+                continue;
+            }
+            String known = creatureName(written);
+            if (known == null) {
+                LOGGER.warning(() -> "OneBlock phase '" + phase + "' names '" + written
+                        + "', which is not a creature that can be spawned, and it is left out.");
+                continue;
+            }
+            weights.merge(known, value.getDouble(0), Double::sum);
+        }
+        return weights;
+    }
+
+    /** The creature an object entry writes, or nothing, with the reason, when it cannot be. */
+    private static OneBlockEntries.@org.jspecify.annotations.Nullable Creature creature(
+            String phase, String written, ConfigurationNode value) {
+        String type = creatureName(value.node("type").getString(written));
+        if (type == null) {
+            LOGGER.warning(() -> "OneBlock phase '" + phase + "' has the creature '" + written + "', whose type '"
+                    + value.node("type").getString(written) + "' cannot be spawned, and it is left out.");
+            return null;
+        }
+        Map<String, String> equipment = new LinkedHashMap<>();
+        for (Map.Entry<Object, ? extends ConfigurationNode> worn :
+                value.node("equipment").childrenMap().entrySet()) {
+            String slot = String.valueOf(worn.getKey()).toLowerCase(Locale.ROOT);
+            Material item = Material.matchMaterial(worn.getValue().getString(""));
+            if (!SLOTS.contains(slot) || item == null || item.isAir()) {
+                LOGGER.warning(() -> "OneBlock phase '" + phase + "', creature '" + written + "': '" + worn.getKey()
+                        + " = " + worn.getValue().getString("") + "' is no slot of " + SLOTS
+                        + " with an item the server knows, and it is left out.");
+                continue;
+            }
+            equipment.put(slot, item.name());
+        }
+        try {
+            return new OneBlockEntries.Creature(
+                    type, value.node("name").getString(), value.node("scale").getDouble(1), equipment);
+        } catch (IllegalArgumentException wrong) {
+            LOGGER.warning(() -> "OneBlock phase '" + phase + "', creature '" + written + "': " + wrong.getMessage()
+                    + ". It is left out.");
+            return null;
+        }
+    }
+
+    /**
+     * The block {@code written} names, as the server writes it: a plain name, or a name and its states as
+     * {@code minecraft:oak_stairs[facing=north]}. Nothing when the server knows no such block or state.
+     */
+    private static @org.jspecify.annotations.Nullable String blockData(String written) {
+        int states = written.indexOf('[');
+        String base = blockName(states < 0 ? written : written.substring(0, states));
+        if (base == null || states < 0) {
+            return base;
+        }
+        try {
+            return org.bukkit.Bukkit.createBlockData(written.toLowerCase(Locale.ROOT))
+                    .getAsString();
+        } catch (IllegalArgumentException wrong) {
+            return null;
+        }
     }
 
     private static @org.jspecify.annotations.Nullable String blockName(String written) {
