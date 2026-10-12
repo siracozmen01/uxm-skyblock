@@ -9,7 +9,6 @@ import org.bukkit.event.inventory.InventoryOpenEvent;
 import org.bukkit.event.player.PlayerDropItemEvent;
 import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.InventoryView;
-import org.bukkit.persistence.PersistentDataType;
 
 import com.uxplima.uxmskyblock.bukkit.test.MockBukkitHarness;
 import org.junit.jupiter.api.BeforeEach;
@@ -36,7 +35,20 @@ class ASealedPlayerCarriesNothingOutTest extends MockBukkitHarness {
     @Test
     @DisplayName("Sealed, the player throws nothing and opens no ender chest, but any other window opens")
     void aSealedPlayerIsHeld() {
-        player.getPersistentDataContainer().set(SealedInventory.ITEMS, PersistentDataType.BYTE_ARRAY, new byte[] {1});
+        new SealedInventory(
+                        new InventoryCodec() {
+                            @Override
+                            public byte[] write(org.bukkit.inventory.ItemStack[] items) {
+                                return new byte[] {1};
+                            }
+
+                            @Override
+                            public org.bukkit.inventory.ItemStack[] read(byte[] bytes) {
+                                return new org.bukkit.inventory.ItemStack[0];
+                            }
+                        },
+                        "brix")
+                .seal(player);
 
         assertThat(threw()).isFalse();
         assertThat(opened(player.getEnderChest())).isFalse();

@@ -118,15 +118,22 @@ public final class BukkitInventorySerializer {
     /**
      * Snapshots the live player's inventory, ender chest, and stats into a {@link ProfileInventoryRecord}.
      *
+     * <p>A player sealed in a creative place is written as the seal keeps them: what they brought, their level,
+     * effects, game mode and flight. What they hold in the place is never written, so a crash there gives them
+     * back what they brought rather than what they made.
+     *
      * <p>Must be invoked on the player's owning entity thread.
      */
     public static ProfileInventoryRecord snapshotPlayer(Player player, ProfileId profileId, long version) {
         Objects.requireNonNull(player, "player");
         Objects.requireNonNull(profileId, "profileId");
 
-        byte[] invBytes = serializeItemStacks(player.getInventory().getContents());
+        com.uxplima.uxmskyblock.bukkit.creative.SealedInventory.Kept kept =
+                com.uxplima.uxmskyblock.bukkit.creative.SealedInventory.keptFor(player);
+        byte[] invBytes = serializeItemStacks(
+                kept != null ? kept.items() : player.getInventory().getContents());
         byte[] ecBytes = serializeItemStacks(player.getEnderChest().getContents());
-        byte[] potionBytes = serializePotionEffects(player.getActivePotionEffects());
+        byte[] potionBytes = serializePotionEffects(kept != null ? kept.effects() : player.getActivePotionEffects());
 
         Location loc = player.getLocation();
         String worldName =
@@ -140,7 +147,7 @@ public final class BukkitInventorySerializer {
                 version,
                 invBytes,
                 ecBytes,
-                experienceOf(player),
+                kept != null ? experienceOf(kept.level(), kept.exp()) : experienceOf(player),
                 player.getHealth(),
                 player.getFoodLevel(),
                 player.getSaturation(),
@@ -149,8 +156,8 @@ public final class BukkitInventorySerializer {
                 locX,
                 locY,
                 locZ,
-                player.getGameMode().name(),
-                player.getAllowFlight());
+                (kept != null ? kept.mode() : player.getGameMode()).name(),
+                kept != null ? kept.flight() : player.getAllowFlight());
     }
 
     /**
@@ -162,8 +169,13 @@ public final class BukkitInventorySerializer {
      * them, with the thresholds the game uses.
      */
     static int experienceOf(Player player) {
-        int level = Math.max(0, player.getLevel());
-        return pointsToReach(level) + Math.round(player.getExp() * pointsInLevel(level));
+        return experienceOf(player.getLevel(), player.getExp());
+    }
+
+    /** The experience points a {@code level} and a bar at {@code exp} make. */
+    static int experienceOf(int level, float exp) {
+        int whole = Math.max(0, level);
+        return pointsToReach(whole) + Math.round(exp * pointsInLevel(whole));
     }
 
     /**

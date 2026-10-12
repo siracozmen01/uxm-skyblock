@@ -154,13 +154,11 @@ class IslandShopMenuTest {
     @Test
     @DisplayName("A player whose items are kept aside on a creative plot sells nothing from the window")
     void aSealedPlayerSellsNothing() {
+        // Sealed on the plot, then holding what was made there.
+        new com.uxplima.uxmskyblock.bukkit.creative.SealedInventory(
+                        new com.uxplima.uxmskyblock.bukkit.creative.ServerInventoryCodec(), "brix")
+                .seal(player);
         player.getInventory().addItem(new ItemStack(Material.DIAMOND, 10));
-        player.getPersistentDataContainer()
-                .set(
-                        java.util.Objects.requireNonNull(
-                                org.bukkit.NamespacedKey.fromString("uxmskyblock:sealed_items")),
-                        org.bukkit.persistence.PersistentDataType.BYTE_ARRAY,
-                        new byte[] {1});
 
         menu.trade(player, ISLAND, Material.DIAMOND, 4, false);
 

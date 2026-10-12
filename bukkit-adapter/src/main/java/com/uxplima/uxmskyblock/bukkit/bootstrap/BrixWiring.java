@@ -29,7 +29,8 @@ public final class BrixWiring implements AutoCloseable {
             ConfigurationWiring configuration,
             PersistenceBootstrap persistence,
             SchedulerPort scheduler,
-            com.uxplima.uxmskyblock.bukkit.listener.IslandProtectionListener islands) {
+            com.uxplima.uxmskyblock.bukkit.listener.IslandProtectionListener islands,
+            java.util.function.Predicate<org.bukkit.entity.Player> inPlay) {
         this.config = Objects.requireNonNull(configuration.brixConfig(), "brixConfig must not be null");
         this.scheduler = Objects.requireNonNull(scheduler, "scheduler must not be null");
         this.service = new BrixService(persistence.brixPlotsPort());
@@ -39,7 +40,7 @@ public final class BrixWiring implements AutoCloseable {
                 scheduler,
                 config.modes(),
                 new com.uxplima.uxmskyblock.bukkit.creative.SealedInventory(
-                        new com.uxplima.uxmskyblock.bukkit.creative.ServerInventoryCodec(), "brix"),
+                        new com.uxplima.uxmskyblock.bukkit.creative.ServerInventoryCodec(), "brix", inPlay),
                 configuration.messages(),
                 configuration.effectsConfig(),
                 new com.uxplima.uxmskyblock.bukkit.effect.InteractionEffectPlayer(scheduler, configuration.messages()));

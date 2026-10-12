@@ -204,11 +204,18 @@ class APlotKeepsWhatWasBroughtTest extends MockBukkitHarness {
     }
 
     @Test
-    @DisplayName("What was kept is on the player, so a server that stopped gives it back when they come back")
+    @DisplayName("What was kept is what the server writes, so a server that stopped gives it back when they come back")
     void aServerThatStoppedGivesItBack() {
         builder.getInventory().setItem(0, new ItemStack(Material.IRON_PICKAXE));
         at(builder, 8);
         modes.check(builder);
+        builder.getInventory().setItem(0, new ItemStack(Material.BEDROCK, 64));
+        // What the session wrote while the builder stood on the plot: a checkpoint, or its last write at the stop.
+        com.uxplima.uxmskyblock.core.domain.inventory.ProfileInventoryRecord written =
+                com.uxplima.uxmskyblock.bukkit.inventory.BukkitInventorySerializer.snapshotPlayer(
+                        builder, new ProfileId(builder.getUniqueId()), 1L);
+        // The stop: the seal lived in memory, and the player's own save still holds the plot's bedrock.
+        SealedInventory.forget(builder);
         at(builder, 1008);
 
         BrixService after = new BrixService(new BrixPlotsPort() {
@@ -227,6 +234,8 @@ class APlotKeepsWhatWasBroughtTest extends MockBukkitHarness {
                 plots.add(islandId);
             }
         });
+        // The join puts what the session wrote on the player.
+        com.uxplima.uxmskyblock.bukkit.inventory.BukkitInventorySerializer.applyToPlayer(builder, written);
         modes(
                         after,
                         new IslandProtectionListener(mock(IslandStoragePort.class), new IslandAccessService()),
@@ -235,6 +244,9 @@ class APlotKeepsWhatWasBroughtTest extends MockBukkitHarness {
 
         assertThat(builder.getGameMode()).isEqualTo(GameMode.SURVIVAL);
         assertThat(builder.getInventory().getItem(0)).isEqualTo(new ItemStack(Material.IRON_PICKAXE));
+        assertThat(builder.getInventory().contains(Material.BEDROCK))
+                .describedAs("nothing made on the plot was ever written")
+                .isFalse();
     }
 
     @Test

@@ -4,11 +4,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verifyNoInteractions;
 
-import java.util.Objects;
-
-import org.bukkit.NamespacedKey;
-import org.bukkit.persistence.PersistentDataType;
-
 import com.uxplima.uxmskyblock.bukkit.config.VaultConfiguration;
 import com.uxplima.uxmskyblock.bukkit.i18n.Messages;
 import com.uxplima.uxmskyblock.core.application.island.IslandStoragePort;
@@ -54,11 +49,9 @@ class AVaultDoesNotOpenToCreativeItemsTest {
                 Messages.bundled(),
                 null);
         PlayerMock player = server.addPlayer();
-        player.getPersistentDataContainer()
-                .set(
-                        Objects.requireNonNull(NamespacedKey.fromString("uxmskyblock:sealed_items")),
-                        PersistentDataType.BYTE_ARRAY,
-                        new byte[] {1});
+        new com.uxplima.uxmskyblock.bukkit.creative.SealedInventory(
+                        new com.uxplima.uxmskyblock.bukkit.creative.ServerInventoryCodec(), "brix")
+                .seal(player);
 
         window.open(player, 1);
 

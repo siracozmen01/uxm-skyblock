@@ -208,8 +208,11 @@ public final class GameplayWiring {
                 config, persistence, scheduler, protectionListener, authority.sessionCoordinator()::activeProfile);
         this.poseidonWiring = new PoseidonWiring(config, persistence, scheduler, protectionListener);
         this.strangerRealmsWiring = new StrangerRealmsWiring(config, persistence, scheduler, protectionListener);
-        this.parkourWiring = new ParkourWiring(config, persistence, scheduler, protectionListener);
-        this.brixWiring = new BrixWiring(config, persistence, scheduler, protectionListener);
+        // A creative place seals a player only once their session has put their own state on them.
+        java.util.function.Predicate<org.bukkit.entity.Player> inPlay =
+                player -> authority.sessionCoordinator().inPlay(player.getUniqueId());
+        this.parkourWiring = new ParkourWiring(config, persistence, scheduler, protectionListener, inPlay);
+        this.brixWiring = new BrixWiring(config, persistence, scheduler, protectionListener, inPlay);
         this.tradeWiring = new TradeWiring(config, persistence, authority, scheduler);
         this.tradeWindsWiring = new TradeWindsWiring(
                 config, persistence, authority, scheduler, protectionListener, economicWiring.bankService());

@@ -9,20 +9,17 @@ import static org.mockito.Mockito.when;
 import java.time.Instant;
 import java.util.HashSet;
 import java.util.List;
-import java.util.Objects;
 import java.util.OptionalLong;
 import java.util.Set;
 import java.util.UUID;
 
 import org.bukkit.Location;
 import org.bukkit.Material;
-import org.bukkit.NamespacedKey;
 import org.bukkit.World;
 import org.bukkit.block.BlockFace;
 import org.bukkit.event.block.Action;
 import org.bukkit.event.player.PlayerInteractEvent;
 import org.bukkit.inventory.ItemStack;
-import org.bukkit.persistence.PersistentDataType;
 
 import com.uxplima.uxmskyblock.bukkit.config.ParkourConfiguration;
 import com.uxplima.uxmskyblock.bukkit.effect.InteractionEffects;
@@ -80,17 +77,15 @@ class AWiredRunStartsEmptyHandedTest extends MockBukkitHarness {
                 })
                 .when(scheduler)
                 .async(any(Runnable.class));
-        ParkourWiring wiring = new ParkourWiring(config, persistence, scheduler, islands);
+        ParkourWiring wiring = new ParkourWiring(config, persistence, scheduler, islands, player -> true);
         wiring.service().start(course.id());
         world.getBlockAt(8, Y, 8).setType(Material.EMERALD_BLOCK);
         world.getBlockAt(8, Y + 1, 8).setType(Material.LIGHT_WEIGHTED_PRESSURE_PLATE);
         runner.teleport(new Location(world, 8.5, Y + 1, 8.5));
         // Sealed on the way onto the course, as the beat would have done, with creative's pearls in hand.
-        runner.getPersistentDataContainer()
-                .set(
-                        Objects.requireNonNull(NamespacedKey.fromString("uxmskyblock:sealed_items")),
-                        PersistentDataType.BYTE_ARRAY,
-                        new byte[] {1});
+        new com.uxplima.uxmskyblock.bukkit.creative.SealedInventory(
+                        new com.uxplima.uxmskyblock.bukkit.creative.ServerInventoryCodec(), "parkour")
+                .seal(runner);
         runner.getInventory().setItem(0, new ItemStack(Material.ENDER_PEARL, 16));
 
         wiring.runs()

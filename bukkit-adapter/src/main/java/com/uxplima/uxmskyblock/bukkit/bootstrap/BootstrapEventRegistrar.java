@@ -49,6 +49,8 @@ public final class BootstrapEventRegistrar {
                             }
                         },
                         scheduler);
+        // A seal from before the session is what the session wrote and has just given back.
+        coordinator.whenSessionActive(com.uxplima.uxmskyblock.bukkit.creative.SealedInventory::forget);
         coordinator.whenSessionActive(states::sessionActive);
         coordinator.whenProfileLeft((player, profile) -> states.left(player));
         carried.set(new com.uxplima.uxmskyblock.bukkit.state.PlayerStateListener(

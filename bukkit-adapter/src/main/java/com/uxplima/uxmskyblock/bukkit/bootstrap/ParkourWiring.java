@@ -34,7 +34,8 @@ public final class ParkourWiring implements AutoCloseable {
             ConfigurationWiring configuration,
             PersistenceBootstrap persistence,
             SchedulerPort scheduler,
-            IslandProtectionListener islands) {
+            IslandProtectionListener islands,
+            java.util.function.Predicate<org.bukkit.entity.Player> inPlay) {
         this.config = Objects.requireNonNull(configuration.parkourConfig(), "parkourConfig must not be null");
         this.scheduler = Objects.requireNonNull(scheduler, "scheduler must not be null");
         this.service = new ParkourService(persistence.parkourPort());
@@ -54,7 +55,7 @@ public final class ParkourWiring implements AutoCloseable {
                 config.modes(),
                 runner -> runs.runningOn(runner).isPresent(),
                 new com.uxplima.uxmskyblock.bukkit.creative.SealedInventory(
-                        new com.uxplima.uxmskyblock.bukkit.creative.ServerInventoryCodec(), "parkour"),
+                        new com.uxplima.uxmskyblock.bukkit.creative.ServerInventoryCodec(), "parkour", inPlay),
                 configuration.messages(),
                 configuration.effectsConfig(),
                 new InteractionEffectPlayer(scheduler, configuration.messages()));

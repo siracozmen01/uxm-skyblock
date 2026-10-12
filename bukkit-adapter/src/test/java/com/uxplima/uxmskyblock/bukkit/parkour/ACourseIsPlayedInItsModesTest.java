@@ -225,14 +225,23 @@ class ACourseIsPlayedInItsModesTest extends MockBukkitHarness {
     }
 
     @Test
-    @DisplayName("What was kept is on the player, so it is given back when they come back after a stop")
+    @DisplayName("What was kept is what the server writes, so it is given back when they come back after a stop")
     void aStopGivesItBack() {
         builder.getInventory().setItem(0, new org.bukkit.inventory.ItemStack(org.bukkit.Material.IRON_PICKAXE));
         at(builder, 8);
         modes.check(builder);
         assertThat(builder.getGameMode()).isEqualTo(GameMode.CREATIVE);
+        builder.getInventory().setItem(0, new org.bukkit.inventory.ItemStack(org.bukkit.Material.ENDER_PEARL, 16));
+        // What the session wrote while the builder stood on the course: a checkpoint, or its last write at the stop.
+        com.uxplima.uxmskyblock.core.domain.inventory.ProfileInventoryRecord written =
+                com.uxplima.uxmskyblock.bukkit.inventory.BukkitInventorySerializer.snapshotPlayer(
+                        builder, new com.uxplima.uxmskyblock.core.domain.identity.ProfileId(builder.getUniqueId()), 1L);
+        // The stop: the seal lived in memory, and the player's own save still holds the course's pearls.
+        com.uxplima.uxmskyblock.bukkit.creative.SealedInventory.forget(builder);
         at(builder, 1008);
 
+        // The join puts what the session wrote on the player.
+        com.uxplima.uxmskyblock.bukkit.inventory.BukkitInventorySerializer.applyToPlayer(builder, written);
         modes.onJoin(new org.bukkit.event.player.PlayerJoinEvent(builder, net.kyori.adventure.text.Component.empty()));
 
         assertThat(builder.getGameMode())
@@ -240,6 +249,9 @@ class ACourseIsPlayedInItsModesTest extends MockBukkitHarness {
                 .isEqualTo(GameMode.SURVIVAL);
         assertThat(builder.getInventory().getItem(0))
                 .isEqualTo(new org.bukkit.inventory.ItemStack(org.bukkit.Material.IRON_PICKAXE));
+        assertThat(builder.getInventory().contains(org.bukkit.Material.ENDER_PEARL))
+                .describedAs("nothing made on the course was ever written")
+                .isFalse();
     }
 
     @Test
