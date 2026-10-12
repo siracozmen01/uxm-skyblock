@@ -74,6 +74,48 @@ class AMissionIsReachedNotCountedTest {
     }
 
     @Test
+    @DisplayName("Levels reached at once on many threads move a mission to the highest of them, never past it")
+    void reachedAtOnce() throws Exception {
+        service.registerMission(new MissionDefinition(
+                MissionId.of("level_hundred"),
+                MissionBranch.ECONOMY,
+                "level_hundred",
+                "level_hundred",
+                MissionTriggerType.LEVEL_REACH,
+                "",
+                100L,
+                new MissionReward(1L, 0L, 0L, List.of())));
+        int threads = 8;
+        java.util.concurrent.ExecutorService pool = java.util.concurrent.Executors.newFixedThreadPool(threads);
+        try {
+            for (int round = 0; round < 12; round++) {
+                // Each round's reaches are let go together, so they read the mission at the same moment.
+                java.util.concurrent.CountDownLatch go = new java.util.concurrent.CountDownLatch(1);
+                List<java.util.concurrent.Future<?>> done = new ArrayList<>();
+                for (int each = 1; each <= threads; each++) {
+                    long reached = (long) round * threads + each;
+                    done.add(pool.submit(() -> {
+                        go.await();
+                        return service.handleReach(island, profile, MissionTriggerType.LEVEL_REACH, reached, NOW);
+                    }));
+                }
+                go.countDown();
+                for (java.util.concurrent.Future<?> one : done) {
+                    one.get();
+                }
+            }
+        } finally {
+            pool.shutdownNow();
+        }
+
+        assertThat(java.util.Objects.requireNonNull(
+                                service.currentProgress(island, profile, NOW).get(MissionId.of("level_hundred")))
+                        .progressCount())
+                .describedAs("the highest level reached, 96, and not the sum of what each read")
+                .isEqualTo(96);
+    }
+
+    @Test
     @DisplayName("A balance reached moves no mission that counts a level")
     void onlyItsOwnTrigger() {
         service.handleReach(island, profile, MissionTriggerType.BANK_BALANCE, 50, NOW);

@@ -257,7 +257,7 @@ public final class IslandMissionService {
                     || !offered(islandId, def, playerProgress, now)) {
                 continue;
             }
-            move(islandId, profileId, def, amount, playerProgress, now, updated);
+            move(islandId, profileId, def, counted -> amount, playerProgress, now, updated);
         }
         return updated;
     }
@@ -278,25 +278,21 @@ public final class IslandMissionService {
             if (def.triggerType() != triggerType || !offered(islandId, def, playerProgress, now)) {
                 continue;
             }
-            MissionProgress stands = playerProgress.get(def.id());
-            long counted = stands == null ? 0L : current(def, stands, now).progressCount();
-            if (reached > counted) {
-                move(islandId, profileId, def, reached - counted, playerProgress, now, updated);
-            }
+            move(islandId, profileId, def, counted -> reached - counted, playerProgress, now, updated);
         }
         return updated;
     }
 
-    /** Moves one mission on by {@code amount}, writes where it stands, and pays it when this finished it. */
+    /** Moves one mission on by what {@code toAdd} answers, writes where it stands, and pays it when this finished it. */
     private void move(
             IslandId islandId,
             ProfileId profileId,
             MissionDefinition def,
-            long amount,
+            java.util.function.LongUnaryOperator toAdd,
             Map<MissionId, MissionProgress> playerProgress,
             Instant now,
             List<MissionProgress> updated) {
-        Advance advance = advance(playerProgress, def, amount, now);
+        Advance advance = advance(playerProgress, def, toAdd, now);
         if (advance == null) {
             return;
         }
@@ -438,7 +434,23 @@ public final class IslandMissionService {
      */
     private @Nullable Advance advance(
             Map<MissionId, MissionProgress> playerProgress, MissionDefinition def, long amount, Instant now) {
+        return advance(playerProgress, def, counted -> amount, now);
+    }
+
+    /**
+     * Moves one mission on by what {@code toAdd} answers for where it stands, read under the mission's key. A level
+     * or a balance reached asks for the difference between it and where the mission stands: read outside, two of
+     * them read the same count and both added their difference, so the mission went past what was ever reached.
+     *
+     * @return where the mission now stands, or null when it was already finished or did not move
+     */
+    private @Nullable Advance advance(
+            Map<MissionId, MissionProgress> playerProgress,
+            MissionDefinition def,
+            java.util.function.LongUnaryOperator toAdd,
+            Instant now) {
         boolean[] finishedItNow = {false};
+        boolean[] moved = {false};
         long[] credited = {0L};
         MissionProgress next = playerProgress.compute(def.id(), (missionId, existing) -> {
             // A mission that came back since the last of this progress starts over before it moves on.
@@ -447,6 +459,11 @@ public final class IslandMissionService {
             if (before.completed()) {
                 return before;
             }
+            long amount = toAdd.applyAsLong(before.progressCount());
+            if (amount <= 0) {
+                return existing;
+            }
+            moved[0] = true;
             // What the mission still wants is read here, under the key, not before it. Two hand ins
             // that read it outside both took what was left, the second one's items went past the
             // target, and the player was told they counted while nothing handed them back.
@@ -456,7 +473,7 @@ public final class IslandMissionService {
             finishedItNow[0] = after.completed();
             return after;
         });
-        if (next == null || (next.completed() && !finishedItNow[0])) {
+        if (next == null || !moved[0] || (next.completed() && !finishedItNow[0])) {
             return null;
         }
         return new Advance(next, finishedItNow[0], credited[0]);
