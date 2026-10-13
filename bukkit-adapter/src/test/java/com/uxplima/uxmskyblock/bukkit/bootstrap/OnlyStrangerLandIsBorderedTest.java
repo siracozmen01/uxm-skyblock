@@ -70,7 +70,8 @@ class OnlyStrangerLandIsBorderedTest {
                                 border.centerZ(),
                                 border.rule(),
                                 border.transition(),
-                                named)));
+                                named),
+                        shipped.switches()));
         return configuration;
     }
 

@@ -29,6 +29,7 @@ public final class StrangerRealmsWiring implements AutoCloseable {
     private final String upsideDownWorld;
     private final UpsideDownSpawns spawns;
     private final com.uxplima.uxmskyblock.bukkit.stranger.Glimmer glimmer;
+    private final com.uxplima.uxmskyblock.bukkit.stranger.LinkedSwitches switches;
     private final com.uxplima.uxmskyblock.bukkit.stranger.WarpedCompass compass;
     private boolean recipeAdded;
     private @org.jspecify.annotations.Nullable AutoCloseable beat;
@@ -60,6 +61,8 @@ public final class StrangerRealmsWiring implements AutoCloseable {
                 config.mobs(),
                 (at, type) -> at.getWorld().spawnEntity(at, type, CreatureSpawnEvent.SpawnReason.CUSTOM));
         this.glimmer = new com.uxplima.uxmskyblock.bukkit.stranger.Glimmer(realms, scheduler, config.glimmer());
+        this.switches =
+                new com.uxplima.uxmskyblock.bukkit.stranger.LinkedSwitches(realms, scheduler, config.switches());
         this.mirror = new UpsideDownStart(service, scheduler, config.upsideDown(), () -> upsideDownWorld);
         this.reach = new com.uxplima.uxmskyblock.bukkit.stranger.UpsideDownReach(
                 realms,
@@ -120,6 +123,11 @@ public final class StrangerRealmsWiring implements AutoCloseable {
     /** The Upside Down following the island's land past where it was first laid. */
     public com.uxplima.uxmskyblock.bukkit.stranger.UpsideDownReach reach() {
         return reach;
+    }
+
+    /** The switches linked between the land and the Upside Down. */
+    public com.uxplima.uxmskyblock.bukkit.stranger.LinkedSwitches switches() {
+        return switches;
     }
 
     /** The glimmer between the land and the Upside Down. */

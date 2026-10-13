@@ -141,6 +141,9 @@ public final class BootstrapEventRegistrar {
             if (gameplayWiring.strangerRealmsWiring().config().glimmer().enabled()) {
                 pm.registerEvents(gameplayWiring.strangerRealmsWiring().glimmer(), plugin);
             }
+            if (gameplayWiring.strangerRealmsWiring().config().switches().enabled()) {
+                pm.registerEvents(gameplayWiring.strangerRealmsWiring().switches(), plugin);
+            }
         }
         if (gameplayWiring.acidIslandWiring().enabled()) {
             pm.registerEvents(gameplayWiring.acidIslandWiring().waterListener(), plugin);

@@ -17,7 +17,8 @@ public record StrangerRealmsConfiguration(
         Glimmer glimmer,
         Compass compass,
         com.uxplima.uxmskyblock.core.domain.stranger.ClaimGrowth claim,
-        Border border) {
+        Border border,
+        Switches switches) {
 
     private static final Logger LOGGER = Logger.getLogger(StrangerRealmsConfiguration.class.getName());
 
@@ -251,6 +252,23 @@ public record StrangerRealmsConfiguration(
         }
     }
 
+    /**
+     * Switches linked across the veil: one of these used on a StrangerRealms island acts at the same place on the
+     * other side, on whatever of its kind stands there.
+     *
+     * @param blocks the switches, by name or a pattern with {@code *}: levers and buttons pass on their power,
+     *     doors, trapdoors and gates whether they stand open
+     */
+    public record Switches(boolean enabled, List<String> blocks) {
+
+        public static final Switches SHIPPED =
+                new Switches(true, List.of("LEVER", "*_BUTTON", "*_DOOR", "*_TRAPDOOR", "*_FENCE_GATE"));
+
+        public Switches {
+            blocks = List.copyOf(blocks);
+        }
+    }
+
     public static StrangerRealmsConfiguration defaultConfiguration() {
         return new StrangerRealmsConfiguration(
                 true,
@@ -259,7 +277,8 @@ public record StrangerRealmsConfiguration(
                 Glimmer.SHIPPED,
                 Compass.SHIPPED,
                 com.uxplima.uxmskyblock.core.domain.stranger.ClaimGrowth.SHIPPED,
-                Border.SHIPPED);
+                Border.SHIPPED,
+                Switches.SHIPPED);
     }
 
     public static StrangerRealmsConfiguration load(ConfigurationNode root) {
@@ -311,7 +330,10 @@ public record StrangerRealmsConfiguration(
                 glimmer,
                 compass,
                 claim(root.node("claim")),
-                border(root.node("border")));
+                border(root.node("border")),
+                new Switches(
+                        root.node("switches", "enabled").getBoolean(Switches.SHIPPED.enabled()),
+                        AcidIslandConfiguration.strings(root.node("switches", "blocks"), Switches.SHIPPED.blocks())));
     }
 
     private static Border border(ConfigurationNode node) {
