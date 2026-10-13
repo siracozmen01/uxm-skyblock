@@ -83,6 +83,14 @@ public final class ParkourService {
         return time.compareTo(was) < 0 ? new Finish.Beaten(time, was) : new Finish.Slower(time, was);
     }
 
+    /** The fastest time anybody has run the course in, before a finish is counted. Off the main thread. */
+    public java.util.Optional<Duration> courseBest(IslandId course) {
+        List<ParkourPort.Best> top = port.top(course, 1);
+        return top.isEmpty()
+                ? java.util.Optional.empty()
+                : java.util.Optional.of(Duration.ofMillis(top.getFirst().millis()));
+    }
+
     /** The courses finished most often, the most first. Off the main thread. */
     public List<ParkourPort.Runs> mostRun(int limit) {
         return port.mostRun(Math.max(1, limit));

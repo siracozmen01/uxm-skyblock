@@ -1,6 +1,7 @@
 package com.uxplima.uxmskyblock.bukkit.config;
 
 import java.time.Duration;
+import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
 import java.util.logging.Logger;
@@ -13,7 +14,8 @@ import org.spongepowered.configurate.ConfigurationNode;
  * {@code modules/parkour.conf}: whether islands can be Parkour courses, which blocks mark a course's
  * start, checkpoints and finish, and how a run is kept.
  */
-public record ParkourConfiguration(boolean enabled, Markers markers, Runs runs, Modes modes, Ghost ghost) {
+public record ParkourConfiguration(
+        boolean enabled, Markers markers, Runs runs, Modes modes, Ghost ghost, Rewards rewards) {
 
     private static final Logger LOGGER = Logger.getLogger(ParkourConfiguration.class.getName());
 
@@ -133,7 +135,27 @@ public record ParkourConfiguration(boolean enabled, Markers markers, Runs runs, 
         }
     }
 
+    /**
+     * What a finish pays, as lists of action lines the operator writes.
+     *
+     * @param firstFinish run for a runner the first time they finish a course
+     * @param personalBest run each time a runner beats their own best on a course
+     * @param courseRecord run each time a runner finishes a course faster than anybody has, the first finish on a
+     *     course included
+     */
+    public record Rewards(List<String> firstFinish, List<String> personalBest, List<String> courseRecord) {
+
+        public static final Rewards SHIPPED = new Rewards(List.of(), List.of(), List.of());
+
+        public Rewards {
+            firstFinish = List.copyOf(firstFinish);
+            personalBest = List.copyOf(personalBest);
+            courseRecord = List.copyOf(courseRecord);
+        }
+    }
+
     public ParkourConfiguration {
+        Objects.requireNonNull(rewards, "rewards must not be null");
         Objects.requireNonNull(ghost, "ghost must not be null");
         Objects.requireNonNull(markers, "markers must not be null");
         Objects.requireNonNull(runs, "runs must not be null");
@@ -141,7 +163,8 @@ public record ParkourConfiguration(boolean enabled, Markers markers, Runs runs, 
     }
 
     public static ParkourConfiguration defaultConfiguration() {
-        return new ParkourConfiguration(true, Markers.SHIPPED, Runs.SHIPPED, Modes.SHIPPED, Ghost.SHIPPED);
+        return new ParkourConfiguration(
+                true, Markers.SHIPPED, Runs.SHIPPED, Modes.SHIPPED, Ghost.SHIPPED, Rewards.SHIPPED);
     }
 
     public static ParkourConfiguration load(ConfigurationNode root) {
@@ -182,7 +205,13 @@ public record ParkourConfiguration(boolean enabled, Markers markers, Runs runs, 
             LOGGER.warning(() -> "modules/parkour.conf modes: " + e.getMessage() + ". The shipped modes are used.");
             modes = Modes.SHIPPED;
         }
-        return new ParkourConfiguration(root.node("enabled").getBoolean(true), markers, runs, modes, ghost(root));
+        ConfigurationNode paid = root.node("rewards");
+        Rewards rewards = new Rewards(
+                AcidIslandConfiguration.strings(paid.node("first-finish"), Rewards.SHIPPED.firstFinish()),
+                AcidIslandConfiguration.strings(paid.node("personal-best"), Rewards.SHIPPED.personalBest()),
+                AcidIslandConfiguration.strings(paid.node("course-record"), Rewards.SHIPPED.courseRecord()));
+        return new ParkourConfiguration(
+                root.node("enabled").getBoolean(true), markers, runs, modes, ghost(root), rewards);
     }
 
     private static Ghost ghost(ConfigurationNode root) {

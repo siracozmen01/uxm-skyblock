@@ -49,6 +49,13 @@ public final class ParkourRuns implements Listener {
 
     private static final Logger LOGGER = Logger.getLogger(ParkourRuns.class.getName());
 
+    /** The reward lists of parkour.conf, which are no lines of effects.conf. */
+    public static final String FIRST_FINISH = "first-finish";
+
+    public static final String PERSONAL_BEST = "personal-best";
+
+    public static final String COURSE_RECORD = "course-record";
+
     /** How long a runner standing on the start plate goes before being told again that a run began. */
     private static final Duration TOLD_AGAIN = Duration.ofSeconds(3);
 
@@ -67,6 +74,7 @@ public final class ParkourRuns implements Listener {
     private volatile java.util.function.Consumer<Player> whenStarted = runner -> {};
     private volatile @org.jspecify.annotations.Nullable ParkourGhosts ghosts;
     private volatile @org.jspecify.annotations.Nullable ParkourSplits splits;
+    private volatile InteractionEffects rewards = InteractionEffects.none();
 
     public ParkourRuns(
             ParkourService service,
@@ -95,6 +103,11 @@ public final class ParkourRuns implements Listener {
     /** Records each run and shows the ghost it races. */
     public void ghosts(ParkourGhosts racing) {
         this.ghosts = Objects.requireNonNull(racing, "racing must not be null");
+    }
+
+    /** Pays a finish from {@code paid}: first-finish, personal-best and course-record. */
+    public void rewards(InteractionEffects paid) {
+        this.rewards = Objects.requireNonNull(paid, "paid must not be null");
     }
 
     /** Takes each run's split times at its checkpoints, against the runner's best. */
@@ -219,7 +232,9 @@ public final class ParkourRuns implements Listener {
         effectPlayer.fire(effects, "parkour-finished", runner, said(time));
         scheduler.async(() -> {
             ParkourService.Finish finish;
+            Optional<Duration> record;
             try {
+                record = service.courseBest(course);
                 finish = service.finish(course, who, time);
             } catch (RuntimeException e) {
                 LOGGER.log(Level.WARNING, e, () -> "A run on course " + course + " could not be counted.");
@@ -234,8 +249,37 @@ public final class ParkourRuns implements Listener {
             if (racing != null && path != null && best) {
                 racing.keep(course, who, time, path);
             }
-            scheduler.onEntity(who, () -> told(runner, finish));
+            boolean courseRecord = record.map(was -> time.compareTo(was) < 0).orElse(true);
+            String recordWas = record.map(ParkourRuns::format).orElse("");
+            scheduler.onEntity(who, () -> {
+                told(runner, finish);
+                paid(runner, finish, courseRecord, recordWas);
+            });
         });
+    }
+
+    /**
+     * Pays the finish: the first on the course, a new best of the runner's own, and a course record, each its list.
+     * {@code recordWas} is the course's best this run beat, empty when there was none.
+     */
+    private void paid(Player runner, ParkourService.Finish finish, boolean courseRecord, String recordWas) {
+        Map<String, String> says = said(finish.time());
+        switch (finish) {
+            case ParkourService.Finish.First first -> effectPlayer.fire(rewards, FIRST_FINISH, runner, with(says, ""));
+            case ParkourService.Finish.Beaten beaten ->
+                effectPlayer.fire(rewards, PERSONAL_BEST, runner, with(says, format(beaten.was())));
+            case ParkourService.Finish.Slower slower -> {}
+        }
+        if (courseRecord) {
+            messages.send(runner, "parkour.course_record", timed("time", finish.time()));
+            effectPlayer.fire(rewards, COURSE_RECORD, runner, with(says, recordWas));
+        }
+    }
+
+    private static Map<String, String> with(Map<String, String> says, String was) {
+        Map<String, String> all = new java.util.HashMap<>(says);
+        all.put("was", was);
+        return Map.copyOf(all);
     }
 
     private void told(Player runner, ParkourService.Finish finish) {
