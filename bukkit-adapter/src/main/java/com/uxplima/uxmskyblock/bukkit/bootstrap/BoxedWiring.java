@@ -74,6 +74,7 @@ public final class BoxedWiring implements AutoCloseable {
                 this::boxChanged,
                 boxedWorlds,
                 config.bypassPermission());
+        listener.letVisitorsEarn(config.visitorsEarn());
         scheduler.async(() -> {
             try {
                 int count = service.prime();

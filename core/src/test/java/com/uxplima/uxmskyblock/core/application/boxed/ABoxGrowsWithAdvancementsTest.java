@@ -61,7 +61,8 @@ class ABoxGrowsWithAdvancementsTest {
             1,
             8,
             Map.of("minecraft:story/mine_diamond", 2, "minecraft:story/root", 0),
-            List.of("minecraft:recipes/"));
+            List.of("minecraft:recipes/"),
+            com.uxplima.uxmskyblock.core.domain.boxed.AdvancementWorth.flat(1));
     private final BoxedService service = new BoxedService(port, rules);
 
     @Test
@@ -71,7 +72,10 @@ class ABoxGrowsWithAdvancementsTest {
 
         assertThat(service.radius(islandId)).hasValue(5);
         assertThat(service.isBoxed(IslandId.of(UUID.randomUUID()))).isFalse();
-        assertThat(service.earn(IslandId.of(UUID.randomUUID()), "minecraft:story/mine_stone"))
+        assertThat(service.earn(
+                        IslandId.of(UUID.randomUUID()),
+                        new com.uxplima.uxmskyblock.core.domain.boxed.AdvancementFacts(
+                                "minecraft:story/mine_stone", 1, true)))
                 .isEmpty();
     }
 
@@ -80,15 +84,32 @@ class ABoxGrowsWithAdvancementsTest {
     void advancementsGrowTheBox() {
         service.start(islandId);
 
-        assertThat(service.earn(islandId, "minecraft:story/mine_stone"))
+        assertThat(service.earn(
+                        islandId,
+                        new com.uxplima.uxmskyblock.core.domain.boxed.AdvancementFacts(
+                                "minecraft:story/mine_stone", 1, true)))
                 .contains(new BoxedService.Grown(islandId, 1, 5, 6));
-        assertThat(service.earn(islandId, "minecraft:story/mine_stone"))
+        assertThat(service.earn(
+                        islandId,
+                        new com.uxplima.uxmskyblock.core.domain.boxed.AdvancementFacts(
+                                "minecraft:story/mine_stone", 1, true)))
                 .describedAs("a second member making it adds nothing")
                 .isEmpty();
-        assertThat(service.earn(islandId, "minecraft:story/mine_diamond"))
+        assertThat(service.earn(
+                        islandId,
+                        new com.uxplima.uxmskyblock.core.domain.boxed.AdvancementFacts(
+                                "minecraft:story/mine_diamond", 1, true)))
                 .contains(new BoxedService.Grown(islandId, 2, 6, 8));
-        assertThat(service.earn(islandId, "minecraft:recipes/misc/bread")).isEmpty();
-        assertThat(service.earn(islandId, "minecraft:story/root")).isEmpty();
+        assertThat(service.earn(
+                        islandId,
+                        new com.uxplima.uxmskyblock.core.domain.boxed.AdvancementFacts(
+                                "minecraft:recipes/misc/bread", 1, true)))
+                .isEmpty();
+        assertThat(service.earn(
+                        islandId,
+                        new com.uxplima.uxmskyblock.core.domain.boxed.AdvancementFacts(
+                                "minecraft:story/root", 1, true)))
+                .isEmpty();
         assertThat(service.radius(islandId)).hasValue(8);
     }
 
@@ -96,10 +117,21 @@ class ABoxGrowsWithAdvancementsTest {
     @DisplayName("The box never reaches past its most, and what was earned is read back after a restart")
     void theBoxHasAnEdgeAndIsRemembered() {
         service.start(islandId);
-        service.earn(islandId, "minecraft:story/mine_diamond");
-        service.earn(islandId, "minecraft:story/smelt_iron");
-        service.earn(islandId, "minecraft:adventure/kill_a_mob");
-        service.earn(islandId, "minecraft:husbandry/plant_seed");
+        service.earn(
+                islandId,
+                new com.uxplima.uxmskyblock.core.domain.boxed.AdvancementFacts(
+                        "minecraft:story/mine_diamond", 1, true));
+        service.earn(
+                islandId,
+                new com.uxplima.uxmskyblock.core.domain.boxed.AdvancementFacts("minecraft:story/smelt_iron", 1, true));
+        service.earn(
+                islandId,
+                new com.uxplima.uxmskyblock.core.domain.boxed.AdvancementFacts(
+                        "minecraft:adventure/kill_a_mob", 1, true));
+        service.earn(
+                islandId,
+                new com.uxplima.uxmskyblock.core.domain.boxed.AdvancementFacts(
+                        "minecraft:husbandry/plant_seed", 1, true));
 
         assertThat(service.radius(islandId)).hasValue(8);
         BoxedService restarted = new BoxedService(port, rules);
@@ -108,7 +140,13 @@ class ABoxGrowsWithAdvancementsTest {
         islands.remove(islandId);
         restarted.forget(islandId);
         assertThat(restarted.isBoxed(islandId)).isFalse();
-        assertThatThrownBy(() -> new BoxRules(5, 1, 4, Map.of(), List.of()))
+        assertThatThrownBy(() -> new BoxRules(
+                        5,
+                        1,
+                        4,
+                        Map.of(),
+                        List.of(),
+                        com.uxplima.uxmskyblock.core.domain.boxed.AdvancementWorth.flat(1)))
                 .isInstanceOf(IllegalArgumentException.class);
     }
 
@@ -116,7 +154,10 @@ class ABoxGrowsWithAdvancementsTest {
     @DisplayName("An operator pushes a box out, or sets how far it reaches, and storage holds what they did")
     void anOperatorsBox() {
         service.start(islandId);
-        service.earn(islandId, "minecraft:story/mine_diamond");
+        service.earn(
+                islandId,
+                new com.uxplima.uxmskyblock.core.domain.boxed.AdvancementFacts(
+                        "minecraft:story/mine_diamond", 1, true));
 
         assertThat(service.grant(islandId, 1)).contains(new BoxedService.Grown(islandId, 1, 7, 8));
         assertThat(islands).containsEntry(islandId, 3L);

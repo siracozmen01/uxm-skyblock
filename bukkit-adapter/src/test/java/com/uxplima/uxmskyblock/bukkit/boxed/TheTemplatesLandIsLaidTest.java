@@ -98,7 +98,13 @@ class TheTemplatesLandIsLaidTest extends MockBukkitHarness {
                     earned.merge(id, blocks, Long::sum);
                 }
             },
-            new BoxRules(5, 1, 100, Map.of(), List.of()));
+            new BoxRules(
+                    5,
+                    1,
+                    100,
+                    Map.of(),
+                    List.of(),
+                    com.uxplima.uxmskyblock.core.domain.boxed.AdvancementWorth.flat(1)));
 
     private final BoxedLandPort port = new BoxedLandPort() {
         @Override

@@ -145,7 +145,13 @@ class ABoxedIslandIsPlayedInItsBoxTest extends MockBukkitHarness {
                         stored.merge(id, blocks, Long::sum);
                     }
                 },
-                new BoxRules(5, 2, 50, Map.of(), List.of("minecraft:recipes/")));
+                new BoxRules(
+                        5,
+                        2,
+                        50,
+                        Map.of(),
+                        List.of("minecraft:recipes/"),
+                        com.uxplima.uxmskyblock.core.domain.boxed.AdvancementWorth.flat(2)));
         scheduler = mock(SchedulerPort.class);
         doAnswer(call -> {
                     call.getArgument(0, Runnable.class).run();
@@ -226,7 +232,18 @@ class ABoxedIslandIsPlayedInItsBoxTest extends MockBukkitHarness {
                 .add(islandId);
         List<IslandId> laid = new ArrayList<>();
         BoxedStart start = new BoxedStart(
-                new BoxedService(broken, new BoxRules(5, 2, 50, Map.of(), List.of())), scheduler, changed::add, id -> {
+                new BoxedService(
+                        broken,
+                        new BoxRules(
+                                5,
+                                2,
+                                50,
+                                Map.of(),
+                                List.of(),
+                                com.uxplima.uxmskyblock.core.domain.boxed.AdvancementWorth.flat(2))),
+                scheduler,
+                changed::add,
+                id -> {
                     laid.add(id);
                     return java.util.concurrent.CompletableFuture.completedFuture(null);
                 });
@@ -256,6 +273,63 @@ class ABoxedIslandIsPlayedInItsBoxTest extends MockBukkitHarness {
         assertThat(counted)
                 .describedAs("how far it grew counts for the missions")
                 .containsExactly("BOXED_GROW * 2");
+    }
+
+    @Test
+    @DisplayName("A visitor on another island earns nothing there, unless the operator lets visitors earn")
+    void aVisitorEarnsNothing() {
+        service.start(islandId);
+        IslandId other = IslandId.of(UUID.randomUUID());
+        islands.cacheIsland(
+                Island.create(
+                        other,
+                        IslandBounds.fromCenterAndRadius(1000, 0, 5),
+                        PlayerUuid.of(UUID.randomUUID()),
+                        ProfileId.of(UUID.randomUUID()),
+                        Instant.now()),
+                "boxed");
+        PlayerMock player = createPlayer("Visitor");
+        player.teleport(new Location(boxedWorld, 1000.5, 70, 0.5));
+
+        listener.onAdvancement(done(player, "story/mine_stone"));
+
+        assertThat(service.radius(islandId)).hasValue(5);
+        assertThat(changed).isEmpty();
+        assertThat(said(player)).singleElement().asString().contains("another island");
+
+        player.teleport(new Location(boxedWorld, 1.5, 70, 1.5));
+        listener.onAdvancement(done(player, "story/mine_stone"));
+        assertThat(service.radius(islandId)).describedAs("on their own island").hasValue(7);
+
+        player.teleport(new Location(skyblock, 500.5, 70, 500.5));
+        listener.onAdvancement(done(player, "story/upgrade_tools"));
+        assertThat(service.radius(islandId)).describedAs("on no island at all").hasValue(9);
+
+        player.teleport(new Location(boxedWorld, 1000.5, 70, 0.5));
+        listener.letVisitorsEarn(true);
+        listener.onAdvancement(done(player, "story/smelt_iron"));
+        assertThat(service.radius(islandId)).hasValue(11);
+        assertThat(said(player)).noneSatisfy(line -> assertThat(line).contains("another island"));
+    }
+
+    @Test
+    @DisplayName("An advancement is read with how deep in its tab it lies and whether the screen shows it")
+    void theFactsOfAnAdvancement() {
+        Advancement root = mock(Advancement.class);
+        Advancement middle = mock(Advancement.class);
+        Advancement deep = mock(Advancement.class);
+        when(middle.getParent()).thenReturn(root);
+        when(deep.getParent()).thenReturn(middle);
+        when(deep.getKey()).thenReturn(NamespacedKey.minecraft("story/deep"));
+        when(root.getKey()).thenReturn(NamespacedKey.minecraft("story/root"));
+        when(root.getDisplay()).thenReturn(mock(io.papermc.paper.advancement.AdvancementDisplay.class));
+
+        assertThat(BoxedListener.facts(deep))
+                .isEqualTo(new com.uxplima.uxmskyblock.core.domain.boxed.AdvancementFacts(
+                        "minecraft:story/deep", 2, false));
+        assertThat(BoxedListener.facts(root))
+                .isEqualTo(new com.uxplima.uxmskyblock.core.domain.boxed.AdvancementFacts(
+                        "minecraft:story/root", 0, true));
     }
 
     @Test
@@ -335,7 +409,9 @@ class ABoxedIslandIsPlayedInItsBoxTest extends MockBukkitHarness {
         verify(player, org.mockito.Mockito.times(1)).setWorldBorder(border);
         verify(border).setSize(11.0);
         verify(border).setCenter(0.5, 0.5);
-        service.earn(islandId, "minecraft:story/mine_stone");
+        service.earn(
+                islandId,
+                new com.uxplima.uxmskyblock.core.domain.boxed.AdvancementFacts("minecraft:story/mine_stone", 1, true));
         islands.cacheIsland(
                 Island.create(
                         islandId,
@@ -368,11 +444,32 @@ class ABoxedIslandIsPlayedInItsBoxTest extends MockBukkitHarness {
         BoxedConfiguration written = BoxedConfiguration.load(HoconConfigurationLoader.builder()
                 .buildAndLoadString("box { start-radius = 3 }\nadvancements { \"minecraft:story/mine_diamond\" = 9 }"));
         assertThat(written.rules().startRadius()).isEqualTo(3);
-        assertThat(written.rules().blocksFor("minecraft:story/mine_diamond")).isEqualTo(9);
+        assertThat(written.rules()
+                        .blocksFor(new com.uxplima.uxmskyblock.core.domain.boxed.AdvancementFacts(
+                                "minecraft:story/mine_diamond", 1, true)))
+                .isEqualTo(9);
         assertThat(BoxedConfiguration.load(
                                 HoconConfigurationLoader.builder().buildAndLoadString("box { start-radius = 0 }"))
                         .rules())
                 .isEqualTo(BoxRules.shipped());
+        BoxedConfiguration scored = BoxedConfiguration.load(HoconConfigurationLoader.builder()
+                .buildAndLoadString("scoring { by = flat, root = 1, recipes = 2, hidden = 3 }\nvisitors-earn = true"));
+        assertThat(scored.rules().scoring())
+                .isEqualTo(new com.uxplima.uxmskyblock.core.domain.boxed.AdvancementWorth(false, 1, 2, 3));
+        assertThat(scored.visitorsEarn()).isTrue();
+        assertThat(BoxedConfiguration.load(
+                                HoconConfigurationLoader.builder().buildAndLoadString("scoring { root = 4 }"))
+                        .rules()
+                        .scoring())
+                .isEqualTo(new com.uxplima.uxmskyblock.core.domain.boxed.AdvancementWorth(true, 4, 0, 0));
+        for (String wrong : List.of("scoring { by = steep }", "scoring { hidden = -1 }")) {
+            assertThat(BoxedConfiguration.load(
+                                    HoconConfigurationLoader.builder().buildAndLoadString(wrong))
+                            .rules())
+                    .describedAs(wrong)
+                    .isEqualTo(BoxRules.shipped());
+        }
+        assertThat(BoxedConfiguration.defaultConfiguration().visitorsEarn()).isFalse();
     }
 
     private BlockBreakEvent breakAt(PlayerMock player, World world, int x, int z) {

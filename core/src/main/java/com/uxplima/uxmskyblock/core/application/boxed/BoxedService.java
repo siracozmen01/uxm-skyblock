@@ -6,6 +6,7 @@ import java.util.OptionalInt;
 import java.util.OptionalLong;
 import java.util.concurrent.ConcurrentHashMap;
 
+import com.uxplima.uxmskyblock.core.domain.boxed.AdvancementFacts;
 import com.uxplima.uxmskyblock.core.domain.boxed.BoxRules;
 import com.uxplima.uxmskyblock.core.domain.identity.IslandId;
 
@@ -63,11 +64,11 @@ public final class BoxedService {
      * @return how the box grew, or empty when the island is no Boxed island, the advancement is worth
      *     nothing or the island had earned it already
      */
-    public java.util.Optional<Grown> earn(IslandId islandId, String advancement) {
+    public java.util.Optional<Grown> earn(IslandId islandId, AdvancementFacts advancement) {
         Objects.requireNonNull(islandId, "islandId must not be null");
         Objects.requireNonNull(advancement, "advancement must not be null");
         int blocks = rules.blocksFor(advancement);
-        if (blocks <= 0 || !isBoxed(islandId) || !port.earn(islandId, advancement, blocks)) {
+        if (blocks <= 0 || !isBoxed(islandId) || !port.earn(islandId, advancement.key(), blocks)) {
             return java.util.Optional.empty();
         }
         long before = earned.merge(islandId, (long) blocks, Long::sum) - blocks;

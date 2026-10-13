@@ -12,6 +12,7 @@ import java.util.logging.Level;
 import java.util.logging.Logger;
 
 import org.bukkit.Location;
+import org.bukkit.advancement.Advancement;
 import org.bukkit.entity.Player;
 import org.bukkit.event.Cancellable;
 import org.bukkit.event.EventHandler;
@@ -33,9 +34,11 @@ import com.uxplima.uxmskyblock.bukkit.i18n.Messages;
 import com.uxplima.uxmskyblock.bukkit.listener.IslandProtectionListener;
 import com.uxplima.uxmskyblock.core.application.boxed.BoxedService;
 import com.uxplima.uxmskyblock.core.application.scheduler.SchedulerPort;
+import com.uxplima.uxmskyblock.core.domain.boxed.AdvancementFacts;
 import com.uxplima.uxmskyblock.core.domain.identity.IslandId;
 import com.uxplima.uxmskyblock.core.domain.identity.PlayerUuid;
 import com.uxplima.uxmskyblock.core.domain.identity.ProfileId;
+import com.uxplima.uxmskyblock.core.domain.island.Island;
 
 /**
  * A Boxed island's box: it grows when one of the island's players makes an advancement, and in a
@@ -65,6 +68,7 @@ public final class BoxedListener implements Listener {
     private final Set<String> boxedWorlds;
     private final String bypassPermission;
     private final Map<UUID, Long> lastTold = new ConcurrentHashMap<>();
+    private volatile boolean visitorsEarn;
 
     @SuppressWarnings("TooManyParameters")
     public BoxedListener(
@@ -92,6 +96,20 @@ public final class BoxedListener implements Listener {
         this.bypassPermission = Objects.requireNonNull(bypassPermission, "bypassPermission must not be null");
     }
 
+    /** Whether an advancement a player makes while on another island grows their own box. */
+    public void letVisitorsEarn(boolean earn) {
+        this.visitorsEarn = earn;
+    }
+
+    /** What a box needs to know of {@code advancement}: its key, how deep in its tab it lies and whether it is shown. */
+    static AdvancementFacts facts(Advancement advancement) {
+        int depth = 0;
+        for (Advancement above = advancement.getParent(); above != null && depth < 256; above = above.getParent()) {
+            depth++;
+        }
+        return new AdvancementFacts(advancement.getKey().asString(), depth, advancement.getDisplay() != null);
+    }
+
     /** Tells it where a box grown counts, for the missions that ask for it. */
     public void useMissions(com.uxplima.uxmskyblock.bukkit.mission.ModeMissions missions) {
         this.missions = Objects.requireNonNull(missions, "missions must not be null");
@@ -104,10 +122,13 @@ public final class BoxedListener implements Listener {
             // Handed back as the player crossed into another group of worlds: earned before, counted then.
             return;
         }
-        String advancement = event.getAdvancement().getKey().asString();
+        AdvancementFacts advancement = facts(event.getAdvancement());
         if (service.rules().blocksFor(advancement) <= 0) {
             return;
         }
+        Location at = player.getLocation();
+        Optional<IslandId> standingOn =
+                at == null ? Optional.empty() : islands.findIslandAt(at).map(Island::id);
         Optional<ProfileId> profile = activeProfile.apply(player.getUniqueId());
         if (profile.isEmpty()) {
             return;
@@ -115,33 +136,41 @@ public final class BoxedListener implements Listener {
         UUID playerId = player.getUniqueId();
         scheduler.async(() -> {
             try {
-                islandOf.apply(profile.get())
-                        .flatMap(islandId -> service.earn(islandId, advancement))
-                        .ifPresent(grown -> {
-                            boxChanged.accept(grown.islandId());
-                            scheduler.onEntity(PlayerUuid.of(playerId), () -> {
-                                int across = grown.toRadius() * 2 + 1;
-                                messages.send(
-                                        player,
-                                        "boxed.grew",
-                                        Placeholder.unparsed("blocks", Integer.toString(grown.blocks())),
-                                        Placeholder.unparsed("size", Integer.toString(across)));
-                                effectPlayer.fire(
-                                        effects,
-                                        "boxed-grew",
-                                        player,
-                                        java.util.Map.of(
-                                                "blocks", Integer.toString(grown.blocks()),
-                                                "size", Integer.toString(across)));
-                                missions.counted(
-                                        player,
-                                        com.uxplima.uxmskyblock.core.domain.mission.MissionTriggerType.BOXED_GROW,
-                                        "*",
-                                        grown.blocks());
-                            });
-                        });
+                Optional<IslandId> own = islandOf.apply(profile.get());
+                if (!visitorsEarn
+                        && own.isPresent()
+                        && standingOn.isPresent()
+                        && !standingOn.get().equals(own.get())) {
+                    if (service.isBoxed(own.get())) {
+                        scheduler.onEntity(PlayerUuid.of(playerId), () -> messages.send(player, "boxed.visitor"));
+                    }
+                    return;
+                }
+                own.flatMap(islandId -> service.earn(islandId, advancement)).ifPresent(grown -> {
+                    boxChanged.accept(grown.islandId());
+                    scheduler.onEntity(PlayerUuid.of(playerId), () -> {
+                        int across = grown.toRadius() * 2 + 1;
+                        messages.send(
+                                player,
+                                "boxed.grew",
+                                Placeholder.unparsed("blocks", Integer.toString(grown.blocks())),
+                                Placeholder.unparsed("size", Integer.toString(across)));
+                        effectPlayer.fire(
+                                effects,
+                                "boxed-grew",
+                                player,
+                                java.util.Map.of(
+                                        "blocks", Integer.toString(grown.blocks()),
+                                        "size", Integer.toString(across)));
+                        missions.counted(
+                                player,
+                                com.uxplima.uxmskyblock.core.domain.mission.MissionTriggerType.BOXED_GROW,
+                                "*",
+                                grown.blocks());
+                    });
+                });
             } catch (RuntimeException e) {
-                LOGGER.log(Level.WARNING, e, () -> "An advancement could not grow a box: " + advancement);
+                LOGGER.log(Level.WARNING, e, () -> "An advancement could not grow a box: " + advancement.key());
             }
         });
     }

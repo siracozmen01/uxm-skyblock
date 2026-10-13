@@ -9,6 +9,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.logging.Logger;
 
+import com.uxplima.uxmskyblock.core.domain.boxed.AdvancementWorth;
 import com.uxplima.uxmskyblock.core.domain.boxed.BoxRules;
 import org.spongepowered.configurate.ConfigurationNode;
 
@@ -20,9 +21,15 @@ import org.spongepowered.configurate.ConfigurationNode;
  * @param borderEvery how often each player on a Boxed island is shown where their box ends
  * @param bypassPermission a node whose holder is not kept inside a box, empty for nobody
  * @param land the land a new island plays on
+ * @param visitorsEarn whether an advancement a player makes while on another island grows their own box
  */
 public record BoxedConfiguration(
-        boolean enabled, BoxRules rules, Duration borderEvery, String bypassPermission, BoxedLand land) {
+        boolean enabled,
+        BoxRules rules,
+        Duration borderEvery,
+        String bypassPermission,
+        BoxedLand land,
+        boolean visitorsEarn) {
 
     private static final Logger LOGGER = Logger.getLogger(BoxedConfiguration.class.getName());
 
@@ -37,7 +44,7 @@ public record BoxedConfiguration(
     }
 
     public static BoxedConfiguration defaultConfiguration() {
-        return new BoxedConfiguration(true, BoxRules.shipped(), Duration.ofSeconds(1), "", BoxedLand.SHIPPED);
+        return new BoxedConfiguration(true, BoxRules.shipped(), Duration.ofSeconds(1), "", BoxedLand.SHIPPED, false);
     }
 
     public static BoxedConfiguration load(ConfigurationNode root) {
@@ -69,7 +76,8 @@ public record BoxedConfiguration(
                     box.node("blocks-per-advancement").getInt(shipped.blocksPerAdvancement()),
                     box.node("max-radius").getInt(shipped.maxRadius()),
                     worth,
-                    ignored);
+                    ignored,
+                    scoring(root.node("scoring"), shipped.scoring()));
         } catch (IllegalArgumentException e) {
             LOGGER.warning(() -> "modules/boxed.conf: " + e.getMessage() + ". The shipped box is used.");
             rules = shipped;
@@ -80,7 +88,24 @@ public record BoxedConfiguration(
                 rules,
                 every.toMillis() < 50 ? Duration.ofSeconds(1) : every,
                 root.node("bypass-permission").getString("").trim(),
-                BoxedLand.read(root.node("land")));
+                BoxedLand.read(root.node("land")),
+                root.node("visitors-earn").getBoolean(false));
+    }
+
+    /** What an advancement with no worth of its own is worth, as {@code node} writes it. */
+    private static AdvancementWorth scoring(ConfigurationNode node, AdvancementWorth shipped) {
+        if (node.virtual()) {
+            return shipped;
+        }
+        String by = node.node("by").getString("depth").strip().toLowerCase(Locale.ROOT);
+        if (!by.equals("depth") && !by.equals("flat")) {
+            throw new IllegalArgumentException("scoring by is depth or flat, not " + by);
+        }
+        return new AdvancementWorth(
+                by.equals("depth"),
+                node.node("root").getInt(shipped.root()),
+                node.node("recipes").getInt(shipped.recipes()),
+                node.node("hidden").getInt(shipped.hidden()));
     }
 
     /** A window written as {@code 500ms}, {@code 2s} or a plain number of seconds. */

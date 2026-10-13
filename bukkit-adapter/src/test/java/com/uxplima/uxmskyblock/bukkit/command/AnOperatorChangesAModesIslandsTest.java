@@ -163,7 +163,13 @@ class AnOperatorChangesAModesIslandsTest extends MockBukkitHarness {
                                 boxes.merge(islandId, blocks, Long::sum);
                             }
                         },
-                        new com.uxplima.uxmskyblock.core.domain.boxed.BoxRules(5, 1, 50, Map.of(), List.of()));
+                        new com.uxplima.uxmskyblock.core.domain.boxed.BoxRules(
+                                5,
+                                1,
+                                50,
+                                Map.of(),
+                                List.of(),
+                                com.uxplima.uxmskyblock.core.domain.boxed.AdvancementWorth.flat(1)));
         boxed.prime();
         admin = new ModeAdminCommands(
                 List.of(
