@@ -9,6 +9,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import com.uxplima.uxmskyblock.core.domain.boxed.AdvancementFacts;
 import com.uxplima.uxmskyblock.core.domain.boxed.BoxOffset;
 import com.uxplima.uxmskyblock.core.domain.boxed.BoxRules;
+import com.uxplima.uxmskyblock.core.domain.boxed.BoxSide;
 import com.uxplima.uxmskyblock.core.domain.identity.IslandId;
 
 /**
@@ -25,16 +26,34 @@ public final class BoxedService {
     private final Map<IslandId, Long> earned = new ConcurrentHashMap<>();
     private final BoxOffsetsPort offsetsPort;
     private final Map<IslandId, BoxOffset> offsets = new ConcurrentHashMap<>();
+    private final BoxSidesPort sidesPort;
+    private final Map<IslandId, BoxSide> sides = new ConcurrentHashMap<>();
 
     /** A service whose moved boxes are kept in memory only, as a test's are. */
     public BoxedService(BoxedIslandsPort port, BoxRules rules) {
-        this(port, rules, new KeptInMemory());
+        this(port, rules, new KeptInMemory(), new SidesInMemory());
     }
 
-    public BoxedService(BoxedIslandsPort port, BoxRules rules, BoxOffsetsPort offsetsPort) {
+    public BoxedService(BoxedIslandsPort port, BoxRules rules, BoxOffsetsPort offsetsPort, BoxSidesPort sidesPort) {
         this.port = Objects.requireNonNull(port, "port must not be null");
         this.rules = Objects.requireNonNull(rules, "rules must not be null");
         this.offsetsPort = Objects.requireNonNull(offsetsPort, "offsetsPort must not be null");
+        this.sidesPort = Objects.requireNonNull(sidesPort, "sidesPort must not be null");
+    }
+
+    /** Sides chosen kept nowhere but here. */
+    private static final class SidesInMemory implements BoxSidesPort {
+        private final Map<IslandId, BoxSide> kept = new ConcurrentHashMap<>();
+
+        @Override
+        public Map<IslandId, BoxSide> findAll() {
+            return Map.copyOf(kept);
+        }
+
+        @Override
+        public void choose(IslandId islandId, BoxSide side) {
+            kept.put(islandId, side);
+        }
     }
 
     /** Moved boxes kept nowhere but here. */
@@ -61,6 +80,7 @@ public final class BoxedService {
         Map<IslandId, Long> all = port.findAll();
         all.forEach(earned::putIfAbsent);
         offsetsPort.findAll().forEach(offsets::putIfAbsent);
+        sidesPort.findAll().forEach(sides::putIfAbsent);
         return all.size();
     }
 
@@ -146,10 +166,82 @@ public final class BoxedService {
         if (blocks <= 0 || !isBoxed(islandId) || !port.earn(islandId, advancement.key(), blocks)) {
             return java.util.Optional.empty();
         }
+        return java.util.Optional.of(grewBy(islandId, blocks));
+    }
+
+    /** Counts {@code blocks} more earned in memory, leans the box toward its side, and says how it grew. */
+    private Grown grewBy(IslandId islandId, int blocks) {
         long before = earned.merge(islandId, (long) blocks, Long::sum) - blocks;
         int from = boxed(islandId, before);
-        int to = boxed(islandId, before + blocks);
-        return java.util.Optional.of(new Grown(islandId, blocks, from, to));
+        lean(islandId, before, before + blocks);
+        return new Grown(islandId, blocks, from, boxed(islandId, before + blocks));
+    }
+
+    /**
+     * Moves the box toward the island's side by as much as it grew, so the growth lands on that side, as far as a box
+     * reaches from the island's centre. A box with no side, or one at the edge of its reach, is left where it is.
+     */
+    private void lean(IslandId islandId, long before, long after) {
+        BoxSide side = side(islandId);
+        if (side == BoxSide.ALL) {
+            return;
+        }
+        BoxOffset now = offset(islandId);
+        for (int step = rules.radius(after) - rules.radius(before); step > 0; step--) {
+            BoxOffset next = new BoxOffset(now.dx() + side.stepX() * step, now.dz() + side.stepZ() * step);
+            if (canMove(islandId, next)) {
+                offsetsPort.move(islandId, next);
+                offsets.put(islandId, next);
+                return;
+            }
+        }
+    }
+
+    /** Which side the island's box grows toward. Memory only. */
+    public BoxSide side(IslandId islandId) {
+        return sides.getOrDefault(islandId, BoxSide.ALL);
+    }
+
+    /**
+     * Has the island's box grow toward {@code side} from now on. Off the main thread: it writes a row.
+     *
+     * @return false for an island that is no Boxed island
+     */
+    public boolean choose(IslandId islandId, BoxSide side) {
+        Objects.requireNonNull(side, "side must not be null");
+        if (!isBoxed(islandId)) {
+            return false;
+        }
+        sidesPort.choose(islandId, side);
+        sides.put(islandId, side);
+        return true;
+    }
+
+    /** How many times the island bought growth. Off the main thread: it reads the rows. */
+    public long bought(IslandId islandId) {
+        return port.bought(islandId);
+    }
+
+    /**
+     * The island bought growth: its box grows {@code blocks}, kept as the next purchase among its advancements. Off the
+     * main thread: it writes a row.
+     *
+     * @return how the box grew, or empty for an island that is no Boxed island
+     */
+    public java.util.Optional<Grown> buy(IslandId islandId, int blocks) {
+        if (blocks < 1) {
+            throw new IllegalArgumentException("a purchase grows the box at least one block: " + blocks);
+        }
+        if (!isBoxed(islandId)) {
+            return java.util.Optional.empty();
+        }
+        // Two buying at once take the same next number, and the one that loses takes the number after.
+        for (long next = port.bought(islandId) + 1, tries = 0; tries < 64; next++, tries++) {
+            if (port.earn(islandId, BoxedIslandsPort.BOUGHT + next, blocks)) {
+                return java.util.Optional.of(grewBy(islandId, blocks));
+            }
+        }
+        throw new IllegalStateException("The growth island " + islandId + " bought could not be written down.");
     }
 
     /**
@@ -198,6 +290,7 @@ public final class BoxedService {
         } else {
             earned.remove(islandId);
             offsets.remove(islandId);
+            sides.remove(islandId);
         }
     }
 }

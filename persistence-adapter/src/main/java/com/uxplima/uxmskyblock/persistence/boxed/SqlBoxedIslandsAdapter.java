@@ -107,6 +107,23 @@ public final class SqlBoxedIslandsAdapter implements BoxedIslandsPort {
         }
     }
 
+    @Override
+    public long bought(IslandId islandId) {
+        Objects.requireNonNull(islandId, "islandId must not be null");
+        try (Connection conn = dataSource.getConnection();
+                PreparedStatement ps = conn.prepareStatement(
+                        "SELECT COUNT(*) FROM boxed_advancements WHERE island_id = ? AND advancement LIKE ?")) {
+            ps.setString(1, islandId.value().toString());
+            ps.setString(2, BOUGHT + "%");
+            try (ResultSet rs = ps.executeQuery()) {
+                rs.next();
+                return rs.getLong(1);
+            }
+        } catch (SQLException e) {
+            throw new IllegalStateException("Could not count the growth island " + islandId + " bought", e);
+        }
+    }
+
     /** Inserts a row, and says false when it was there already. */
     private boolean insert(
             String sql, IslandId islandId, @org.jspecify.annotations.Nullable String advancement, int blocks) {

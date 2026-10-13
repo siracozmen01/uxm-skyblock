@@ -121,6 +121,26 @@ class TheCargoBranchOpensTheHoldTest {
     }
 
     @Test
+    @DisplayName("The Boxed branches buy growth and show or choose a side, and say so when Boxed is off")
+    void theBoxedBranches() throws Exception {
+        com.uxplima.uxmskyblock.bukkit.boxed.BoxedShop shop =
+                mock(com.uxplima.uxmskyblock.bukkit.boxed.BoxedShop.class);
+        tree.useBoxedShop(shop);
+
+        dispatcher().execute("island boxbuy", source());
+        dispatcher().execute("island boxside", source());
+        dispatcher().execute("island boxside north_east", source());
+
+        verify(shop).buy(player);
+        verify(shop).side(player, null);
+        verify(shop).side(player, "north_east");
+
+        tree.useBoxedShop(null);
+        dispatcher().execute("island boxbuy", source());
+        verify(player).sendMessage(any(Component.class));
+    }
+
+    @Test
     @DisplayName("The plunder branch boards, and says so when TradeWinds is off")
     void thePlunderBranch() throws Exception {
         com.uxplima.uxmskyblock.bukkit.tradewinds.Boarding boarding =

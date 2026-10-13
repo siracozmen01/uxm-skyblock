@@ -97,6 +97,11 @@ class TheTemplatesLandIsLaidTest extends MockBukkitHarness {
                 public void grant(IslandId id, long blocks) {
                     earned.merge(id, blocks, Long::sum);
                 }
+
+                @Override
+                public long bought(IslandId id) {
+                    return 0;
+                }
             },
             new BoxRules(
                     5,

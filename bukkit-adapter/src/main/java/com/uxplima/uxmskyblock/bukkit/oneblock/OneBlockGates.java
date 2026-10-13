@@ -50,7 +50,7 @@ public final class OneBlockGates {
             SchedulerPort scheduler,
             Messages messages,
             ChunkPurse purse,
-            IslandFunds funds,
+            LinePayment.IslandFunds funds,
             BiFunction<Island, Player, Long> levelOf) {
         this.config = Objects.requireNonNull(config, "config must not be null");
         this.service = Objects.requireNonNull(service, "service must not be null");

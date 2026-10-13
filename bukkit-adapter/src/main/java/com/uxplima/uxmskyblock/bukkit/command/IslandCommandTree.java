@@ -353,10 +353,16 @@ public final class IslandCommandTree {
     private com.uxplima.uxmskyblock.bukkit.tradewinds.@Nullable Harbour harbour;
     private com.uxplima.uxmskyblock.bukkit.tradewinds.@Nullable ContractDesk contracts;
     private com.uxplima.uxmskyblock.bukkit.tradewinds.@Nullable Boarding boarding;
+    private com.uxplima.uxmskyblock.bukkit.boxed.@Nullable BoxedShop boxedShop;
 
     /** What {@code /is sail} and {@code /is market} open, while the operator lets islands be vessels. */
     public void useHarbour(com.uxplima.uxmskyblock.bukkit.tradewinds.@Nullable Harbour harbour) {
         this.harbour = harbour;
+    }
+
+    /** What {@code /is boxbuy} and {@code /is boxside} do, while the operator lets islands be Boxed. */
+    public void useBoxedShop(com.uxplima.uxmskyblock.bukkit.boxed.@Nullable BoxedShop shop) {
+        this.boxedShop = shop;
     }
 
     /** What {@code /is plunder} does, while the operator lets islands be vessels. */
@@ -759,6 +765,14 @@ public final class IslandCommandTree {
                 .then(Cmd.literal("market").executes(ctx -> executeHarbour(ctx, false)))
                 .then(Cmd.literal("contracts").executes(this::executeContracts))
                 .then(Cmd.literal("plunder").executes(this::executePlunder))
+                .then(Cmd.literal("boxbuy").executes(ctx -> boxed(ctx, shop -> shop::buy)))
+                .then(Cmd.literal("boxside")
+                        .executes(ctx -> boxed(ctx, shop -> player -> shop.side(player, null)))
+                        .then(Cmd.argument("side", StringArgumentType.word())
+                                .executes(ctx -> boxed(
+                                        ctx,
+                                        shop -> player ->
+                                                shop.side(player, StringArgumentType.getString(ctx, "side"))))))
                 .then(Cmd.literal("course").executes(this::executeCourse))
                 .then(Cmd.literal("chunks")
                         .executes(ctx -> executeChunks(ctx, false))
@@ -939,6 +953,25 @@ public final class IslandCommandTree {
         } else {
             open.market(player);
         }
+        return Cmd.OK;
+    }
+
+    /** Runs what {@code use} asks of the Boxed shop, for a player, while islands may be Boxed. */
+    private int boxed(
+            CommandContext<CommandSourceStack> ctx,
+            java.util.function.Function<
+                            com.uxplima.uxmskyblock.bukkit.boxed.BoxedShop, java.util.function.Consumer<Player>>
+                    use) {
+        if (!(ctx.getSource().getSender() instanceof Player player)) {
+            send(ctx.getSource().getSender(), "error.players_only");
+            return Cmd.OK;
+        }
+        com.uxplima.uxmskyblock.bukkit.boxed.BoxedShop open = this.boxedShop;
+        if (open == null) {
+            send(player, "boxed.buy.no_box");
+            return Cmd.OK;
+        }
+        use.apply(open).accept(player);
         return Cmd.OK;
     }
 

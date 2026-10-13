@@ -228,75 +228,8 @@ public final class OneBlockWiring implements AutoCloseable {
                             Long>
                     levelOf,
             com.uxplima.uxmskyblock.core.domain.session.ServerNodeId node) {
-        var funds = new com.uxplima.uxmskyblock.bukkit.oneblock.OneBlockGates.IslandFunds() {
-            @Override
-            public long held(
-                    com.uxplima.uxmskyblock.core.domain.identity.IslandId islandId,
-                    com.uxplima.uxmskyblock.core.domain.requirement.Requirement line) {
-                return bankPort.findBankByIslandId(islandId)
-                        .map(held -> line
-                                        instanceof
-                                        com.uxplima.uxmskyblock.core.domain.requirement.Requirement.Currency currency
-                                ? held.heldOf(com.uxplima.uxmskyblock.core.application.bank.BankCurrencies.columnOf(
-                                        currency.id()))
-                                : held.primaryBalanceMinorUnits())
-                        .orElse(0L);
-            }
-
-            @Override
-            public boolean take(
-                    com.uxplima.uxmskyblock.core.domain.identity.IslandId islandId,
-                    org.bukkit.entity.Player payer,
-                    com.uxplima.uxmskyblock.core.domain.requirement.Requirement line) {
-                return moved(islandId, payer, line, -1);
-            }
-
-            @Override
-            public void giveBack(
-                    com.uxplima.uxmskyblock.core.domain.identity.IslandId islandId,
-                    org.bukkit.entity.Player payer,
-                    com.uxplima.uxmskyblock.core.domain.requirement.Requirement line) {
-                if (!moved(islandId, payer, line, 1)) {
-                    LOGGER.warning(() ->
-                            "Giving back what OneBlock took from the bank of island " + islandId + " failed: " + line);
-                }
-            }
-
-            private boolean moved(
-                    com.uxplima.uxmskyblock.core.domain.identity.IslandId islandId,
-                    org.bukkit.entity.Player payer,
-                    com.uxplima.uxmskyblock.core.domain.requirement.Requirement line,
-                    long sign) {
-                String column;
-                long amount;
-                if (line instanceof com.uxplima.uxmskyblock.core.domain.requirement.Requirement.Currency currency) {
-                    column = com.uxplima.uxmskyblock.core.application.bank.BankCurrencies.columnOf(currency.id());
-                    amount = currency.amount();
-                } else if (line instanceof com.uxplima.uxmskyblock.core.domain.requirement.Requirement.Money money) {
-                    column = com.uxplima.uxmskyblock.core.application.bank.BankCurrencies.PRIMARY_COLUMN;
-                    amount = money.minor();
-                } else {
-                    return false;
-                }
-                return bank.move(
-                                islandId,
-                                new com.uxplima.uxmskyblock.core.domain.identity.PlayerUuid(payer.getUniqueId()),
-                                column,
-                                sign * amount,
-                                "OneBlock phase",
-                                node)
-                        instanceof com.uxplima.uxmskyblock.core.domain.bank.BankTransactionOutcome.Success;
-            }
-
-            @Override
-            public boolean mayTake(
-                    com.uxplima.uxmskyblock.core.domain.island.Island island, org.bukkit.entity.Player payer) {
-                return activeProfile
-                        .apply(payer.getUniqueId())
-                        .map(profile -> access.canWithdrawBank(island, profile))
-                        .orElse(false);
-            }
-        };
+        var funds = new com.uxplima.uxmskyblock.bukkit.requirement.BankFunds(
+                bankPort, bank, access, activeProfile, node, "OneBlock phase");
         listener.useGates(new com.uxplima.uxmskyblock.bukkit.oneblock.OneBlockGates(
                 () -> config,
                 service,

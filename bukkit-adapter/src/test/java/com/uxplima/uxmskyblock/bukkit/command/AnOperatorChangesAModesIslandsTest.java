@@ -162,6 +162,11 @@ class AnOperatorChangesAModesIslandsTest extends MockBukkitHarness {
                             public void grant(IslandId islandId, long blocks) {
                                 boxes.merge(islandId, blocks, Long::sum);
                             }
+
+                            @Override
+                            public long bought(com.uxplima.uxmskyblock.core.domain.identity.IslandId id) {
+                                return 0;
+                            }
                         },
                         new com.uxplima.uxmskyblock.core.domain.boxed.BoxRules(
                                 5,

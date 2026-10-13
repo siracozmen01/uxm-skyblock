@@ -147,6 +147,13 @@ class ABoxedIslandIsPlayedInItsBoxTest extends MockBukkitHarness {
                     public void grant(IslandId id, long blocks) {
                         stored.merge(id, blocks, Long::sum);
                     }
+
+                    @Override
+                    public long bought(IslandId id) {
+                        return earned.stream()
+                                .filter(row -> row.startsWith(id + BOUGHT))
+                                .count();
+                    }
                 },
                 new BoxRules(
                         5,

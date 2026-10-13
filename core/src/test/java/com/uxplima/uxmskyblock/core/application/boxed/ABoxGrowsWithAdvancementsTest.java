@@ -55,6 +55,11 @@ class ABoxGrowsWithAdvancementsTest {
         public void grant(IslandId id, long blocks) {
             islands.merge(id, blocks, Long::sum);
         }
+
+        @Override
+        public long bought(IslandId id) {
+            return rows.stream().filter(row -> row.startsWith(id + BOUGHT)).count();
+        }
     };
     private final BoxRules rules = new BoxRules(
             5,
@@ -191,7 +196,7 @@ class ABoxGrowsWithAdvancementsTest {
                 kept.put(id, offset);
             }
         };
-        BoxedService moving = new BoxedService(port, rules, offsets);
+        BoxedService moving = new BoxedService(port, rules, offsets, new SidesKept());
         moving.start(islandId);
         var near = new com.uxplima.uxmskyblock.core.domain.boxed.BoxOffset(-2, 3);
         var far = new com.uxplima.uxmskyblock.core.domain.boxed.BoxOffset(4, 0);
@@ -225,7 +230,7 @@ class ABoxGrowsWithAdvancementsTest {
                 .isTrue();
         assertThat(moving.reach(islandId)).hasValue(8);
 
-        BoxedService again = new BoxedService(port, rules, offsets);
+        BoxedService again = new BoxedService(port, rules, offsets, new SidesKept());
         again.prime();
         assertThat(again.offset(islandId)).describedAs("read back at the start").isEqualTo(near);
         islands.remove(islandId);
@@ -235,5 +240,161 @@ class ABoxGrowsWithAdvancementsTest {
                 .isEqualTo(7);
         assertThat(new com.uxplima.uxmskyblock.core.domain.boxed.BoxOffset(2, -9).reach())
                 .isEqualTo(9);
+    }
+
+    private final Map<IslandId, com.uxplima.uxmskyblock.core.domain.boxed.BoxSide> chosen = new HashMap<>();
+
+    /** The sides chosen, as a table keeps them. */
+    private final class SidesKept implements BoxSidesPort {
+        @Override
+        public Map<IslandId, com.uxplima.uxmskyblock.core.domain.boxed.BoxSide> findAll() {
+            return Map.copyOf(chosen);
+        }
+
+        @Override
+        public void choose(IslandId id, com.uxplima.uxmskyblock.core.domain.boxed.BoxSide side) {
+            chosen.put(id, side);
+        }
+    }
+
+    @Test
+    @DisplayName("Growth bought is the next purchase among the advancements, and two buying at once both count")
+    void growthIsBought() {
+        service.start(islandId);
+
+        assertThat(service.buy(islandId, 2)).hasValue(new BoxedService.Grown(islandId, 2, 5, 7));
+        assertThat(service.buy(islandId, 1)).hasValue(new BoxedService.Grown(islandId, 1, 7, 8));
+        assertThat(service.bought(islandId)).isEqualTo(2);
+        assertThat(rows).contains(islandId + BoxedIslandsPort.BOUGHT + 1, islandId + BoxedIslandsPort.BOUGHT + 2);
+        assertThat(service.buy(IslandId.of(UUID.randomUUID()), 1)).isEmpty();
+        assertThatThrownBy(() -> service.buy(islandId, 0)).isInstanceOf(IllegalArgumentException.class);
+
+        // A count that lags, as when another node bought a moment before: the purchase takes the next free number.
+        BoxedService lagging = new BoxedService(
+                new BoxedIslandsPort() {
+                    @Override
+                    public Map<IslandId, Long> findAll() {
+                        return port.findAll();
+                    }
+
+                    @Override
+                    public OptionalLong find(IslandId id) {
+                        return port.find(id);
+                    }
+
+                    @Override
+                    public void add(IslandId id) {
+                        port.add(id);
+                    }
+
+                    @Override
+                    public boolean earn(IslandId id, String advancement, int blocks) {
+                        return port.earn(id, advancement, blocks);
+                    }
+
+                    @Override
+                    public void grant(IslandId id, long blocks) {
+                        port.grant(id, blocks);
+                    }
+
+                    @Override
+                    public long bought(IslandId id) {
+                        return 0;
+                    }
+                },
+                new BoxRules(
+                        5,
+                        1,
+                        400,
+                        Map.of(),
+                        List.of(),
+                        com.uxplima.uxmskyblock.core.domain.boxed.AdvancementWorth.flat(1)));
+        lagging.prime();
+        assertThat(lagging.buy(islandId, 1)).isPresent();
+        assertThat(rows).contains(islandId + BoxedIslandsPort.BOUGHT + 3);
+    }
+
+    @Test
+    @DisplayName("A box with a side grows toward it: the opposite edges stay, as far as a box reaches")
+    void aBoxLeansTowardItsSide() {
+        BoxedService leaning = new BoxedService(port, rules, new KeptOffsets(), new SidesKept());
+        leaning.start(islandId);
+        assertThat(leaning.side(islandId)).isEqualTo(com.uxplima.uxmskyblock.core.domain.boxed.BoxSide.ALL);
+        leaning.buy(islandId, 1);
+        assertThat(moved).describedAs("a box with no side stays where it is").isEmpty();
+        assertThat(leaning.choose(
+                        IslandId.of(UUID.randomUUID()), com.uxplima.uxmskyblock.core.domain.boxed.BoxSide.EAST))
+                .isFalse();
+        assertThat(leaning.choose(islandId, com.uxplima.uxmskyblock.core.domain.boxed.BoxSide.NORTH_WEST))
+                .isTrue();
+        assertThat(chosen).containsEntry(islandId, com.uxplima.uxmskyblock.core.domain.boxed.BoxSide.NORTH_WEST);
+
+        leaning.buy(islandId, 1);
+        assertThat(leaning.offset(islandId)).isEqualTo(new com.uxplima.uxmskyblock.core.domain.boxed.BoxOffset(-1, -1));
+        assertThat(leaning.radius(islandId)).hasValue(7);
+        // The east and south edges, 6 from the centre once the box grew alike, are where they were.
+        assertThat(leaning.offset(islandId).dx() + leaning.radius(islandId).getAsInt())
+                .isEqualTo(6);
+        assertThat(leaning.offset(islandId).dz() + leaning.radius(islandId).getAsInt())
+                .isEqualTo(6);
+
+        leaning.earn(
+                islandId,
+                new com.uxplima.uxmskyblock.core.domain.boxed.AdvancementFacts("minecraft:story/mine_stone", 1, true));
+        assertThat(leaning.offset(islandId))
+                .describedAs("8 and 2 is past 8, so the box stays where it stands, as wide as it reaches there")
+                .isEqualTo(new com.uxplima.uxmskyblock.core.domain.boxed.BoxOffset(-1, -1));
+        assertThat(leaning.radius(islandId)).hasValue(7);
+
+        leaning.choose(islandId, com.uxplima.uxmskyblock.core.domain.boxed.BoxSide.ALL);
+        leaning.grant(islandId, 1);
+        assertThat(leaning.offset(islandId)).isEqualTo(new com.uxplima.uxmskyblock.core.domain.boxed.BoxOffset(-1, -1));
+
+        chosen.put(islandId, com.uxplima.uxmskyblock.core.domain.boxed.BoxSide.WEST);
+        BoxedService again = new BoxedService(port, rules, new KeptOffsets(), new SidesKept());
+        again.prime();
+        assertThat(again.side(islandId))
+                .describedAs("read back at the start")
+                .isEqualTo(com.uxplima.uxmskyblock.core.domain.boxed.BoxSide.WEST);
+        islands.remove(islandId);
+        chosen.put(islandId, com.uxplima.uxmskyblock.core.domain.boxed.BoxSide.EAST);
+        BoxedService gone = new BoxedService(port, rules, new KeptOffsets(), new SidesKept());
+        gone.prime();
+        gone.forget(islandId);
+        assertThat(gone.side(islandId)).isEqualTo(com.uxplima.uxmskyblock.core.domain.boxed.BoxSide.ALL);
+    }
+
+    @Test
+    @DisplayName("A side is named by its word, with a dash or an underscore, and steps the way it says")
+    void sides() {
+        assertThat(com.uxplima.uxmskyblock.core.domain.boxed.BoxSide.named(" North-East "))
+                .hasValue(com.uxplima.uxmskyblock.core.domain.boxed.BoxSide.NORTH_EAST);
+        assertThat(com.uxplima.uxmskyblock.core.domain.boxed.BoxSide.named("up"))
+                .isEmpty();
+        assertThat(com.uxplima.uxmskyblock.core.domain.boxed.BoxSide.SOUTH_WEST.word())
+                .isEqualTo("south_west");
+        assertThat(com.uxplima.uxmskyblock.core.domain.boxed.BoxSide.NORTH.stepZ())
+                .isEqualTo(-1);
+        assertThat(com.uxplima.uxmskyblock.core.domain.boxed.BoxSide.EAST.stepX())
+                .isEqualTo(1);
+        assertThat(com.uxplima.uxmskyblock.core.domain.boxed.BoxSide.SOUTH_WEST.stepX())
+                .isEqualTo(-1);
+        assertThat(com.uxplima.uxmskyblock.core.domain.boxed.BoxSide.SOUTH_WEST.stepZ())
+                .isEqualTo(1);
+    }
+
+    private final Map<IslandId, com.uxplima.uxmskyblock.core.domain.boxed.BoxOffset> moved = new HashMap<>();
+
+    /** The moved boxes, as a table keeps them. */
+    private final class KeptOffsets implements BoxOffsetsPort {
+        @Override
+        public Map<IslandId, com.uxplima.uxmskyblock.core.domain.boxed.BoxOffset> findAll() {
+            return Map.copyOf(moved);
+        }
+
+        @Override
+        public void move(IslandId id, com.uxplima.uxmskyblock.core.domain.boxed.BoxOffset offset) {
+            moved.put(id, offset);
+        }
     }
 }

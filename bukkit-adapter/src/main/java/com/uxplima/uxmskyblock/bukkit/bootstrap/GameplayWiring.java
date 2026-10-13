@@ -355,7 +355,9 @@ public final class GameplayWiring {
                     protectionListener
                             .spatialIndex()
                             .indexIsland(moved.island(), moved.location().worldName());
-                    redrawTheEdgeFor(moved);
+                    // A Boxed island's border is its box, which BoxedBorders draws; its square, wider than the box
+                    // once a pearl or a side moved it, is not shown, only its walls kept.
+                    moveTheWalls(moved);
                 }));
         this.membershipService.whenMembersChanged(islandId -> {
             if (this.strangerRealmsWiring.service().isStranger(islandId)) {
@@ -819,6 +821,11 @@ public final class GameplayWiring {
         var unused = new com.uxplima.uxmskyblock.bukkit.boundary.IslandEdgeRedraw(
                         environmentWiring.boundaryService(), GameplayWiring::whereTheyStand)
                 .show(moved);
+        moveTheWalls(moved);
+    }
+
+    /** Moves the walls drawn along an island's edge to where its edge moved. */
+    private void moveTheWalls(IslandBorderService.Moved moved) {
         var after = moved.location().bounds();
         islandEdgeWalls.moved(
                 moved.island().id(),

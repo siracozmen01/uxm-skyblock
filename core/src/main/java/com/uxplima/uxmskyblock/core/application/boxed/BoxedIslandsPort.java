@@ -31,4 +31,13 @@ public interface BoxedIslandsPort {
 
     /** Adds {@code blocks} to the operator's row of the island, or takes them when negative, making the row if absent. */
     void grant(IslandId islandId, long blocks);
+
+    /**
+     * The rows growth bought is kept under, among the advancements, one for each purchase, numbered from 1, so every
+     * reader that sums what an island earned counts them. No advancement of the game is in this namespace.
+     */
+    String BOUGHT = "uxmskyblock:bought/";
+
+    /** How many times the island bought growth: its rows under {@link #BOUGHT}. */
+    long bought(IslandId islandId);
 }

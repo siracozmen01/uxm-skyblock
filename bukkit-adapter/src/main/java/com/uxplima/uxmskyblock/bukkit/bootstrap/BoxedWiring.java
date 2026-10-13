@@ -36,6 +36,8 @@ public final class BoxedWiring implements AutoCloseable {
     private final BoxedService service;
     private final SchedulerPort scheduler;
     private final BoxedListener listener;
+    private final Function<ProfileId, Optional<IslandId>> islandOf;
+    private final com.uxplima.uxmskyblock.bukkit.effect.InteractionEffects effects;
     private volatile Consumer<IslandId> boxChanged = islandId -> {};
     private @Nullable AutoCloseable borders;
     private final com.uxplima.uxmskyblock.bukkit.boxed.BoxedLandCopier land;
@@ -48,7 +50,11 @@ public final class BoxedWiring implements AutoCloseable {
             Function<UUID, Optional<ProfileId>> activeProfile) {
         this.config = Objects.requireNonNull(configuration.boxedConfig(), "boxedConfig must not be null");
         this.scheduler = Objects.requireNonNull(scheduler, "scheduler must not be null");
-        this.service = new BoxedService(persistence.boxedIslandsPort(), config.rules(), persistence.boxOffsetsPort());
+        this.service = new BoxedService(
+                persistence.boxedIslandsPort(),
+                config.rules(),
+                persistence.boxOffsetsPort(),
+                persistence.boxSidesPort());
         String islandWorld = configuration.nodeConfig().worldName();
         Set<String> boxedWorlds = configuration.presetConfig().presets().stream()
                 .filter(preset -> preset.mode() == GameModeType.BOXED)
@@ -62,6 +68,8 @@ public final class BoxedWiring implements AutoCloseable {
                 scheduler,
                 config.land(),
                 () -> persistence.gridAllocator().gridSpacing());
+        this.islandOf = persistence.islandStoragePort()::findIslandIdByProfileId;
+        this.effects = configuration.effectsConfig();
         this.listener = new BoxedListener(
                 service,
                 islands,
@@ -107,6 +115,26 @@ public final class BoxedWiring implements AutoCloseable {
     /** Lets go of the land copying for an island that is gone. */
     public void forgetLand(IslandId islandId) {
         land.forget(islandId);
+    }
+
+    /** The shop where an island buys growth and chooses the side its box grows toward. */
+    public com.uxplima.uxmskyblock.bukkit.boxed.BoxedShop shop(
+            com.uxplima.uxmskyblock.bukkit.requirement.LinePayment payment,
+            Function<UUID, Optional<ProfileId>> activeProfile,
+            Function<IslandId, Optional<com.uxplima.uxmskyblock.core.domain.island.Island>> islands,
+            com.uxplima.uxmskyblock.bukkit.i18n.Messages messages) {
+        return new com.uxplima.uxmskyblock.bukkit.boxed.BoxedShop(
+                service,
+                config.buy(),
+                payment,
+                activeProfile,
+                islandOf,
+                islands,
+                this::boxChanged,
+                scheduler,
+                messages,
+                new InteractionEffectPlayer(scheduler, messages),
+                effects);
     }
 
     /** What an operator's change to a box asks for: the island's edge moved to it. */

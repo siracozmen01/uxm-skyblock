@@ -269,28 +269,29 @@ final class IslandCommandWiring {
         var oneBlockPanel = gameplay.oneBlockWiring().panel(integration.menuEngine());
         // A phase's requirement lines, asked of the breaker's purse, the island's bank and its level.
         var bridge = integration.economyBridge();
+        var purse = new com.uxplima.uxmskyblock.bukkit.chunkblock.PlayerChunkPurse(
+                new com.uxplima.uxmskyblock.bukkit.chunkblock.PlayerChunkPurse.Money() {
+                    @Override
+                    public double balance(org.bukkit.entity.Player player) {
+                        return bridge.balance(player);
+                    }
+
+                    @Override
+                    public boolean withdraw(org.bukkit.entity.Player player, double amount) {
+                        return bridge.withdrawWallet(player, amount);
+                    }
+
+                    @Override
+                    public boolean deposit(org.bukkit.entity.Player player, double amount) {
+                        return bridge.depositWallet(player, amount);
+                    }
+                },
+                id -> bridge.wallets().flatMap(wallets -> wallets.currency(id)));
         gameplay.oneBlockWiring()
                 .useGates(
                         gameplay.scheduler(),
                         integration.messages(),
-                        new com.uxplima.uxmskyblock.bukkit.chunkblock.PlayerChunkPurse(
-                                new com.uxplima.uxmskyblock.bukkit.chunkblock.PlayerChunkPurse.Money() {
-                                    @Override
-                                    public double balance(org.bukkit.entity.Player player) {
-                                        return bridge.balance(player);
-                                    }
-
-                                    @Override
-                                    public boolean withdraw(org.bukkit.entity.Player player, double amount) {
-                                        return bridge.withdrawWallet(player, amount);
-                                    }
-
-                                    @Override
-                                    public boolean deposit(org.bukkit.entity.Player player, double amount) {
-                                        return bridge.depositWallet(player, amount);
-                                    }
-                                },
-                                id -> bridge.wallets().flatMap(wallets -> wallets.currency(id))),
+                        purse,
                         persistence.islandBankPort(),
                         gameplay.bankService(),
                         gameplay.accessService(),
@@ -363,6 +364,29 @@ final class IslandCommandWiring {
             gameplay.tradeWindsWiring().contracts().useMenuEngine(integration.menuEngine());
             tree.useContracts(gameplay.tradeWindsWiring().contracts());
             tree.useBoarding(gameplay.tradeWindsWiring().boarding());
+        }
+        if (gameplay.boxedWiring().enabled()) {
+            // Growth a Boxed island buys, paid as a OneBlock phase's lines are, and the side its box grows toward.
+            tree.useBoxedShop(gameplay.boxedWiring()
+                    .shop(
+                            new com.uxplima.uxmskyblock.bukkit.requirement.LinePayment(
+                                    gameplay.scheduler(),
+                                    purse,
+                                    new com.uxplima.uxmskyblock.bukkit.requirement.BankFunds(
+                                            persistence.islandBankPort(),
+                                            gameplay.bankService(),
+                                            gameplay.accessService(),
+                                            authority.sessionCoordinator()::activeProfile,
+                                            config.nodeConfig().nodeId(),
+                                            "Boxed growth"),
+                                    (island, player) -> authority
+                                            .sessionCoordinator()
+                                            .activeProfile(player.getUniqueId())
+                                            .map(profile -> levelOf(gameplay, island.id(), profile))
+                                            .orElse(0L)),
+                            authority.sessionCoordinator()::activeProfile,
+                            persistence.islandStoragePort()::findIslandById,
+                            integration.messages()));
         }
         if (gameplay.tradeWiring().enabled()) {
             tree.useTrades(gameplay.tradeWiring().trades());
