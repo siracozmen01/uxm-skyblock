@@ -19,7 +19,9 @@ import org.jspecify.annotations.Nullable;
  * The border of the StrangerRealms land: wide enough to hold the furthest StrangerRealms island with
  * room around it, growing as islands are made anywhere on the network.
  *
- * <p>How far the islands reach is read off the database on the scheduler, which every server shares,
+ * <p>With a width for each player, the border also widens as players come onto the network, and narrows as they
+ * leave, never below what holds the islands. How far the islands reach, and how many players are on, is read off the
+ * database on the scheduler, which every server shares,
  * and the border is moved on the global thread, which owns it.
  */
 public final class RealmBorders {
@@ -31,6 +33,7 @@ public final class RealmBorders {
     private final StrangerRealmsConfiguration.Border config;
     private final Supplier<List<String>> worlds;
     private final Function<String, @Nullable World> worldNamed;
+    private final java.util.function.IntSupplier playersOnline;
 
     /** @param worlds the worlds the border is set in */
     public RealmBorders(
@@ -38,7 +41,9 @@ public final class RealmBorders {
             SchedulerPort scheduler,
             StrangerRealmsConfiguration.Border config,
             Supplier<List<String>> worlds,
-            Function<String, @Nullable World> worldNamed) {
+            Function<String, @Nullable World> worldNamed,
+            java.util.function.IntSupplier playersOnline) {
+        this.playersOnline = Objects.requireNonNull(playersOnline, "playersOnline must not be null");
         this.service = Objects.requireNonNull(service, "service must not be null");
         this.scheduler = Objects.requireNonNull(scheduler, "scheduler must not be null");
         this.config = Objects.requireNonNull(config, "config must not be null");
@@ -56,7 +61,8 @@ public final class RealmBorders {
         scheduler.async(() -> {
             double size;
             try {
-                size = config.rule().size(service.farthestReach());
+                int players = config.rule().byPlayers() ? playersOnline.getAsInt() : 0;
+                size = config.rule().size(service.farthestReach(), players);
             } catch (RuntimeException e) {
                 LOGGER.log(Level.WARNING, "How far the StrangerRealms islands reach could not be read.", e);
                 return;

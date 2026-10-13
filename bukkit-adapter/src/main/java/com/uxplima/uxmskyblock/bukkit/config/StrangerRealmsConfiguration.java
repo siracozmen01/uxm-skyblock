@@ -348,7 +348,8 @@ public record StrangerRealmsConfiguration(
                     new com.uxplima.uxmskyblock.core.domain.stranger.RealmBorder(
                             node.node("margin").getInt(rule.margin()),
                             node.node("minimum").getInt(rule.minimum()),
-                            node.node("maximum").getInt(rule.maximum())),
+                            node.node("maximum").getInt(rule.maximum()),
+                            node.node("per-player").getInt(rule.perPlayer())),
                     AcidIslandConfiguration.durationOf(node.node("transition").getString(""), shipped.transition()),
                     AcidIslandConfiguration.strings(node.node("worlds"), shipped.worlds()));
         } catch (IllegalArgumentException e) {

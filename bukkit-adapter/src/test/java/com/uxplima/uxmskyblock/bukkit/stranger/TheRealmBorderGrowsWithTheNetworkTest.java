@@ -48,10 +48,13 @@ class TheRealmBorderGrowsWithTheNetworkTest {
     @SuppressWarnings("NullAway.Init")
     private RealmBorders borders;
 
+    @SuppressWarnings("NullAway.Init")
+    private StrangerRealmsService service;
+
     @BeforeEach
     void setUpBorder() {
         stranger.add(IslandId.of(UUID.randomUUID()));
-        StrangerRealmsService service = new StrangerRealmsService(new StrangerRealmsPort() {
+        service = new StrangerRealmsService(new StrangerRealmsPort() {
             @Override
             public Set<IslandId> findAll() {
                 return Set.copyOf(stranger);
@@ -103,8 +106,15 @@ class TheRealmBorderGrowsWithTheNetworkTest {
                         Duration.ofSeconds(10),
                         List.of()),
                 () -> List.of("realms", "not_loaded"),
-                name -> name.equals("realms") ? realms : null);
+                name -> name.equals("realms") ? realms : null,
+                () -> {
+                    asked++;
+                    return players;
+                });
     }
+
+    private int players;
+    private int asked;
 
     @Test
     @DisplayName("The border is centred on the grid and grows to hold the furthest island, over the transition")
@@ -113,6 +123,68 @@ class TheRealmBorderGrowsWithTheNetworkTest {
 
         verify(border).setCenter(16, -16);
         verify(border).changeSize(10_440, 200);
+    }
+
+    @Test
+    @DisplayName(
+            "By players, the border widens for each player on the network and narrows as they leave, never below the islands")
+    void byPlayers() {
+        RealmBorders byPlayers = new RealmBorders(
+                service,
+                scheduler,
+                new StrangerRealmsConfiguration.Border(
+                        true,
+                        Duration.ofMinutes(1),
+                        16,
+                        -16,
+                        new RealmBorder(100, 500, 12_000, 200),
+                        Duration.ofSeconds(10),
+                        List.of()),
+                () -> List.of("realms"),
+                name -> name.equals("realms") ? realms : null,
+                () -> players);
+        players = 3;
+        byPlayers.round();
+        verify(border).changeSize(11_040, 200);
+
+        players = 0;
+        byPlayers.round();
+        verify(border).changeSize(10_440, 200);
+
+        players = 50;
+        byPlayers.round();
+        verify(border).changeSize(12_000, 200);
+    }
+
+    @Test
+    @DisplayName("The width for each player is read from the file, none as shipped")
+    void perPlayerIsRead() throws Exception {
+        assertThat(StrangerRealmsConfiguration.load(
+                                org.spongepowered.configurate.hocon.HoconConfigurationLoader.builder()
+                                        .buildAndLoadString("border { per-player = 64 }"))
+                        .border()
+                        .rule()
+                        .perPlayer())
+                .isEqualTo(64);
+        assertThat(StrangerRealmsConfiguration.load(
+                                org.spongepowered.configurate.hocon.HoconConfigurationLoader.builder()
+                                        .buildAndLoadString(new String(
+                                                TheRealmBorderGrowsWithTheNetworkTest.class
+                                                        .getResourceAsStream("/modules/strangerrealms.conf")
+                                                        .readAllBytes(),
+                                                java.nio.charset.StandardCharsets.UTF_8)))
+                        .border()
+                        .rule())
+                .isEqualTo(RealmBorder.SHIPPED);
+    }
+
+    @Test
+    @DisplayName("By islands alone, nobody is counted")
+    void byIslandsCountsNobody() {
+        players = 40;
+        borders.round();
+        verify(border).changeSize(10_440, 200);
+        assertThat(asked).isZero();
     }
 
     @Test

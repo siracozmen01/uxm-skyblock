@@ -155,6 +155,7 @@ public final class PersistenceBootstrap implements AutoCloseable {
     private final com.uxplima.uxmskyblock.persistence.boxed.SqlBoxSidesAdapter boxSidesAdapter;
     private final com.uxplima.uxmskyblock.persistence.poseidon.SqlPoseidonIslandsAdapter poseidonIslandsAdapter;
     private final com.uxplima.uxmskyblock.persistence.stranger.SqlStrangerRealmsAdapter strangerRealmsAdapter;
+    private final com.uxplima.uxmskyblock.persistence.session.SqlNetworkPresenceAdapter networkPresenceAdapter;
     private final com.uxplima.uxmskyblock.persistence.parkour.SqlParkourAdapter parkourAdapter;
     private final com.uxplima.uxmskyblock.persistence.leaderboard.SqlModeStandingsAdapter modeStandingsAdapter;
     private final com.uxplima.uxmskyblock.persistence.brix.SqlBrixPlotsAdapter brixPlotsAdapter;
@@ -259,6 +260,8 @@ public final class PersistenceBootstrap implements AutoCloseable {
                 new com.uxplima.uxmskyblock.persistence.poseidon.SqlPoseidonIslandsAdapter(database.dataSource());
         this.strangerRealmsAdapter =
                 new com.uxplima.uxmskyblock.persistence.stranger.SqlStrangerRealmsAdapter(database.dataSource());
+        this.networkPresenceAdapter =
+                new com.uxplima.uxmskyblock.persistence.session.SqlNetworkPresenceAdapter(database.dataSource());
         this.parkourAdapter = new com.uxplima.uxmskyblock.persistence.parkour.SqlParkourAdapter(database.dataSource());
         this.modeStandingsAdapter =
                 new com.uxplima.uxmskyblock.persistence.leaderboard.SqlModeStandingsAdapter(database.dataSource());
@@ -516,6 +519,11 @@ public final class PersistenceBootstrap implements AutoCloseable {
     /** Which islands are Poseidon islands. */
     public com.uxplima.uxmskyblock.core.application.poseidon.PoseidonIslandsPort poseidonIslandsPort() {
         return poseidonIslandsAdapter;
+    }
+
+    /** How many players are on the network. */
+    public com.uxplima.uxmskyblock.core.application.session.NetworkPresencePort networkPresencePort() {
+        return networkPresenceAdapter;
     }
 
     public com.uxplima.uxmskyblock.core.application.stranger.StrangerRealmsPort strangerRealmsPort() {

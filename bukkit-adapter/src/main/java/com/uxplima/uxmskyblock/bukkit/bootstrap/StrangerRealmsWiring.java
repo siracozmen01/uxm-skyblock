@@ -83,7 +83,12 @@ public final class StrangerRealmsWiring implements AutoCloseable {
         if (config.enabled() && config.border().enabled()) {
             java.util.List<String> bordered = borderedWorlds(configuration);
             this.borderBeat = new com.uxplima.uxmskyblock.bukkit.stranger.RealmBorders(
-                            service, scheduler, config.border(), () -> bordered, org.bukkit.Bukkit::getWorld)
+                            service,
+                            scheduler,
+                            config.border(),
+                            () -> bordered,
+                            org.bukkit.Bukkit::getWorld,
+                            persistence.networkPresencePort()::online)
                     .start();
         }
         scheduler.async(() -> {
