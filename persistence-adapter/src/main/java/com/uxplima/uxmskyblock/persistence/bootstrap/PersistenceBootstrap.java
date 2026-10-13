@@ -139,6 +139,7 @@ public final class PersistenceBootstrap implements AutoCloseable {
             oneBlockContributionAdapter;
     private final com.uxplima.uxmskyblock.persistence.tradewinds.SqlMarketPricesAdapter marketPricesAdapter;
     private final com.uxplima.uxmskyblock.persistence.tradewinds.SqlContractsAdapter contractsAdapter;
+    private final com.uxplima.uxmskyblock.persistence.tradewinds.SqlVoyageEventsAdapter voyageEventsAdapter;
     private final com.uxplima.uxmskyblock.persistence.lifecycle.SqlLifecycleOwedEffectsAdapter
             lifecycleOwedEffectsAdapter;
     private final SqlNotificationAdapter notificationAdapter;
@@ -231,6 +232,7 @@ public final class PersistenceBootstrap implements AutoCloseable {
         this.marketPricesAdapter =
                 new com.uxplima.uxmskyblock.persistence.tradewinds.SqlMarketPricesAdapter(database.dataSource());
         this.contractsAdapter = new com.uxplima.uxmskyblock.persistence.tradewinds.SqlContractsAdapter(database);
+        this.voyageEventsAdapter = new com.uxplima.uxmskyblock.persistence.tradewinds.SqlVoyageEventsAdapter(database);
         this.lifecycleOwedEffectsAdapter =
                 new com.uxplima.uxmskyblock.persistence.lifecycle.SqlLifecycleOwedEffectsAdapter(database.dataSource());
         this.notificationAdapter = new SqlNotificationAdapter(database.dataSource());
@@ -617,6 +619,11 @@ public final class PersistenceBootstrap implements AutoCloseable {
     /** The contracts each TradeWinds vessel took. */
     public com.uxplima.uxmskyblock.core.application.tradewinds.ContractsPort contractsPort() {
         return contractsAdapter;
+    }
+
+    /** The events each TradeWinds voyage holds. */
+    public com.uxplima.uxmskyblock.core.application.tradewinds.VoyageEventsPort voyageEventsPort() {
+        return voyageEventsAdapter;
     }
 
     public NotificationStoragePort notificationStoragePort() {

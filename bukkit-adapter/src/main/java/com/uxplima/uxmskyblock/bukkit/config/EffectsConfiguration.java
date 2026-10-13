@@ -141,6 +141,16 @@ public final class EffectsConfiguration {
                 "vessel-contract-delivered",
                 parseAll("vessel-contract-delivered", List.of("[sound] entity.player.levelup 0.8 1.2")));
         defaults.put(
+                "vessel-storm", parseAll("vessel-storm", List.of("[sound] entity.lightning_bolt.thunder 0.6 1.0")));
+        defaults.put(
+                "vessel-pirates-toll", parseAll("vessel-pirates-toll", List.of("[sound] block.chain.break 1.0 0.8")));
+        defaults.put(
+                "vessel-pirates-boarded",
+                parseAll("vessel-pirates-boarded", List.of("[sound] event.raid.horn 1.0 1.0")));
+        defaults.put("vessel-find", parseAll("vessel-find", List.of("[sound] entity.player.levelup 0.6 1.6")));
+        defaults.put(
+                "vessel-find-lost", parseAll("vessel-find-lost", List.of("[sound] entity.generic.splash 1.0 1.0")));
+        defaults.put(
                 "vessel-contract-failed",
                 parseAll("vessel-contract-failed", List.of("[sound] block.note_block.bass 1.0 0.6")));
         defaults.put(

@@ -198,6 +198,23 @@ class TheCrewSailsAndTradesTest extends MockBukkitHarness {
                 .containsExactly("sailed " + SALTMARSH.id() + " 90");
     }
 
+    @Test
+    @DisplayName("A voyage begun rolls what the sea holds for it, and one refused rolls nothing")
+    void aVoyageRollsTheSea() {
+        SeaWatch sea = org.mockito.Mockito.mock(SeaWatch.class);
+        harbour.useSea(sea);
+        when(market.sail(vessel, SALTMARSH))
+                .thenReturn(Result.err("tradewinds.hold.elsewhere"))
+                .thenReturn(Result.ok(NOW.plusSeconds(90)));
+
+        harbour.setSail(ada, vessel, SALTMARSH);
+        verify(sea, never()).sailed(any(), any(), any(), any());
+        assertThat(said()).describedAs("the refusal is said as it is").contains("Another server");
+        harbour.setSail(ada, vessel, SALTMARSH);
+
+        verify(sea).sailed(vessel, SALTMARSH.id(), NOW, NOW.plusSeconds(90));
+    }
+
     /** Hands the harbour a {@code vessel-sailed} list that records what it says. */
     private List<String> listen() {
         List<String> fired = new ArrayList<>();

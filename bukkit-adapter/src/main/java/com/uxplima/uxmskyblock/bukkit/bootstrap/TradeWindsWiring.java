@@ -14,12 +14,14 @@ import com.uxplima.uxmskyblock.bukkit.tradewinds.Crew;
 import com.uxplima.uxmskyblock.bukkit.tradewinds.Harbour;
 import com.uxplima.uxmskyblock.bukkit.tradewinds.HoldGoods;
 import com.uxplima.uxmskyblock.bukkit.tradewinds.IslandBankMarket;
+import com.uxplima.uxmskyblock.bukkit.tradewinds.SeaWatch;
 import com.uxplima.uxmskyblock.bukkit.tradewinds.VesselStart;
 import com.uxplima.uxmskyblock.core.application.gamemode.CreationActionProvider;
 import com.uxplima.uxmskyblock.core.application.scheduler.SchedulerPort;
 import com.uxplima.uxmskyblock.core.application.tradewinds.CargoTransfer;
 import com.uxplima.uxmskyblock.core.application.tradewinds.ContractBoard;
 import com.uxplima.uxmskyblock.core.application.tradewinds.PortMarket;
+import com.uxplima.uxmskyblock.core.application.tradewinds.SeaHazards;
 import com.uxplima.uxmskyblock.core.application.tradewinds.VesselLease;
 import com.uxplima.uxmskyblock.core.application.tradewinds.VesselService;
 import com.uxplima.uxmskyblock.persistence.bootstrap.PersistenceBootstrap;
@@ -36,6 +38,8 @@ public final class TradeWindsWiring {
     private final PortMarket market;
     private final Harbour harbour;
     private final ContractDesk contracts;
+    private final SeaWatch sea;
+    private @org.jspecify.annotations.Nullable AutoCloseable watching;
     private @org.jspecify.annotations.Nullable AutoCloseable lateness;
     private @org.jspecify.annotations.Nullable AutoCloseable recovery;
     private final CargoHoldListener listener;
@@ -108,6 +112,33 @@ public final class TradeWindsWiring {
                 org.bukkit.Bukkit::getPlayer,
                 persistence.islandStoragePort()::findIslandById);
         contracts.useEffects(effectPlayer, configuration.effectsConfig());
+        this.sea = new SeaWatch(
+                new SeaHazards(
+                        persistence.voyageEventsPort(),
+                        market,
+                        persistence.voyagesPort(),
+                        persistence.vesselsPort(),
+                        lease,
+                        new IslandBankMarket(bank, persistence.islandAuthorityPort(), authority.serverNodeId(), clock),
+                        authority.serverNodeId(),
+                        clock,
+                        new java.util.SplittableRandom(),
+                        vessel -> persistence
+                                .islandStoragePort()
+                                .findIslandById(vessel)
+                                .map(com.uxplima.uxmskyblock.core.domain.island.Island::ownerPlayerUuid),
+                        config.voyageEvents().chances()),
+                config.voyageEvents(),
+                configuration::lootTables,
+                com.uxplima.uxmskyblock.bukkit.loot.LootFiller.SERVER,
+                scheduler,
+                configuration.messages(),
+                org.bukkit.Bukkit::getPlayer,
+                persistence.islandStoragePort()::findIslandById,
+                islands::findIslandAt,
+                new java.util.Random());
+        sea.useEffects(effectPlayer, configuration.effectsConfig());
+        harbour.useSea(sea);
         this.listener = new CargoHoldListener(holds);
         this.holdStill = new com.uxplima.uxmskyblock.bukkit.inventory.HoldStillListener(holds::moving);
         start();
@@ -175,6 +206,17 @@ public final class TradeWindsWiring {
                 },
                 java.time.Duration.ofSeconds(30),
                 java.time.Duration.ofMinutes(1));
+        // What a voyage holds happens within a few seconds of its moment.
+        watching = scheduler.repeatAsync(
+                () -> {
+                    try {
+                        sea.watch();
+                    } catch (RuntimeException e) {
+                        LOGGER.log(Level.WARNING, "The TradeWinds seas could not be watched now.", e);
+                    }
+                },
+                java.time.Duration.ofSeconds(5),
+                java.time.Duration.ofSeconds(5));
         // A contract not delivered in time fails within a quarter of a minute of its time running out.
         lateness = scheduler.repeatAsync(
                 () -> {
@@ -190,7 +232,7 @@ public final class TradeWindsWiring {
 
     /** Stops carrying orders on. */
     public void close() {
-        for (AutoCloseable running : new AutoCloseable[] {recovery, lateness}) {
+        for (AutoCloseable running : new AutoCloseable[] {recovery, lateness, watching}) {
             if (running != null) {
                 try {
                     running.close();
@@ -201,6 +243,7 @@ public final class TradeWindsWiring {
         }
         recovery = null;
         lateness = null;
+        watching = null;
     }
 
     /** The cargo holds of vessels. */

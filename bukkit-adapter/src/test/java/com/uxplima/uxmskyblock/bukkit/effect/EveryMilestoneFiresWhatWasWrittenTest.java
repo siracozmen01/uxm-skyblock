@@ -120,6 +120,11 @@ class EveryMilestoneFiresWhatWasWrittenTest {
                         "vessel-contract-taken",
                         "vessel-contract-delivered",
                         "vessel-contract-failed",
+                        "vessel-storm",
+                        "vessel-pirates-toll",
+                        "vessel-pirates-boarded",
+                        "vessel-find",
+                        "vessel-find-lost",
                         "upside-down-mirrored"));
     }
 

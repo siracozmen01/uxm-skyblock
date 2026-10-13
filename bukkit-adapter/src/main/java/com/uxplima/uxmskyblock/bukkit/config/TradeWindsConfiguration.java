@@ -29,6 +29,7 @@ import org.spongepowered.configurate.ConfigurationNode;
  * @param standing how a vessel's standing in a port moves its prices there
  * @param drift how a port's trade moves its prices, for every vessel alike
  * @param contracts the deliveries the ports offer
+ * @param voyageEvents what may happen to a vessel at sea
  */
 public record TradeWindsConfiguration(
         boolean enabled,
@@ -38,7 +39,8 @@ public record TradeWindsConfiguration(
         Map<String, String> icons,
         Standing standing,
         PriceDrift drift,
-        TradeWindsContracts contracts) {
+        TradeWindsContracts contracts,
+        TradeWindsVoyageEvents voyageEvents) {
 
     /**
      * The drift a file that writes none has: a tenth of a percent for each item, from half to one and a half the
@@ -114,6 +116,7 @@ public record TradeWindsConfiguration(
         Objects.requireNonNull(standing, "standing must not be null");
         Objects.requireNonNull(drift, "drift must not be null");
         Objects.requireNonNull(contracts, "contracts must not be null");
+        Objects.requireNonNull(voyageEvents, "voyageEvents must not be null");
         Objects.requireNonNull(ranks, "ranks must not be null");
         ports = List.copyOf(ports);
         icons = Map.copyOf(icons);
@@ -166,7 +169,8 @@ public record TradeWindsConfiguration(
                 SHIPPED_ICONS,
                 SHIPPED_STANDING,
                 SHIPPED_DRIFT,
-                SHIPPED_CONTRACTS);
+                SHIPPED_CONTRACTS,
+                TradeWindsVoyageEvents.SHIPPED);
     }
 
     public static TradeWindsConfiguration load(ConfigurationNode root) {
@@ -193,7 +197,8 @@ public record TradeWindsConfiguration(
                 drift(root.node("market-drift")),
                 root.node("ports").virtual()
                         ? SHIPPED_CONTRACTS
-                        : TradeWindsContracts.read(root.node("ports"), root.node("contracts-at-once"), ports));
+                        : TradeWindsContracts.read(root.node("ports"), root.node("contracts-at-once"), ports),
+                TradeWindsVoyageEvents.read(root.node("voyage-events")));
     }
 
     /**

@@ -67,6 +67,20 @@ public final class HoldGoods implements PortMarket.Goods {
                 : Optional.empty();
     }
 
+    /**
+     * The hold of {@code slots} slots with every one of {@code found} stowed, or empty when they do not all fit: a
+     * find goes into the hold whole or not at all.
+     */
+    public static Optional<byte[]> stowAll(byte[] hold, int slots, java.util.List<ItemStack> found) {
+        ItemStack[] stacks = read(hold, slots);
+        for (ItemStack item : found) {
+            if (!CargoHolds.stow(stacks, item.clone())) {
+                return Optional.empty();
+            }
+        }
+        return Optional.of(BukkitInventorySerializer.serializeItemStacks(stacks));
+    }
+
     /** The hold's stacks, at least {@code slots} of them. */
     private static ItemStack[] read(byte[] hold, int slots) {
         ItemStack[] items = hold.length == 0 ? new ItemStack[0] : BukkitInventorySerializer.deserializeItemStacks(hold);

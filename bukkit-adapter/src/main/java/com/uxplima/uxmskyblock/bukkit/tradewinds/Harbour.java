@@ -69,6 +69,7 @@ public final class Harbour {
     private volatile @Nullable SkyblockMenuEngine menuEngine;
     private volatile @Nullable InteractionEffectPlayer effectPlayer;
     private volatile InteractionEffects effects = InteractionEffects.none();
+    private volatile @Nullable SeaWatch sea;
 
     /** The menu files that draw the ports and the market, and the lists they draw them from. */
     static final String SAIL_FILE = "tradewinds-sail";
@@ -210,6 +211,11 @@ public final class Harbour {
         return facts.toString();
     }
 
+    /** Hands the harbour what rolls the events of a voyage as it begins. Without it the sea holds nothing. */
+    public void useSea(@Nullable SeaWatch watch) {
+        this.sea = watch;
+    }
+
     /** Draws a native form for a Bedrock player, while the server has Floodgate. */
     public void useForms(@Nullable BedrockFormService forms) {
         this.forms = forms;
@@ -339,33 +345,44 @@ public final class Harbour {
             messages.send(player, still.errorOrThrow());
             return;
         }
-        off(player, () -> market.sail(vessel, port), sailed -> {
-            if (!sailed.isOk()) {
-                messages.send(player, sailed.errorOrThrow(), name(player, port));
-                return;
-            }
-            Instant arrives = sailed.orElseThrow();
-            messages.send(
-                    player,
-                    "tradewinds.sail.sailed",
-                    name(player, port),
-                    Placeholder.unparsed("time", time(player, arrives)));
-            InteractionEffectPlayer fires = effectPlayer;
-            if (fires != null) {
-                fires.fire(
-                        effects,
-                        "vessel-sailed",
-                        player,
-                        Map.of(
-                                "port",
-                                port.id(),
-                                "seconds",
-                                Long.toString(Math.max(
-                                        0,
-                                        Duration.between(clock.instant(), arrives)
-                                                .toSeconds()))));
-            }
-        });
+        off(
+                player,
+                () -> {
+                    Instant setOut = clock.instant();
+                    Result<Instant, String> sailing = market.sail(vessel, port);
+                    SeaWatch watch = sea;
+                    if (sailing.isOk() && watch != null) {
+                        watch.sailed(vessel, port.id(), setOut, sailing.orElseThrow());
+                    }
+                    return sailing;
+                },
+                sailed -> {
+                    if (!sailed.isOk()) {
+                        messages.send(player, sailed.errorOrThrow(), name(player, port));
+                        return;
+                    }
+                    Instant arrives = sailed.orElseThrow();
+                    messages.send(
+                            player,
+                            "tradewinds.sail.sailed",
+                            name(player, port),
+                            Placeholder.unparsed("time", time(player, arrives)));
+                    InteractionEffectPlayer fires = effectPlayer;
+                    if (fires != null) {
+                        fires.fire(
+                                effects,
+                                "vessel-sailed",
+                                player,
+                                Map.of(
+                                        "port",
+                                        port.id(),
+                                        "seconds",
+                                        Long.toString(Math.max(
+                                                0,
+                                                Duration.between(clock.instant(), arrives)
+                                                        .toSeconds()))));
+                    }
+                });
     }
 
     private void openMarket(Player player, IslandId vessel, Stall stall) {
