@@ -33,6 +33,7 @@ import org.spongepowered.configurate.ConfigurationNode;
  * @param voyageEvents what may happen to a vessel at sea
  * @param contraband the goods only some ports take, and the customs of the rest
  * @param demand the goods each port wants more of each day
+ * @param piracy whether crews may plunder each other at sea
  */
 public record TradeWindsConfiguration(
         boolean enabled,
@@ -45,7 +46,8 @@ public record TradeWindsConfiguration(
         TradeWindsContracts contracts,
         TradeWindsVoyageEvents voyageEvents,
         TradeWindsContraband contraband,
-        DailyDemand demand) {
+        DailyDemand demand,
+        TradeWindsPiracy piracy) {
 
     /**
      * The drift a file that writes none has: a tenth of a percent for each item, from half to one and a half the
@@ -161,6 +163,7 @@ public record TradeWindsConfiguration(
         Objects.requireNonNull(voyageEvents, "voyageEvents must not be null");
         Objects.requireNonNull(contraband, "contraband must not be null");
         Objects.requireNonNull(demand, "demand must not be null");
+        Objects.requireNonNull(piracy, "piracy must not be null");
         Objects.requireNonNull(ranks, "ranks must not be null");
         ports = List.copyOf(ports);
         icons = Map.copyOf(icons);
@@ -216,7 +219,8 @@ public record TradeWindsConfiguration(
                 SHIPPED_CONTRACTS,
                 TradeWindsVoyageEvents.SHIPPED,
                 SHIPPED_CONTRABAND,
-                SHIPPED_DEMAND);
+                SHIPPED_DEMAND,
+                TradeWindsPiracy.SHIPPED);
     }
 
     public static TradeWindsConfiguration load(ConfigurationNode root) {
@@ -250,7 +254,8 @@ public record TradeWindsConfiguration(
                         : TradeWindsContracts.read(root.node("ports"), root.node("contracts-at-once"), ports),
                 TradeWindsVoyageEvents.read(root.node("voyage-events")),
                 contraband,
-                demand(root.node("daily-demand")));
+                demand(root.node("daily-demand")),
+                TradeWindsPiracy.read(root.node("piracy")));
     }
 
     /**

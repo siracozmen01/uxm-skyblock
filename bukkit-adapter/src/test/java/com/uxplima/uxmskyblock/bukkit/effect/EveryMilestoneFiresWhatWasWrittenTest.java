@@ -127,6 +127,8 @@ class EveryMilestoneFiresWhatWasWrittenTest {
                         "vessel-find-lost",
                         "vessel-customs-seized",
                         "vessel-customs-cleared",
+                        "vessel-plunder",
+                        "vessel-plundered",
                         "upside-down-mirrored"));
     }
 

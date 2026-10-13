@@ -7,6 +7,7 @@ import java.util.logging.Logger;
 
 import com.uxplima.uxmskyblock.bukkit.config.TradeWindsConfiguration;
 import com.uxplima.uxmskyblock.bukkit.schematic.IslandStart;
+import com.uxplima.uxmskyblock.bukkit.tradewinds.Boarding;
 import com.uxplima.uxmskyblock.bukkit.tradewinds.CargoHoldListener;
 import com.uxplima.uxmskyblock.bukkit.tradewinds.CargoHolds;
 import com.uxplima.uxmskyblock.bukkit.tradewinds.ContractDesk;
@@ -39,6 +40,7 @@ public final class TradeWindsWiring {
     private final Harbour harbour;
     private final ContractDesk contracts;
     private final SeaWatch sea;
+    private final Boarding boarding;
     private @org.jspecify.annotations.Nullable AutoCloseable watching;
     private @org.jspecify.annotations.Nullable AutoCloseable lateness;
     private @org.jspecify.annotations.Nullable AutoCloseable recovery;
@@ -143,6 +145,27 @@ public final class TradeWindsWiring {
                 islands::findIslandAt,
                 new java.util.Random());
         sea.useEffects(effectPlayer, configuration.effectsConfig());
+        this.boarding = new Boarding(
+                new com.uxplima.uxmskyblock.core.application.tradewinds.Piracy(
+                        persistence.plunderPort(),
+                        market,
+                        persistence.vesselsPort(),
+                        lease,
+                        authority.serverNodeId(),
+                        clock,
+                        config.piracy().cooldown()),
+                config.piracy(),
+                service,
+                islands::findIslandAt,
+                persistence.islandStoragePort()::findIslandIdByProfileId,
+                persistence.islandStoragePort()::findIslandById,
+                sessions(coordinator),
+                org.bukkit.Bukkit::getPlayer,
+                uuid -> java.util.Objects.requireNonNullElse(
+                        org.bukkit.Bukkit.getOfflinePlayer(uuid).getName(), uuid.toString()),
+                scheduler,
+                configuration.messages());
+        boarding.useEffects(effectPlayer, configuration.effectsConfig());
         harbour.useSea(sea);
         this.listener = new CargoHoldListener(holds);
         this.holdStill = new com.uxplima.uxmskyblock.bukkit.inventory.HoldStillListener(holds::moving);
@@ -183,6 +206,11 @@ public final class TradeWindsWiring {
     /** Voyages and trade, as the crew asks for them. */
     public Harbour harbour() {
         return harbour;
+    }
+
+    /** Crews plundering each other at sea, while the operator lets them. */
+    public Boarding boarding() {
+        return boarding;
     }
 
     /** The contracts the ports offer, as the crew takes and delivers them. */

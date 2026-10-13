@@ -192,7 +192,8 @@ class ZeroFootprintModuleWiringTest {
                         shipped.contracts(),
                         shipped.voyageEvents(),
                         shipped.contraband(),
-                        shipped.demand()));
+                        shipped.demand(),
+                        shipped.piracy()));
         try (PersistenceWiring persistenceWiring = PersistenceWiring.resolve(null, tempDir)) {
             PersistenceBootstrap persistence = persistenceWiring.bootstrap();
             AuthorityWiring authority = mock(AuthorityWiring.class);

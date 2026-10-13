@@ -120,6 +120,23 @@ class TheCargoBranchOpensTheHoldTest {
         verify(desk).open(player);
     }
 
+    @Test
+    @DisplayName("The plunder branch boards, and says so when TradeWinds is off")
+    void thePlunderBranch() throws Exception {
+        com.uxplima.uxmskyblock.bukkit.tradewinds.Boarding boarding =
+                mock(com.uxplima.uxmskyblock.bukkit.tradewinds.Boarding.class);
+        tree.useBoarding(boarding);
+
+        dispatcher().execute("island plunder", source());
+
+        verify(boarding).plunder(player);
+
+        tree.useBoarding(null);
+        dispatcher().execute("island plunder", source());
+        verify(player).sendMessage(any(Component.class));
+        verify(boarding).plunder(player);
+    }
+
     private CommandDispatcher<CommandSourceStack> dispatcher() {
         CommandDispatcher<CommandSourceStack> dispatcher = new CommandDispatcher<>();
         dispatcher.register(tree.buildRoot());

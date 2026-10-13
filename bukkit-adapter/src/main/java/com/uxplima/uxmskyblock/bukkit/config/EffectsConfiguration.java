@@ -151,6 +151,10 @@ public final class EffectsConfiguration {
         defaults.put(
                 "vessel-find-lost", parseAll("vessel-find-lost", List.of("[sound] entity.generic.splash 1.0 1.0")));
         defaults.put(
+                "vessel-plunder", parseAll("vessel-plunder", List.of("[sound] entity.pillager.celebrate 1.0 1.0")));
+        defaults.put(
+                "vessel-plundered", parseAll("vessel-plundered", List.of("[sound] entity.pillager.ambient 1.0 0.8")));
+        defaults.put(
                 "vessel-customs-seized",
                 parseAll("vessel-customs-seized", List.of("[sound] block.iron_door.close 1.0 0.7")));
         defaults.put(

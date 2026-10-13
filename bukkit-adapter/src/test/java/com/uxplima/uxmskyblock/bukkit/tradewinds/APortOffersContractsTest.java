@@ -352,7 +352,8 @@ class APortOffersContractsTest extends MockBukkitHarness {
                             3),
                     config.voyageEvents(),
                     config.contraband(),
-                    config.demand());
+                    config.demand(),
+                    config.piracy());
             desk = new ContractDesk(
                     board,
                     mock(PortMarket.class),

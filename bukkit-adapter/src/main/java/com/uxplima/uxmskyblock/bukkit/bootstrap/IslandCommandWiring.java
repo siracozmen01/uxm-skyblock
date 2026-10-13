@@ -362,6 +362,7 @@ final class IslandCommandWiring {
             tree.useHarbour(gameplay.tradeWindsWiring().harbour());
             gameplay.tradeWindsWiring().contracts().useMenuEngine(integration.menuEngine());
             tree.useContracts(gameplay.tradeWindsWiring().contracts());
+            tree.useBoarding(gameplay.tradeWindsWiring().boarding());
         }
         if (gameplay.tradeWiring().enabled()) {
             tree.useTrades(gameplay.tradeWiring().trades());

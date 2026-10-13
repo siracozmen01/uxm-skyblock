@@ -352,10 +352,16 @@ public final class IslandCommandTree {
     private com.uxplima.uxmskyblock.bukkit.tradewinds.@Nullable CargoHolds cargoHolds;
     private com.uxplima.uxmskyblock.bukkit.tradewinds.@Nullable Harbour harbour;
     private com.uxplima.uxmskyblock.bukkit.tradewinds.@Nullable ContractDesk contracts;
+    private com.uxplima.uxmskyblock.bukkit.tradewinds.@Nullable Boarding boarding;
 
     /** What {@code /is sail} and {@code /is market} open, while the operator lets islands be vessels. */
     public void useHarbour(com.uxplima.uxmskyblock.bukkit.tradewinds.@Nullable Harbour harbour) {
         this.harbour = harbour;
+    }
+
+    /** What {@code /is plunder} does, while the operator lets islands be vessels. */
+    public void useBoarding(com.uxplima.uxmskyblock.bukkit.tradewinds.@Nullable Boarding boarding) {
+        this.boarding = boarding;
     }
 
     /** What {@code /is contracts} opens, while the operator lets islands be vessels. */
@@ -752,6 +758,7 @@ public final class IslandCommandTree {
                 .then(Cmd.literal("sail").executes(ctx -> executeHarbour(ctx, true)))
                 .then(Cmd.literal("market").executes(ctx -> executeHarbour(ctx, false)))
                 .then(Cmd.literal("contracts").executes(this::executeContracts))
+                .then(Cmd.literal("plunder").executes(this::executePlunder))
                 .then(Cmd.literal("course").executes(this::executeCourse))
                 .then(Cmd.literal("chunks")
                         .executes(ctx -> executeChunks(ctx, false))
@@ -932,6 +939,20 @@ public final class IslandCommandTree {
         } else {
             open.market(player);
         }
+        return Cmd.OK;
+    }
+
+    private int executePlunder(CommandContext<CommandSourceStack> ctx) {
+        if (!(ctx.getSource().getSender() instanceof Player player)) {
+            send(ctx.getSource().getSender(), "error.players_only");
+            return Cmd.OK;
+        }
+        com.uxplima.uxmskyblock.bukkit.tradewinds.Boarding open = this.boarding;
+        if (open == null) {
+            send(player, "tradewinds.hold.not_vessel");
+            return Cmd.OK;
+        }
+        open.plunder(player);
         return Cmd.OK;
     }
 

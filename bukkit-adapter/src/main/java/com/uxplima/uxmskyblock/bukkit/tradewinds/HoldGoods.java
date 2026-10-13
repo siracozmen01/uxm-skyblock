@@ -81,6 +81,44 @@ public final class HoldGoods implements PortMarket.Goods {
         return Optional.of(BukkitInventorySerializer.serializeItemStacks(stacks));
     }
 
+    /**
+     * A plunder of {@code share} of each stack in {@code target}'s hold, rounded down, into {@code raider}'s hold of
+     * {@code slots} slots, whole or not at all; nothing when it takes nothing or the raider's hold has no room.
+     */
+    public static Optional<com.uxplima.uxmskyblock.core.application.tradewinds.Piracy.Haul> plunder(
+            byte[] target, byte[] raider, int slots, double share) {
+        ItemStack[] there =
+                target.length == 0 ? new ItemStack[0] : BukkitInventorySerializer.deserializeItemStacks(target);
+        java.util.List<ItemStack> taken = new java.util.ArrayList<>();
+        int items = 0;
+        for (int at = 0; at < there.length; at++) {
+            ItemStack stack = there[at];
+            if (stack == null || stack.getType().isAir()) {
+                continue;
+            }
+            int take = (int) Math.floor(stack.getAmount() * share + 1e-9);
+            if (take < 1) {
+                continue;
+            }
+            ItemStack part = stack.clone();
+            part.setAmount(take);
+            taken.add(part);
+            items += take;
+            if (take == stack.getAmount()) {
+                there[at] = null;
+            } else {
+                stack.setAmount(stack.getAmount() - take);
+            }
+        }
+        if (items == 0) {
+            return Optional.empty();
+        }
+        int moved = items;
+        return stowAll(raider, slots, taken)
+                .map(after -> new com.uxplima.uxmskyblock.core.application.tradewinds.Piracy.Haul(
+                        BukkitInventorySerializer.serializeItemStacks(there), after, moved));
+    }
+
     /** The hold's stacks, at least {@code slots} of them. */
     private static ItemStack[] read(byte[] hold, int slots) {
         ItemStack[] items = hold.length == 0 ? new ItemStack[0] : BukkitInventorySerializer.deserializeItemStacks(hold);
