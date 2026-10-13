@@ -22,6 +22,7 @@ import org.spongepowered.configurate.ConfigurationNode;
  * @param look the biome laid over the sea and the colours of the plugin's own
  * @param buried the structures buried in the sea's floor
  * @param tide how the sea rises and falls
+ * @param offerings what a vent gives back for the items it takes
  */
 public record AcidIslandConfiguration(
         boolean enabled,
@@ -35,7 +36,8 @@ public record AcidIslandConfiguration(
         CleanWater cleanWater,
         Look look,
         Buried buried,
-        Tide tide) {
+        Tide tide,
+        Offerings offerings) {
 
     private static final Logger LOGGER = Logger.getLogger(AcidIslandConfiguration.class.getName());
 
@@ -313,6 +315,69 @@ public record AcidIslandConfiguration(
         }
     }
 
+    /**
+     * What a vent gives back for an offering: items thrown into the sea that sink onto it.
+     *
+     * @param items the items it takes, by key, as {@code minecraft:bone}
+     * @param takes how many of them one offering takes
+     * @param loot the loot table one offering is answered from
+     */
+    public record Offering(List<String> items, int takes, String loot) {
+
+        public Offering {
+            items = items.stream()
+                    .map(item -> item.strip().toLowerCase(java.util.Locale.ROOT))
+                    .map(item -> item.contains(":") ? item : "minecraft:" + item)
+                    .toList();
+            loot = loot.strip();
+            if (items.isEmpty() || loot.isEmpty() || takes < 1 || takes > 64) {
+                throw new IllegalArgumentException("an offering names its items, takes 1 to 64 and names a loot table");
+            }
+        }
+
+        /** Whether the offering takes the item of that key. */
+        public boolean takes(String key) {
+            return items.contains(key);
+        }
+    }
+
+    /**
+     * The offerings vents answer, the first that takes an item answering it.
+     *
+     * @param after how long an item lies in the sea on a vent before the vent takes it
+     * @param list the offerings, in order
+     */
+    public record Offerings(Duration after, List<Offering> list) {
+
+        public static final Offerings SHIPPED = new Offerings(
+                Duration.ofSeconds(2),
+                List.of(
+                        new Offering(
+                                List.of("minecraft:bone", "minecraft:rotten_flesh", "minecraft:spider_eye"),
+                                8,
+                                "minecraft:chests/underwater_ruin_small"),
+                        new Offering(List.of("minecraft:gold_ingot"), 1, "minecraft:chests/buried_treasure"),
+                        new Offering(
+                                List.of("minecraft:diamond", "minecraft:emerald"),
+                                1,
+                                "minecraft:chests/underwater_ruin_big")));
+
+        public static final Offerings NONE = new Offerings(Duration.ofSeconds(2), List.of());
+
+        public Offerings {
+            Objects.requireNonNull(after, "after must not be null");
+            list = List.copyOf(list);
+            if (after.isNegative()) {
+                throw new IllegalArgumentException("an offering waits no less than nothing");
+            }
+        }
+
+        /** The first offering that takes the item of that key. */
+        public java.util.Optional<Offering> answering(String key) {
+            return list.stream().filter(offering -> offering.takes(key)).findFirst();
+        }
+    }
+
     /** How acid water is made clean. Rain a cauldron catches is clean already. */
     public record Purification(boolean furnace, boolean brewingWithCoal) {}
 
@@ -326,6 +391,7 @@ public record AcidIslandConfiguration(
         Objects.requireNonNull(look, "look must not be null");
         Objects.requireNonNull(buried, "buried must not be null");
         Objects.requireNonNull(tide, "tide must not be null");
+        Objects.requireNonNull(offerings, "offerings must not be null");
         waterProtection = List.copyOf(waterProtection);
         waterEffects = List.copyOf(waterEffects);
     }
@@ -343,7 +409,8 @@ public record AcidIslandConfiguration(
                 CleanWater.SHIPPED,
                 Look.SHIPPED,
                 Buried.SHIPPED,
-                Tide.SHIPPED);
+                Tide.SHIPPED,
+                Offerings.SHIPPED);
     }
 
     public static AcidIslandConfiguration load(ConfigurationNode root) {
@@ -401,7 +468,39 @@ public record AcidIslandConfiguration(
                 cleanWater(root.node("clean-water")),
                 look(seaNode.node("look")),
                 buried(seaNode.node("buried")),
-                tide(seaNode.node("tide")));
+                tide(seaNode.node("tide")),
+                offerings(seaNode.node("vents", "offerings")));
+    }
+
+    /**
+     * The offerings, as {@code sea vents offerings} writes them; one that cannot be read is left out, said, and a
+     * wait that cannot be is the shipped one.
+     */
+    private static Offerings offerings(ConfigurationNode node) {
+        if (node.virtual()) {
+            return Offerings.SHIPPED;
+        }
+        List<Offering> read = new ArrayList<>();
+        ConfigurationNode list = node.node("list");
+        if (list.virtual()) {
+            read.addAll(Offerings.SHIPPED.list());
+        }
+        int at = 0;
+        for (ConfigurationNode written : list.childrenList()) {
+            at++;
+            int number = at;
+            try {
+                read.add(new Offering(
+                        strings(written.node("items"), List.of()),
+                        written.node("takes").getInt(1),
+                        written.node("loot").getString("")));
+            } catch (IllegalArgumentException e) {
+                LOGGER.warning(() -> "modules/acidisland.conf sea vents offerings, offering " + number + ": "
+                        + e.getMessage() + ". It is left out.");
+            }
+        }
+        Duration after = durationOf(node.node("after").getString(""), Offerings.SHIPPED.after());
+        return new Offerings(after.isNegative() ? Offerings.SHIPPED.after() : after, read);
     }
 
     /** The tide, as {@code sea tide} writes it; one that cannot be is the shipped one, said. */

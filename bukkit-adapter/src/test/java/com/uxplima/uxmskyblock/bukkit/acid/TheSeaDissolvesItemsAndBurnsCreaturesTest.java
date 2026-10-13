@@ -57,6 +57,15 @@ class TheSeaDissolvesItemsAndBurnsCreaturesTest extends MockBukkitHarness {
     private final AtomicLong now = new AtomicLong(1_000 * SECOND);
     private final List<String> fired = new ArrayList<>();
     private Predicate<Entity> owned = entity -> true;
+    private final List<String> rolled = new ArrayList<>();
+    private final java.util.Set<UUID> online = new java.util.HashSet<>();
+    private final Map<UUID, UUID> thrown = new java.util.HashMap<>();
+    private static final AcidIslandConfiguration.Offerings BONES = new AcidIslandConfiguration.Offerings(
+            Duration.ofSeconds(2),
+            List.of(
+                    new AcidIslandConfiguration.Offering(List.of("BONE", "minecraft:rotten_flesh"), 4, "test:small"),
+                    new AcidIslandConfiguration.Offering(List.of("minecraft:bone"), 1, "test:never"),
+                    new AcidIslandConfiguration.Offering(List.of("minecraft:gold_ingot"), 1, "test:gold")));
 
     @SuppressWarnings("NullAway.Init")
     private World world;
@@ -211,6 +220,176 @@ class TheSeaDissolvesItemsAndBurnsCreaturesTest extends MockBukkitHarness {
     }
 
     @Test
+    @DisplayName(
+            "An item on a vent is an offering: the first that takes it takes as many as it says, and its loot comes back")
+    void anOfferingIsAnswered() {
+        AcidSeaLife life = life(AcidIslandConfiguration.SeaLife.SHIPPED, BONES);
+        Item bones = onAVent(6, new ItemStack(Material.BONE, 9));
+        thrown.put(bones.getUniqueId(), player.getUniqueId());
+
+        life.around(player);
+        now.addAndGet(SECOND);
+        life.around(player);
+        assertThat(rolled).describedAs("a second on the vent").isEmpty();
+
+        now.addAndGet(SECOND);
+        life.around(player);
+        assertThat(rolled).containsExactly("test:small for Swimmer");
+        assertThat(bones.getItemStack().getAmount()).isEqualTo(5);
+        assertThat(player.getInventory().containsAtLeast(new ItemStack(Material.PRISMARINE_SHARD), 2))
+                .isTrue();
+        assertThat(fired).containsExactly("offered 4 bone");
+        assertThat(net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer.plainText()
+                        .serialize(player.nextComponentMessage()))
+                .contains("takes 4 bone");
+
+        now.addAndGet(SECOND);
+        life.around(player);
+        assertThat(rolled).describedAs("the rest waits its turn").hasSize(1);
+        now.addAndGet(SECOND);
+        life.around(player);
+        assertThat(rolled).hasSize(2);
+        assertThat(bones.isValid()).describedAs("one bone left, too few").isTrue();
+        assertThat(bones.getItemStack().getAmount()).isEqualTo(1);
+
+        now.addAndGet(20 * SECOND);
+        life.around(player);
+        assertThat(rolled).hasSize(2);
+        assertThat(bones.isValid())
+                .describedAs("too few to offer dissolves as any item")
+                .isFalse();
+    }
+
+    @Test
+    @DisplayName("What a full inventory cannot hold falls at the player's feet")
+    void aFullInventory() {
+        AcidSeaLife life = life(AcidIslandConfiguration.SeaLife.SHIPPED, BONES);
+        for (int slot = 0; slot < player.getInventory().getSize(); slot++) {
+            player.getInventory().setItem(slot, new ItemStack(Material.DIRT, 64));
+        }
+        onAVent(6, new ItemStack(Material.GOLD_INGOT));
+
+        life.around(player);
+        now.addAndGet(2 * SECOND);
+        life.around(player);
+
+        assertThat(rolled).hasSize(1);
+        assertThat(world.getEntitiesByClass(Item.class))
+                .anySatisfy(
+                        dropped -> assertThat(dropped.getItemStack().getType()).isEqualTo(Material.PRISMARINE_SHARD));
+    }
+
+    @Test
+    @DisplayName("An item no offering takes dissolves on a vent, and one in the sea away from a vent is no offering")
+    void notEveryItemIsAnOffering() {
+        AcidSeaLife life = life(AcidIslandConfiguration.SeaLife.SHIPPED, BONES);
+        Item dirt = onAVent(6, new ItemStack(Material.DIRT));
+        Item gold = itemIn(4, Material.WATER, new ItemStack(Material.GOLD_INGOT));
+
+        life.around(player);
+        now.addAndGet(11 * SECOND);
+        life.around(player);
+
+        assertThat(rolled).isEmpty();
+        assertThat(dirt.isValid()).isFalse();
+        assertThat(gold.isValid()).isFalse();
+    }
+
+    @Test
+    @DisplayName(
+            "Its thrower's own check answers an offering while they are online, and another's once they are long away")
+    void theThrowerIsAnswered() {
+        AcidSeaLife life = life(AcidIslandConfiguration.SeaLife.SHIPPED, BONES);
+        PlayerMock thrower = createPlayer("Thrower");
+        thrower.teleport(new Location(world, 8.5, Y + 3, 8.5));
+        online.add(thrower.getUniqueId());
+        Item gold = onAVent(6, new ItemStack(Material.GOLD_INGOT, 2));
+        thrown.put(gold.getUniqueId(), thrower.getUniqueId());
+
+        life.around(player);
+        now.addAndGet(2 * SECOND);
+        life.around(player);
+        assertThat(rolled).describedAs("left to its thrower").isEmpty();
+        life.around(thrower);
+        assertThat(rolled).containsExactly("test:gold for Thrower");
+
+        now.addAndGet(7 * SECOND);
+        life.around(player);
+        assertThat(rolled).describedAs("long enough").containsExactly("test:gold for Thrower", "test:gold for Swimmer");
+
+        Item gone = onAVent(10, new ItemStack(Material.GOLD_INGOT));
+        thrown.put(gone.getUniqueId(), UUID.randomUUID());
+        life.around(player);
+        now.addAndGet(2 * SECOND);
+        life.around(player);
+        assertThat(rolled).describedAs("a thrower who left").hasSize(3);
+    }
+
+    @Test
+    @DisplayName("The offerings are read from the file in order, and one that cannot be is left out")
+    void theOfferingsAreRead() throws Exception {
+        AcidIslandConfiguration.Offerings read = AcidIslandConfiguration.load(HoconConfigurationLoader.builder()
+                        .buildAndLoadString("sea { vents { offerings { after = \"5s\", list = ["
+                                + "{ items = [\"Kelp\"], takes = 16, loot = \"a:b\" },"
+                                + "{ items = [], loot = \"a:c\" },"
+                                + "{ items = [\"bone\"], takes = 65, loot = \"a:d\" },"
+                                + "{ items = [\"bone\"], loot = \"\" },"
+                                + "{ items = [\"x:y\"], loot = \"a:e\" } ] } } }"))
+                .offerings();
+        assertThat(read)
+                .isEqualTo(new AcidIslandConfiguration.Offerings(
+                        Duration.ofSeconds(5),
+                        List.of(
+                                new AcidIslandConfiguration.Offering(List.of("minecraft:kelp"), 16, "a:b"),
+                                new AcidIslandConfiguration.Offering(List.of("x:y"), 1, "a:e"))));
+        assertThat(AcidIslandConfiguration.load(
+                                HoconConfigurationLoader.builder().buildAndLoadString("enabled = true"))
+                        .offerings())
+                .isEqualTo(AcidIslandConfiguration.Offerings.SHIPPED);
+        assertThat(AcidIslandConfiguration.load(HoconConfigurationLoader.builder()
+                                .buildAndLoadString("sea { vents { offerings { after = \"9s\" } } }"))
+                        .offerings()
+                        .list())
+                .isEqualTo(AcidIslandConfiguration.Offerings.SHIPPED.list());
+        assertThat(AcidIslandConfiguration.load(HoconConfigurationLoader.builder()
+                                .buildAndLoadString(new String(
+                                        TheSeaDissolvesItemsAndBurnsCreaturesTest.class
+                                                .getResourceAsStream("/modules/acidisland.conf")
+                                                .readAllBytes(),
+                                        java.nio.charset.StandardCharsets.UTF_8)))
+                        .offerings())
+                .isEqualTo(AcidIslandConfiguration.Offerings.SHIPPED);
+        AcidSeaLife none = life(AcidIslandConfiguration.SeaLife.NONE, BONES);
+        assertThat(none.on()).describedAs("reach 0 looks at nothing").isFalse();
+        assertThat(life(new AcidIslandConfiguration.SeaLife(32, false, Duration.ZERO, false, 0, List.of()), BONES)
+                        .on())
+                .describedAs("offerings alone are something to look for")
+                .isTrue();
+    }
+
+    @Test
+    @DisplayName("Offerings are answered while items do not dissolve")
+    void offeringsWithoutDissolving() {
+        AcidSeaLife life =
+                life(new AcidIslandConfiguration.SeaLife(32, false, Duration.ZERO, false, 0, List.of()), BONES);
+        Item gold = onAVent(6, new ItemStack(Material.GOLD_INGOT));
+        Item dirt = itemIn(4, Material.WATER, new ItemStack(Material.DIRT));
+
+        life.around(player);
+        now.addAndGet(30 * SECOND);
+        life.around(player);
+
+        assertThat(rolled).hasSize(1);
+        assertThat(gold.isValid()).isFalse();
+        assertThat(dirt.isValid()).describedAs("nothing dissolves").isTrue();
+    }
+
+    private Item onAVent(int x, ItemStack stack) {
+        world.getBlockAt(x, Y - 1, 8).setType(AcidSeaStart.VENT);
+        return itemIn(x, Material.WATER, stack);
+    }
+
+    @Test
     @DisplayName("What no check has seen for a while is forgotten")
     void theGoneAreForgotten() {
         AcidSeaLife life = life(AcidIslandConfiguration.SeaLife.SHIPPED);
@@ -254,6 +433,10 @@ class TheSeaDissolvesItemsAndBurnsCreaturesTest extends MockBukkitHarness {
     }
 
     private AcidSeaLife life(AcidIslandConfiguration.SeaLife seaLife) {
+        return life(seaLife, AcidIslandConfiguration.Offerings.NONE);
+    }
+
+    private AcidSeaLife life(AcidIslandConfiguration.SeaLife seaLife, AcidIslandConfiguration.Offerings offerings) {
         AcidIslandConfiguration config = new AcidIslandConfiguration(
                 true,
                 AcidIslandConfiguration.Sea.SHIPPED,
@@ -266,16 +449,36 @@ class TheSeaDissolvesItemsAndBurnsCreaturesTest extends MockBukkitHarness {
                 AcidIslandConfiguration.CleanWater.NONE,
                 AcidIslandConfiguration.Look.SHIPPED,
                 AcidIslandConfiguration.Buried.NONE,
-                AcidIslandConfiguration.Tide.STILL);
+                AcidIslandConfiguration.Tide.STILL,
+                offerings);
         return new AcidSeaLife(
                 service,
                 islands,
                 config,
                 new InteractionEffects(Map.of(
-                        "acid-item-dissolved", ActionList.parse(List.of("[console] probe dissolved %amount% %item%")))),
+                        "acid-item-dissolved",
+                        ActionList.parse(List.of("[console] probe dissolved %amount% %item%")),
+                        "acid-vent-offering",
+                        ActionList.parse(List.of("[console] probe offered %amount% %item%")))),
                 new InteractionEffectPlayer(),
                 now::get,
-                entity -> owned.test(entity));
+                entity -> owned.test(entity),
+                com.uxplima.uxmskyblock.bukkit.i18n.Messages.bundled(),
+                (table, at, looter) -> {
+                    rolled.add(table + " for " + looter.getName());
+                    return List.of(new ItemStack(Material.PRISMARINE_SHARD, 2));
+                },
+                new AcidSeaLife.Throwers() {
+                    @Override
+                    public @org.jspecify.annotations.Nullable UUID of(Item item) {
+                        return thrown.get(item.getUniqueId());
+                    }
+
+                    @Override
+                    public boolean online(UUID player) {
+                        return online.contains(player);
+                    }
+                });
     }
 
     private Item itemIn(int x, Material fill, ItemStack stack) {

@@ -19,10 +19,12 @@ import org.bukkit.entity.Entity;
 import org.bukkit.entity.Item;
 import org.bukkit.entity.Mob;
 import org.bukkit.entity.Player;
+import org.bukkit.inventory.ItemStack;
 
 import com.uxplima.uxmskyblock.bukkit.config.AcidIslandConfiguration;
 import com.uxplima.uxmskyblock.bukkit.effect.InteractionEffectPlayer;
 import com.uxplima.uxmskyblock.bukkit.effect.InteractionEffects;
+import com.uxplima.uxmskyblock.bukkit.i18n.Messages;
 import com.uxplima.uxmskyblock.bukkit.listener.IslandProtectionListener;
 import com.uxplima.uxmskyblock.core.application.acid.AcidIslandService;
 import com.uxplima.uxmskyblock.core.domain.island.Island;
@@ -31,11 +33,22 @@ import com.uxplima.uxmskyblock.core.domain.island.Island;
  * What lies and swims in the acid sea around a player: an item dissolves once it has lain in the sea a while, and a
  * creature burns at each check, as {@code sea-life} of {@code modules/acidisland.conf} lets them.
  *
+ * <p>An item that sinks onto a vent and lies there a while is an offering, when the vent takes items of its kind:
+ * as many as the offering takes are taken, and a roll of its loot table goes to whoever threw them, or, with the
+ * thrower gone or long away, to the player whose check found it. An item no offering takes dissolves as any other.
+ *
  * <p>Each player's check looks around them on their own thread, and touches only what that thread owns, so on Folia
  * nothing is read or changed from a region it does not belong to. Two players near one creature burn it once a check,
  * and an item's time in the sea is kept by its id, whoever's check sees it.
  */
 public final class AcidSeaLife {
+
+    /** Who threw an item, and whether they are on the server. */
+    public interface Throwers {
+        @org.jspecify.annotations.Nullable UUID of(Item item);
+
+        boolean online(UUID player);
+    }
 
     private final AcidIslandService service;
     private final IslandProtectionListener islands;
@@ -49,6 +62,10 @@ public final class AcidSeaLife {
     private final Map<UUID, Long> inTheSeaSince = new ConcurrentHashMap<>();
     private final Map<UUID, Long> lastSeen = new ConcurrentHashMap<>();
     private final Map<UUID, Long> lastBurnt = new ConcurrentHashMap<>();
+    private final AcidIslandConfiguration.Offerings offerings;
+    private final Messages messages;
+    private final VentLoot loot;
+    private final Throwers throwers;
 
     /**
      * @param clock the time, in nanoseconds
@@ -61,7 +78,14 @@ public final class AcidSeaLife {
             InteractionEffects effects,
             InteractionEffectPlayer effectPlayer,
             LongSupplier clock,
-            Predicate<Entity> owned) {
+            Predicate<Entity> owned,
+            Messages messages,
+            VentLoot loot,
+            Throwers throwers) {
+        this.offerings = config.offerings();
+        this.messages = Objects.requireNonNull(messages, "messages must not be null");
+        this.loot = Objects.requireNonNull(loot, "loot must not be null");
+        this.throwers = Objects.requireNonNull(throwers, "throwers must not be null");
         this.service = Objects.requireNonNull(service, "service must not be null");
         this.islands = Objects.requireNonNull(islands, "islands must not be null");
         this.life = config.seaLife();
@@ -77,7 +101,10 @@ public final class AcidSeaLife {
 
     /** Whether there is anything to look for. */
     public boolean on() {
-        return life.reach() > 0 && (life.itemsDissolve() || life.creaturesBurn());
+        return life.reach() > 0
+                && (life.itemsDissolve()
+                        || life.creaturesBurn()
+                        || !offerings.list().isEmpty());
     }
 
     /** Looks at what lies and swims in the sea around {@code player}, on the player's own thread. */
@@ -91,7 +118,8 @@ public final class AcidSeaLife {
             if (!owned.test(entity) || !entity.isValid()) {
                 continue;
             }
-            if (entity instanceof Item item && life.itemsDissolve()) {
+            if (entity instanceof Item item
+                    && (life.itemsDissolve() || !offerings.list().isEmpty())) {
                 item(player, item, now);
             } else if (entity instanceof Mob mob && life.creaturesBurn()) {
                 creature(mob, now);
@@ -108,7 +136,9 @@ public final class AcidSeaLife {
         }
         lastSeen.put(id, now);
         long since = inTheSeaSince.computeIfAbsent(id, ignored -> now);
-        if (now - since < life.itemsAfter().toNanos()) {
+        if (offered(player, item, since, now)
+                || !life.itemsDissolve()
+                || now - since < life.itemsAfter().toNanos()) {
             return;
         }
         inTheSeaSince.remove(id);
@@ -117,6 +147,59 @@ public final class AcidSeaLife {
         String amount = Integer.toString(item.getItemStack().getAmount());
         item.remove();
         effectPlayer.fire(effects, "acid-item-dissolved", player, Map.of("item", name, "amount", amount));
+    }
+
+    /**
+     * Takes an offering off an item lying on a vent, once it has lain in the sea as long as offerings wait, and gives
+     * back a roll of its loot table. Whether the item was an offering the vent takes, and so is not to dissolve.
+     */
+    private boolean offered(Player player, Item item, long since, long now) {
+        Location at = item.getLocation();
+        if (at.getBlock().getRelative(org.bukkit.block.BlockFace.DOWN).getType() != AcidSeaStart.VENT) {
+            return false;
+        }
+        ItemStack stack = item.getItemStack();
+        String key = stack.getType().getKey().toString();
+        java.util.Optional<AcidIslandConfiguration.Offering> offering = offerings.answering(key);
+        if (offering.isEmpty() || stack.getAmount() < offering.get().takes()) {
+            return false;
+        }
+        long waited = now - since;
+        if (waited < offerings.after().toNanos()) {
+            return true;
+        }
+        UUID thrower = throwers.of(item);
+        if (thrower != null
+                && !thrower.equals(player.getUniqueId())
+                && throwers.online(thrower)
+                && waited < offerings.after().toNanos() * 3 + checkNanos) {
+            // Its thrower's own check answers it, while they are near.
+            return true;
+        }
+        int takes = offering.get().takes();
+        if (stack.getAmount() == takes) {
+            item.remove();
+            inTheSeaSince.remove(item.getUniqueId());
+            lastSeen.remove(item.getUniqueId());
+        } else {
+            stack.setAmount(stack.getAmount() - takes);
+            item.setItemStack(stack);
+            inTheSeaSince.put(item.getUniqueId(), now);
+        }
+        for (ItemStack left : player.getInventory()
+                .addItem(loot.roll(offering.get().loot(), at, player).toArray(ItemStack[]::new))
+                .values()) {
+            player.getWorld().dropItem(player.getLocation(), left);
+        }
+        String name = stack.getType().getKey().getKey().replace('_', ' ');
+        String amount = Integer.toString(takes);
+        effectPlayer.fire(effects, "acid-vent-offering", player, Map.of("item", name, "amount", amount));
+        messages.send(
+                player,
+                "acid.offering",
+                net.kyori.adventure.text.minimessage.tag.resolver.Placeholder.unparsed("item", name),
+                net.kyori.adventure.text.minimessage.tag.resolver.Placeholder.unparsed("amount", amount));
+        return true;
     }
 
     private void creature(Mob mob, long now) {

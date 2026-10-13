@@ -91,6 +91,11 @@ public final class EffectsConfiguration {
         defaults.put(
                 "acid-tide-falling", parseAll("acid-tide-falling", List.of("[sound] ambient.underwater.exit 0.6 0.7")));
         defaults.put(
+                "acid-vent-offering",
+                parseAll(
+                        "acid-vent-offering",
+                        List.of("[sound] block.respawn_anchor.charge 0.8 1.4", "[particle] LAVA 6 0.3")));
+        defaults.put(
                 "acid-clean-water-drunk",
                 parseAll(
                         "acid-clean-water-drunk",
