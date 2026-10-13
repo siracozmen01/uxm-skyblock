@@ -175,6 +175,56 @@ class AnOrderMovesMoneyOnceTest {
     }
 
     @Test
+    @DisplayName("Whatever the day, the drift and the standing add up to, no round trip at a port comes out ahead")
+    void noRoundTripPays() {
+        docked();
+        bank.balance = 1_000_000;
+        hold.items.put("WHEAT", 40);
+        Map<String, MarketPricesPort.Pressure> rows = new HashMap<>();
+        MarketPricesPort kept = new MarketPricesPort() {
+            @Override
+            public Optional<Pressure> find(String portId, String item) {
+                return Optional.ofNullable(rows.get(portId + item));
+            }
+
+            @Override
+            public List<Pressure> findAll() {
+                return List.copyOf(rows.values());
+            }
+
+            @Override
+            public boolean keep(Pressure next) {
+                rows.put(next.portId() + next.item(), next);
+                return true;
+            }
+        };
+        PortMarket market = market();
+        market.usePrices(new MarketPrices(
+                kept,
+                new PriceDrift(0.01, 0.1, 10, java.time.Duration.ofHours(1)),
+                Clock.fixed(now, ZoneOffset.UTC),
+                java.time.Duration.ZERO));
+        market.useDemand(new DailyDemand(1, 10, java.time.ZoneId.of("UTC")));
+        market.setStanding(vessel, BAY, 1_000_000_000L);
+
+        for (int round = 0; round < 3; round++) {
+            long paid = market.buy(vessel, ada, BAY, WHEAT).orElseThrow().amount();
+            long got = market.sell(vessel, ada, BAY, WHEAT).orElseThrow().amount();
+            assertThat(got)
+                    .describedAs("bought for %s, sold straight back", paid)
+                    .isLessThan(paid);
+            long sold = market.sell(vessel, ada, BAY, WHEAT).orElseThrow().amount();
+            long boughtBack = market.buy(vessel, ada, BAY, WHEAT).orElseThrow().amount();
+            assertThat(boughtBack)
+                    .describedAs("sold for %s, bought straight back", sold)
+                    .isGreaterThan(sold);
+        }
+        assertThat(market.pays(vessel, BAY, SILK))
+                .describedAs("a good it does not buy")
+                .isZero();
+    }
+
+    @Test
     @DisplayName("Contraband is bought only at the ports that take it, and every other good anywhere")
     void contraband() {
         docked();

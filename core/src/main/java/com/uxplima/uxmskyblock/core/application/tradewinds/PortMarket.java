@@ -236,13 +236,30 @@ public final class PortMarket {
 
     /** What {@code port} pays the crew of {@code vessel} for one {@code good}. */
     public long pays(IslandId vessel, Port port, Port.Good good) {
-        return standing.pays(
-                demand.priced(port, prices.priced(port, good), clock.instant()), orders.standing(vessel, port.id()));
+        return paid(port, good, 0, orders.standing(vessel, port.id()));
+    }
+
+    /** What the port pays for one {@code good} once {@code after} more were sold to it, before any cap. */
+    private long paid(Port port, Port.Good good, int after, long held) {
+        return standing.pays(demand.priced(port, prices.pricedAfter(port, good, after), clock.instant()), held);
+    }
+
+    /** What the port asks for one {@code good} once {@code after} more were sold to it, before any floor. */
+    private long asked(Port port, Port.Good good, int after, long held) {
+        return standing.asks(prices.pricedAfter(port, good, after), held);
     }
 
     /** What {@code port} asks of the crew of {@code vessel} for one {@code good}. */
     public long asks(IslandId vessel, Port port, Port.Good good) {
-        return standing.asks(prices.priced(port, good), orders.standing(vessel, port.id()));
+        long held = orders.standing(vessel, port.id());
+        long asks = asked(port, good, 0, held);
+        if (!good.bought()) {
+            return asks;
+        }
+        // Always more than the crew would be paid to sell the lot straight back, whatever the day, the drift and
+        // the standing add up to. That holds both ways: a lot bought and sold back, or sold and bought back, never
+        // comes out ahead, as what the port pays only falls as more of the good is sold to it.
+        return Math.max(asks, paid(port, good, -good.lot(), held) + 1);
     }
 
     /** Sells one lot of {@code good} from the hold of {@code vessel} to {@code port}. */

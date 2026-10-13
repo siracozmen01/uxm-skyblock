@@ -44,10 +44,15 @@ public final class MarketPrices {
 
     /** {@code good} as {@code market} prices it now. */
     public Port.Good priced(Port market, Port.Good good) {
+        return pricedAfter(market, good, 0);
+    }
+
+    /** {@code good} as {@code market} would price it once {@code items} more were sold to it, or bought when below 0. */
+    public Port.Good pricedAfter(Port market, Port.Good good, int items) {
         if (!drift.moves()) {
             return good;
         }
-        return drift.priced(good, pressure(market.id(), good.item()));
+        return drift.priced(good, pressure(market.id(), good.item()) + items);
     }
 
     /** The push on the good now, items sold less items bought, faded since it was written. */
