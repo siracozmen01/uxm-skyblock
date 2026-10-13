@@ -351,7 +351,8 @@ class APortOffersContractsTest extends MockBukkitHarness {
                             Map.of("grain", "<green>Pays well"),
                             3),
                     config.voyageEvents(),
-                    config.contraband());
+                    config.contraband(),
+                    config.demand());
             desk = new ContractDesk(
                     board,
                     mock(PortMarket.class),

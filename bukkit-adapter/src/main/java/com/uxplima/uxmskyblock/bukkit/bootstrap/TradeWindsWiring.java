@@ -74,6 +74,7 @@ public final class TradeWindsWiring {
         market.usePrices(new com.uxplima.uxmskyblock.core.application.tradewinds.MarketPrices(
                 persistence.marketPricesPort(), config.drift(), clock, java.time.Duration.ofSeconds(5)));
         market.useContraband(config.contraband().items(), config.contraband().takers());
+        market.useDemand(config.demand());
         this.holds = new CargoHolds(
                 service,
                 persistence.vesselsPort(),

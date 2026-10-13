@@ -448,7 +448,26 @@ class TheCrewSailsAndTradesTest extends MockBukkitHarness {
                         drawn))
                 .contains("Buy 16 40.00")
                 .contains("In the hold 20")
+                .doesNotContain("Wanted today")
                 .doesNotContain("<entry_");
+        // The same good, wanted today: its tile says by how much more the port pays for it.
+        when(market.wanted(BAY, "WHEAT")).thenReturn(true);
+        harbour.useMenuEngine(handed);
+        harbour.market(ada);
+        verify(handed, org.mockito.Mockito.times(2)).open(eq(ada), eq("tradewinds-market"), anyMap(), lists.capture());
+        Object wanted = java.util.Objects.requireNonNull(lists.getValue().get("tradewinds:goods"))
+                .get(0);
+        assertThat(com.uxplima.uxmskyblock.bukkit.menu.ShippedTemplates.lore(
+                        com.uxplima.uxmskyblock.bukkit.menu.ShippedTemplates.renderer(engine, Messages.bundled()),
+                        com.uxplima.uxmskyblock.bukkit.menu.ShippedTemplates.template(
+                                "tradewinds-market.conf", "goods"),
+                        com.uxplima.uxmlib.menu.runtime.MenuContext.of(
+                                        ada,
+                                        null,
+                                        0,
+                                        Map.of("vessel", vessel.value().toString(), "port", "Emerald Bay"))
+                                .withEntry(wanted)))
+                .contains("Wanted today +25%");
         when(market.buy(any(), any(), any(), any())).thenReturn(Result.err("tradewinds.market.no_funds"));
 
         com.uxplima.uxmskyblock.bukkit.menu.ShippedTemplates.click(

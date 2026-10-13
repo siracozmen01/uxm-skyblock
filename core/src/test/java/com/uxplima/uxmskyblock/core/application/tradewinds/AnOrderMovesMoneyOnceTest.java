@@ -156,6 +156,25 @@ class AnOrderMovesMoneyOnceTest {
     }
 
     @Test
+    @DisplayName("A good the port wants today is paid the more, and said so")
+    void wantedToday() {
+        PortMarket market = market();
+        assertThat(market.wanted(BAY, "WHEAT")).isFalse();
+        market.useDemand(new DailyDemand(1, 0.5, java.time.ZoneId.of("UTC")));
+
+        assertThat(market.wanted(BAY, "WHEAT")).isTrue();
+        assertThat(market.wanted(BAY, "SILK")).describedAs("not a good it buys").isFalse();
+        assertThat(market.pays(vessel, BAY, WHEAT)).isEqualTo(30);
+        assertThat(market.asks(vessel, BAY, WHEAT))
+                .describedAs("what it asks stays")
+                .isEqualTo(50);
+        market.useDemand(new DailyDemand(1, 2, java.time.ZoneId.of("UTC")));
+        assertThat(market.pays(vessel, BAY, WHEAT))
+                .describedAs("never as much as it asks")
+                .isEqualTo(49);
+    }
+
+    @Test
     @DisplayName("Contraband is bought only at the ports that take it, and every other good anywhere")
     void contraband() {
         docked();

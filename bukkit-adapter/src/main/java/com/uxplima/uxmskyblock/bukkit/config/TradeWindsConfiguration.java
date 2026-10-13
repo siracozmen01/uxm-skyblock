@@ -11,6 +11,7 @@ import java.util.logging.Logger;
 import org.bukkit.Material;
 
 import com.uxplima.uxmskyblock.core.application.tradewinds.Contract;
+import com.uxplima.uxmskyblock.core.application.tradewinds.DailyDemand;
 import com.uxplima.uxmskyblock.core.application.tradewinds.Port;
 import com.uxplima.uxmskyblock.core.application.tradewinds.PriceDrift;
 import com.uxplima.uxmskyblock.core.application.tradewinds.Ranks;
@@ -31,6 +32,7 @@ import org.spongepowered.configurate.ConfigurationNode;
  * @param contracts the deliveries the ports offer
  * @param voyageEvents what may happen to a vessel at sea
  * @param contraband the goods only some ports take, and the customs of the rest
+ * @param demand the goods each port wants more of each day
  */
 public record TradeWindsConfiguration(
         boolean enabled,
@@ -42,7 +44,8 @@ public record TradeWindsConfiguration(
         PriceDrift drift,
         TradeWindsContracts contracts,
         TradeWindsVoyageEvents voyageEvents,
-        TradeWindsContraband contraband) {
+        TradeWindsContraband contraband,
+        DailyDemand demand) {
 
     /**
      * The drift a file that writes none has: a tenth of a percent for each item, from half to one and a half the
@@ -113,6 +116,30 @@ public record TradeWindsConfiguration(
         return new TradeWindsContracts.Reward(List.of("[give-money] " + amount), List.of());
     }
 
+    /** The demand a file that writes none has: each port wants one good a day, paying a quarter more, by UTC. */
+    public static final DailyDemand SHIPPED_DEMAND = new DailyDemand(1, 0.25, java.time.ZoneId.of("UTC"));
+
+    /**
+     * The demand {@code daily-demand} writes: {@code goods}, {@code bonus} and {@code zone}. One that cannot be is
+     * said, and the shipped one is used.
+     */
+    private static DailyDemand demand(ConfigurationNode node) {
+        if (node.virtual()) {
+            return SHIPPED_DEMAND;
+        }
+        String zone = node.node("zone").getString("UTC");
+        try {
+            return new DailyDemand(
+                    node.node("goods").getInt(SHIPPED_DEMAND.goods()),
+                    node.node("bonus").getDouble(SHIPPED_DEMAND.bonus()),
+                    java.time.ZoneId.of(zone));
+        } catch (IllegalArgumentException | java.time.DateTimeException e) {
+            LOGGER.warning(
+                    () -> "modules/tradewinds.conf daily-demand: " + e.getMessage() + ". The shipped demand is used.");
+            return SHIPPED_DEMAND;
+        }
+    }
+
     /** The items the shipped ports are shown as. */
     public static final Map<String, String> SHIPPED_ICONS =
             Map.of("emerald-bay", "EMERALD", "saltmarsh", "PRISMARINE_SHARD", "ironhaven", "IRON_INGOT");
@@ -133,6 +160,7 @@ public record TradeWindsConfiguration(
         Objects.requireNonNull(contracts, "contracts must not be null");
         Objects.requireNonNull(voyageEvents, "voyageEvents must not be null");
         Objects.requireNonNull(contraband, "contraband must not be null");
+        Objects.requireNonNull(demand, "demand must not be null");
         Objects.requireNonNull(ranks, "ranks must not be null");
         ports = List.copyOf(ports);
         icons = Map.copyOf(icons);
@@ -187,7 +215,8 @@ public record TradeWindsConfiguration(
                 SHIPPED_DRIFT,
                 SHIPPED_CONTRACTS,
                 TradeWindsVoyageEvents.SHIPPED,
-                SHIPPED_CONTRABAND);
+                SHIPPED_CONTRABAND,
+                SHIPPED_DEMAND);
     }
 
     public static TradeWindsConfiguration load(ConfigurationNode root) {
@@ -220,7 +249,8 @@ public record TradeWindsConfiguration(
                         ? SHIPPED_CONTRACTS
                         : TradeWindsContracts.read(root.node("ports"), root.node("contracts-at-once"), ports),
                 TradeWindsVoyageEvents.read(root.node("voyage-events")),
-                contraband);
+                contraband,
+                demand(root.node("daily-demand")));
     }
 
     /**

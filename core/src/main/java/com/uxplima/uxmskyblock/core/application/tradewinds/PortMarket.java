@@ -109,6 +109,7 @@ public final class PortMarket {
     private volatile MarketPrices prices = MarketPrices.none();
     private volatile Set<String> contraband = Set.of();
     private volatile Set<String> smugglers = Set.of();
+    private volatile DailyDemand demand = DailyDemand.NONE;
 
     @SuppressWarnings("TooManyParameters")
     public PortMarket(
@@ -146,6 +147,16 @@ public final class PortMarket {
     public void useContraband(Set<String> items, Set<String> takers) {
         this.contraband = Set.copyOf(items);
         this.smugglers = Set.copyOf(takers);
+    }
+
+    /** The goods each port wants more of each day; without it, no day differs from another. */
+    public void useDemand(DailyDemand demand) {
+        this.demand = Objects.requireNonNull(demand, "demand");
+    }
+
+    /** Whether {@code port} wants {@code item} more today, and pays the more for it. */
+    public boolean wanted(Port port, String item) {
+        return demand.wanted(port, clock.instant()).contains(item);
     }
 
     /** Whether {@code port} buys {@code item} if its market lists it: anything, unless it is contraband. */
@@ -225,7 +236,8 @@ public final class PortMarket {
 
     /** What {@code port} pays the crew of {@code vessel} for one {@code good}. */
     public long pays(IslandId vessel, Port port, Port.Good good) {
-        return standing.pays(prices.priced(port, good), orders.standing(vessel, port.id()));
+        return standing.pays(
+                demand.priced(port, prices.priced(port, good), clock.instant()), orders.standing(vessel, port.id()));
     }
 
     /** What {@code port} asks of the crew of {@code vessel} for one {@code good}. */

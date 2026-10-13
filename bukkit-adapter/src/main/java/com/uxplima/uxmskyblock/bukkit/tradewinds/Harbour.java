@@ -184,6 +184,7 @@ public final class Harbour {
                             "buy", MoneyText.of(offer.asks() * offer.good().lot()),
                             "sell", MoneyText.of(offer.pays() * offer.good().lot()),
                             "held", Integer.toString(offer.held()),
+                            "demand", Long.toString(offer.demand()),
                             "facts", factsOf(offer)),
                     new Choice(stall.port(), offer.good())));
         }
@@ -200,6 +201,9 @@ public final class Harbour {
         }
         if (bought) {
             facts.append("sell ");
+        }
+        if (offer.demand() > 0) {
+            facts.append("demand ");
         }
         facts.append("held");
         if (sold != bought) {
@@ -256,8 +260,12 @@ public final class Harbour {
     /** What a trade made, and the vessel's rank before and after it. */
     private record Trade(Result<PortMarket.Deal, String> made, Ranks.Rank before, Ranks.Rank after) {}
 
-    /** One good of the market as a vessel sees it: its prices to that vessel and how many its hold has. */
-    private record Offer(Port.Good good, long pays, long asks, int held) {}
+    /**
+     * One good of the market as a vessel sees it: its prices to that vessel and how many its hold has.
+     *
+     * @param demand how many percent more the port pays for it today, 0 when it does not want it more
+     */
+    private record Offer(Port.Good good, long pays, long asks, int held, long demand) {}
 
     /** The market of the port a vessel lies in, as the vessel sees it. */
     private record Stall(Port port, List<Offer> offers) {}
@@ -282,7 +290,10 @@ public final class Harbour {
                     good,
                     market.pays(vessel, port.get(), good),
                     market.asks(vessel, port.get(), good),
-                    goods.count(hold, good.item())));
+                    goods.count(hold, good.item()),
+                    good.bought() && market.wanted(port.get(), good.item())
+                            ? Math.round(config.demand().bonus() * 100)
+                            : 0));
         }
         return Result.ok(new Stall(port.get(), offers));
     }
@@ -560,6 +571,7 @@ public final class Harbour {
         String buy = MoneyText.of(offer.asks() * offer.good().lot());
         String sell = MoneyText.of(offer.pays() * offer.good().lot());
         String held = Integer.toString(offer.held());
+        String demand = Long.toString(offer.demand());
         return new TagResolver[] {
             ItemNames.placeholder("item", offer.good().item()),
             Placeholder.unparsed("lot", lot),
@@ -570,7 +582,8 @@ public final class Harbour {
             Placeholder.unparsed("entry_lot", lot),
             Placeholder.unparsed("entry_buy", buy),
             Placeholder.unparsed("entry_sell", sell),
-            Placeholder.unparsed("entry_held", held)
+            Placeholder.unparsed("entry_held", held),
+            Placeholder.unparsed("entry_demand", demand)
         };
     }
 
