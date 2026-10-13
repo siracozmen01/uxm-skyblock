@@ -5,6 +5,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.spy;
+import static org.mockito.Mockito.when;
 
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
@@ -20,6 +21,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.OptionalLong;
 import java.util.Set;
 import java.util.UUID;
@@ -206,7 +208,10 @@ class AFinishPaysItsListsTest extends MockBukkitHarness {
                                 List.of("[console] probe best %player_name% %time% %millis% %was%")),
                         "course-record",
                         com.uxplima.uxmlib.condition.action.ActionList.parse(
-                                List.of("[console] probe course %player_name% %time% %millis% %was%")))),
+                                List.of("[console] probe course %player_name% %time% %millis% %was%")),
+                        "season-record",
+                        com.uxplima.uxmlib.condition.action.ActionList.parse(
+                                List.of("[console] probe season %player_name% %time% %millis% %was%")))),
                 (on, who, list, now, paidBefore) -> {
                     if (ledgerDown) {
                         throw new IllegalStateException("the database is gone");
@@ -219,7 +224,7 @@ class AFinishPaysItsListsTest extends MockBukkitHarness {
                     return true;
                 },
                 new ParkourConfiguration.Rewards(
-                        List.of(), List.of(), List.of(), Duration.ofHours(24), Duration.ofSeconds(5)));
+                        List.of(), List.of(), List.of(), List.of(), Duration.ofHours(24), Duration.ofSeconds(5)));
         runnerMock = createPlayer("Runner");
         runnerMock.teleport(new Location(world, 8.5, Y + 1, 8.5));
         runner = spy(runnerMock);
@@ -273,6 +278,117 @@ class AFinishPaysItsListsTest extends MockBukkitHarness {
         assertThat(paid())
                 .describedAs("their best already paid today, their first record is")
                 .containsExactly("course Second 0:20.000 20000 0:25.000");
+    }
+
+    @Test
+    @DisplayName("A season record is told and pays its list in the season under way, with the season's best it beat")
+    void aSeasonRecord() {
+        com.uxplima.uxmskyblock.core.application.season.IslandSeasonStoragePort storage =
+                mock(com.uxplima.uxmskyblock.core.application.season.IslandSeasonStoragePort.class);
+        when(storage.findActiveSeason()).thenReturn(Optional.of(season(4, "Autumn")));
+        Map<String, Long> best = new HashMap<>();
+        boolean[] down = {false};
+        runs.seasons(new com.uxplima.uxmskyblock.core.application.parkour.ParkourSeasonService(
+                new com.uxplima.uxmskyblock.core.application.parkour.ParkourSeasonsPort() {
+                    @Override
+                    public void finish(IslandId on, int season, PlayerUuid who, long millis) {
+                        if (down[0]) {
+                            throw new IllegalStateException("the database is gone");
+                        }
+                        best.merge(season + "/" + who.value(), millis, Math::min);
+                    }
+
+                    @Override
+                    public List<ParkourPort.Best> top(IslandId on, int season, int limit) {
+                        return best.entrySet().stream()
+                                .filter(row -> row.getKey().startsWith(season + "/"))
+                                .map(row -> new ParkourPort.Best(
+                                        PlayerUuid.of(UUID.fromString(row.getKey()
+                                                .substring(row.getKey().indexOf('/') + 1))),
+                                        row.getValue(),
+                                        1))
+                                .sorted(java.util.Comparator.comparingLong(ParkourPort.Best::millis))
+                                .limit(limit)
+                                .toList();
+                    }
+
+                    @Override
+                    public int clear(IslandId on, Optional<PlayerUuid> who) {
+                        return 0;
+                    }
+                },
+                storage,
+                clock));
+
+        fired.clear();
+        said();
+        run(runner, 30_000);
+        assertThat(paid())
+                .describedAs("the season's first finish is its record")
+                .contains("season Runner 0:30.000 30000");
+        assertThat(said()).contains("A season record").contains("0:30.000 leads Autumn");
+
+        when(storage.findActiveSeason()).thenReturn(Optional.of(season(5, "Winter")));
+        PlayerMock second = createPlayer("Second");
+        second.teleport(new Location(world, 8.5, Y + 1, 8.5));
+        fired.clear();
+        run(second, 35_000);
+        assertThat(paid())
+                .describedAs("slower than the course record, the first of a new season")
+                .containsExactly("first Second 0:35.000 35000", "season Second 0:35.000 35000");
+        assertThat(nextSaid(second)).contains("leads Winter").doesNotContain("course record");
+
+        fired.clear();
+        run(second, 32_000);
+        assertThat(paid())
+                .describedAs("a season record a day after the last is not paid again")
+                .containsExactly("best Second 0:32.000 32000 0:35.000");
+        assertThat(nextSaid(second)).describedAs("but it is told").contains("0:32.000 leads Winter");
+
+        clock.advance(Duration.ofHours(25));
+        fired.clear();
+        run(second, 31_500);
+        assertThat(paid())
+                .describedAs("once the period has passed it pays again")
+                .containsExactly("best Second 0:31.500 31500 0:32.000", "season Second 0:31.500 31500 0:32.000");
+
+        PlayerMock third = createPlayer("Third");
+        third.teleport(new Location(world, 8.5, Y + 1, 8.5));
+        fired.clear();
+        run(third, 31_000);
+        assertThat(paid())
+                .describedAs("with the season's best it beat")
+                .containsExactly("first Third 0:31.000 31000", "season Third 0:31.000 31000 0:31.500");
+
+        fired.clear();
+        down[0] = true;
+        PlayerMock fourth = createPlayer("Fourth");
+        fourth.teleport(new Location(world, 8.5, Y + 1, 8.5));
+        run(fourth, 20_000);
+        assertThat(paid())
+                .describedAs("a season that cannot be counted takes nothing from the rest")
+                .containsExactly("first Fourth 0:20.000 20000", "course Fourth 0:20.000 20000 0:30.000");
+        assertThat(nextSaid(fourth)).doesNotContain("season record");
+    }
+
+    private com.uxplima.uxmskyblock.core.domain.season.SeasonRecord season(int number, String name) {
+        return new com.uxplima.uxmskyblock.core.domain.season.SeasonRecord(
+                com.uxplima.uxmskyblock.core.domain.season.SeasonId.of(number),
+                name,
+                clock.instant().minusSeconds(60),
+                clock.instant().plus(Duration.ofDays(365)),
+                com.uxplima.uxmskyblock.core.domain.season.SeasonState.ACTIVE);
+    }
+
+    private static String nextSaid(PlayerMock who) {
+        StringBuilder all = new StringBuilder();
+        net.kyori.adventure.text.Component line;
+        while ((line = who.nextComponentMessage()) != null) {
+            all.append(net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer.plainText()
+                            .serialize(line))
+                    .append('\n');
+        }
+        return all.toString();
     }
 
     @Test
@@ -382,12 +498,14 @@ class AFinishPaysItsListsTest extends MockBukkitHarness {
         assertThat(ParkourConfiguration.load(HoconConfigurationLoader.builder()
                                 .buildAndLoadString("rewards { first-finish = [\"[console] a\"],"
                                         + " personal-best = [\"[console] b\", \"[console] c\"],"
-                                        + " course-record = [\"[console] d\"] }"))
+                                        + " course-record = [\"[console] d\"],"
+                                        + " season-record = [\"[console] e\"] }"))
                         .rewards())
                 .isEqualTo(new ParkourConfiguration.Rewards(
                         List.of("[console] a"),
                         List.of("[console] b", "[console] c"),
                         List.of("[console] d"),
+                        List.of("[console] e"),
                         Duration.ofDays(1),
                         Duration.ofSeconds(5)));
         assertThat(ParkourConfiguration.load(HoconConfigurationLoader.builder()
@@ -406,7 +524,10 @@ class AFinishPaysItsListsTest extends MockBukkitHarness {
     /** What the reward lists fired, leaving the effects. */
     private List<String> paid() {
         return fired.stream()
-                .filter(line -> line.startsWith("first ") || line.startsWith("best ") || line.startsWith("course "))
+                .filter(line -> line.startsWith("first ")
+                        || line.startsWith("best ")
+                        || line.startsWith("course ")
+                        || line.startsWith("season "))
                 .toList();
     }
 

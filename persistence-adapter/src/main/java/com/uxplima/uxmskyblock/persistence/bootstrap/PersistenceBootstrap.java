@@ -161,6 +161,7 @@ public final class PersistenceBootstrap implements AutoCloseable {
     private final com.uxplima.uxmskyblock.persistence.parkour.SqlParkourRewardsAdapter parkourRewardsAdapter;
     private final com.uxplima.uxmskyblock.persistence.parkour.SqlParkourTagsAdapter parkourTagsAdapter;
     private final com.uxplima.uxmskyblock.persistence.parkour.SqlParkourDirectoryAdapter parkourDirectoryAdapter;
+    private final com.uxplima.uxmskyblock.persistence.parkour.SqlParkourSeasonsAdapter parkourSeasonsAdapter;
     private final com.uxplima.uxmskyblock.persistence.parkour.SqlParkourAdapter parkourAdapter;
     private final com.uxplima.uxmskyblock.persistence.leaderboard.SqlModeStandingsAdapter modeStandingsAdapter;
     private final com.uxplima.uxmskyblock.persistence.brix.SqlBrixPlotsAdapter brixPlotsAdapter;
@@ -278,6 +279,8 @@ public final class PersistenceBootstrap implements AutoCloseable {
                 new com.uxplima.uxmskyblock.persistence.parkour.SqlParkourTagsAdapter(database.dataSource());
         this.parkourDirectoryAdapter =
                 new com.uxplima.uxmskyblock.persistence.parkour.SqlParkourDirectoryAdapter(database.dataSource());
+        this.parkourSeasonsAdapter =
+                new com.uxplima.uxmskyblock.persistence.parkour.SqlParkourSeasonsAdapter(database.dataSource());
         this.modeStandingsAdapter =
                 new com.uxplima.uxmskyblock.persistence.leaderboard.SqlModeStandingsAdapter(database.dataSource());
         this.brixPlotsAdapter = new com.uxplima.uxmskyblock.persistence.brix.SqlBrixPlotsAdapter(database.dataSource());
@@ -552,6 +555,11 @@ public final class PersistenceBootstrap implements AutoCloseable {
     /** The courses as the directory lists them. */
     public com.uxplima.uxmskyblock.core.application.parkour.ParkourDirectoryPort parkourDirectoryPort() {
         return parkourDirectoryAdapter;
+    }
+
+    /** Each runner's best time on each course in each season. */
+    public com.uxplima.uxmskyblock.core.application.parkour.ParkourSeasonsPort parkourSeasonsPort() {
+        return parkourSeasonsAdapter;
     }
 
     /** Each course's tags and the stars its runners give it. */

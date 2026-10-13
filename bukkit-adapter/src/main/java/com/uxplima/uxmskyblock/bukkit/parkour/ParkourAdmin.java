@@ -28,11 +28,19 @@ public final class ParkourAdmin implements ModeAdminCommands.Mode {
 
     private final ParkourService service;
     private final Function<String, Optional<UUID>> players;
+    private volatile com.uxplima.uxmskyblock.core.application.parkour.@org.jspecify.annotations.Nullable ParkourSeasonService
+            seasons;
 
     /** @param players the player a name stands for, among those the server has seen */
     public ParkourAdmin(ParkourService service, Function<String, Optional<UUID>> players) {
         this.service = Objects.requireNonNull(service, "service must not be null");
         this.players = Objects.requireNonNull(players, "players must not be null");
+    }
+
+    /** Forgets the season times with the runs, so a reset course starts every board again. */
+    public ParkourAdmin seasons(com.uxplima.uxmskyblock.core.application.parkour.ParkourSeasonService boards) {
+        this.seasons = Objects.requireNonNull(boards, "boards must not be null");
+        return this;
     }
 
     @Override
@@ -75,6 +83,10 @@ public final class ParkourAdmin implements ModeAdminCommands.Mode {
                 runner = Optional.of(PlayerUuid.of(found.get()));
             }
             int cleared = service.clear(course, runner);
+            com.uxplima.uxmskyblock.core.application.parkour.ParkourSeasonService boards = seasons;
+            if (boards != null) {
+                boards.clear(course, runner);
+            }
             admin.send(
                     source.getSender(),
                     runnerName == null ? "isadmin.parkour.reset" : "isadmin.parkour.reset_runner",

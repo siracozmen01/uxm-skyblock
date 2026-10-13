@@ -13,6 +13,7 @@ import org.bukkit.Location;
 import org.bukkit.entity.Player;
 
 import net.kyori.adventure.text.minimessage.tag.resolver.Placeholder;
+import net.kyori.adventure.text.minimessage.tag.resolver.TagResolver;
 
 import com.uxplima.uxmskyblock.bukkit.i18n.Messages;
 import com.uxplima.uxmskyblock.bukkit.listener.IslandProtectionListener;
@@ -36,6 +37,7 @@ public final class ParkourBoard {
     private final int size;
     private final Function<UUID, @Nullable String> nameOf;
     private volatile @Nullable ParkourTagging tagging;
+    private volatile com.uxplima.uxmskyblock.core.application.parkour.@Nullable ParkourSeasonService seasons;
 
     /**
      * @param size how many runners the board shows
@@ -61,15 +63,69 @@ public final class ParkourBoard {
         this.tagging = Objects.requireNonNull(telling, "telling must not be null");
     }
 
-    /** Shows the board of the course the player stands on, or says they are on none. */
-    public void show(Player player) {
-        Location at = player.getLocation();
-        Optional<Island> island = at == null ? Optional.empty() : islands.findIslandAt(at);
-        if (island.isEmpty() || !service.isCourse(island.get().id())) {
+    /** Shows each season's board beside the board of all time. */
+    public void seasons(com.uxplima.uxmskyblock.core.application.parkour.ParkourSeasonService boards) {
+        this.seasons = Objects.requireNonNull(boards, "boards must not be null");
+    }
+
+    /**
+     * Shows the board of one season on the course the player stands on: the season under way, or the one numbered.
+     */
+    public void showSeason(Player player, java.util.OptionalInt number) {
+        Optional<IslandId> standing = course(player);
+        if (standing.isEmpty()) {
             messages.send(player, "parkour.not_course");
             return;
         }
-        IslandId course = island.get().id();
+        com.uxplima.uxmskyblock.core.application.parkour.ParkourSeasonService boards = seasons;
+        if (boards == null) {
+            messages.send(player, "parkour.season.none");
+            return;
+        }
+        IslandId course = standing.get();
+        PlayerUuid who = PlayerUuid.of(player.getUniqueId());
+        scheduler.async(() -> {
+            Optional<com.uxplima.uxmskyblock.core.domain.season.SeasonRecord> season;
+            List<ParkourPort.Best> top;
+            try {
+                season = number.isPresent() ? boards.season(number.getAsInt()) : boards.current();
+                top = season.isEmpty() ? List.of() : boards.top(course, season.get(), size);
+            } catch (RuntimeException e) {
+                LOGGER.log(Level.WARNING, e, () -> "The season times on course " + course + " could not be read.");
+                return;
+            }
+            List<String> names = names(top);
+            scheduler.onEntity(who, () -> {
+                if (season.isEmpty()) {
+                    if (number.isPresent()) {
+                        messages.send(
+                                player,
+                                "parkour.season.unknown",
+                                Placeholder.unparsed("number", Integer.toString(number.getAsInt())));
+                    } else {
+                        messages.send(player, "parkour.season.none");
+                    }
+                    return;
+                }
+                TagResolver named = Placeholder.unparsed("season", season.get().name());
+                if (top.isEmpty()) {
+                    messages.send(player, "parkour.season.empty", named);
+                    return;
+                }
+                messages.sendPlain(player, "parkour.season.header", named);
+                entries(player, top, names);
+            });
+        });
+    }
+
+    /** Shows the board of the course the player stands on, or says they are on none. */
+    public void show(Player player) {
+        Optional<IslandId> standing = course(player);
+        if (standing.isEmpty()) {
+            messages.send(player, "parkour.not_course");
+            return;
+        }
+        IslandId course = standing.get();
         PlayerUuid who = PlayerUuid.of(player.getUniqueId());
         ParkourTagging telling = tagging;
         scheduler.async(() -> {
@@ -82,12 +138,7 @@ public final class ParkourBoard {
                 LOGGER.log(Level.WARNING, e, () -> "The best times on course " + course + " could not be read.");
                 return;
             }
-            List<String> names = top.stream()
-                    .map(best -> {
-                        String name = nameOf.apply(best.runner().value());
-                        return name == null ? best.runner().value().toString().substring(0, 8) : name;
-                    })
-                    .toList();
+            List<String> names = names(top);
             scheduler.onEntity(who, () -> {
                 if (telling != null && about != null) {
                     telling.tell(player, about);
@@ -97,12 +148,33 @@ public final class ParkourBoard {
         });
     }
 
+    /** The Parkour course the player stands on. */
+    private Optional<IslandId> course(Player player) {
+        Location at = player.getLocation();
+        Optional<Island> island = at == null ? Optional.empty() : islands.findIslandAt(at);
+        return island.map(Island::id).filter(service::isCourse);
+    }
+
+    /** Each runner's name; one the server never knew is the start of their id. Off the main thread. */
+    private List<String> names(List<ParkourPort.Best> top) {
+        return top.stream()
+                .map(best -> {
+                    String name = nameOf.apply(best.runner().value());
+                    return name == null ? best.runner().value().toString().substring(0, 8) : name;
+                })
+                .toList();
+    }
+
     private void tell(Player player, List<ParkourPort.Best> top, List<String> names) {
         if (top.isEmpty()) {
             messages.send(player, "parkour.top_empty");
             return;
         }
         messages.sendPlain(player, "parkour.top_header");
+        entries(player, top, names);
+    }
+
+    private void entries(Player player, List<ParkourPort.Best> top, List<String> names) {
         for (int rank = 0; rank < top.size(); rank++) {
             ParkourPort.Best best = top.get(rank);
             messages.sendPlain(

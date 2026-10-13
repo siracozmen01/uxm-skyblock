@@ -41,6 +41,7 @@ class AnOperatorForgetsTheRunsOnACourseTest extends MockBukkitHarness {
     private static final UUID ADA = UUID.randomUUID();
 
     private final List<String> cleared = new ArrayList<>();
+    private final List<String> seasonsCleared = new ArrayList<>();
     private CommandDispatcher<CommandSourceStack> dispatcher;
     private PlayerMock operator;
 
@@ -96,7 +97,34 @@ class AnOperatorForgetsTheRunsOnACourseTest extends MockBukkitHarness {
         Map<String, UUID> seen = Map.of("Ada", ADA);
         dispatcher = new CommandDispatcher<>();
         dispatcher.register(new ModeAdminCommands(
-                        List.of(new ParkourAdmin(service, name -> Optional.ofNullable(seen.get(name)))),
+                        List.of(new ParkourAdmin(service, name -> Optional.ofNullable(seen.get(name)))
+                                .seasons(new com.uxplima.uxmskyblock.core.application.parkour.ParkourSeasonService(
+                                        new com.uxplima.uxmskyblock.core.application.parkour.ParkourSeasonsPort() {
+                                            @Override
+                                            public void finish(
+                                                    IslandId course, int season, PlayerUuid runner, long millis) {}
+
+                                            @Override
+                                            public List<
+                                                            com.uxplima.uxmskyblock.core.application.parkour.ParkourPort
+                                                                    .Best>
+                                                    top(IslandId course, int season, int limit) {
+                                                return List.of();
+                                            }
+
+                                            @Override
+                                            public int clear(IslandId course, Optional<PlayerUuid> runner) {
+                                                seasonsCleared.add(course + " "
+                                                        + runner.map(r -> r.value()
+                                                                        .toString())
+                                                                .orElse("everyone"));
+                                                return 1;
+                                            }
+                                        },
+                                        mock(
+                                                com.uxplima.uxmskyblock.core.application.season.IslandSeasonStoragePort
+                                                        .class),
+                                        java.time.Clock.systemUTC()))),
                         mock(IslandLocationService.class),
                         null,
                         scheduler,
@@ -127,6 +155,9 @@ class AnOperatorForgetsTheRunsOnACourseTest extends MockBukkitHarness {
         assertThat(run("isadmin parkour resettimes " + COURSE.value())).contains("4 runners start again");
         assertThat(run("isadmin parkour resettimes " + COURSE.value() + " Ada")).contains("runs of Ada");
         assertThat(cleared).containsExactly(COURSE + " everyone", COURSE + " " + ADA);
+        assertThat(seasonsCleared)
+                .describedAs("the season times go with them")
+                .containsExactly(COURSE + " everyone", COURSE + " " + ADA);
     }
 
     @Test
@@ -136,5 +167,6 @@ class AnOperatorForgetsTheRunsOnACourseTest extends MockBukkitHarness {
                 .contains("No player called Nobody");
         assertThat(run("isadmin parkour resettimes " + ORDINARY.value())).contains("not a Parkour course");
         assertThat(cleared).isEmpty();
+        assertThat(seasonsCleared).isEmpty();
     }
 }

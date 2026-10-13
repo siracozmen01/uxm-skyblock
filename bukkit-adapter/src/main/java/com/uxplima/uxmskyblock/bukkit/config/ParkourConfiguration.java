@@ -150,6 +150,7 @@ public record ParkourConfiguration(
      * @param personalBest run each time a runner beats their own best on a course
      * @param courseRecord run each time a runner finishes a course faster than anybody has, the first finish on a
      *     course included
+     * @param seasonRecord run each time a runner finishes a course faster than anybody has in the season under way
      * @param againAfter how long after paying a runner a new best or a record on a course the same list pays them
      *     again there; a first finish is paid once for good
      * @param shortestRun a run quicker than this pays nothing, so a course of a step or two earns no reward
@@ -158,11 +159,12 @@ public record ParkourConfiguration(
             List<String> firstFinish,
             List<String> personalBest,
             List<String> courseRecord,
+            List<String> seasonRecord,
             Duration againAfter,
             Duration shortestRun) {
 
         public static final Rewards SHIPPED =
-                new Rewards(List.of(), List.of(), List.of(), Duration.ofDays(1), Duration.ofSeconds(5));
+                new Rewards(List.of(), List.of(), List.of(), List.of(), Duration.ofDays(1), Duration.ofSeconds(5));
 
         public Rewards {
             Objects.requireNonNull(againAfter, "againAfter must not be null");
@@ -173,6 +175,7 @@ public record ParkourConfiguration(
             firstFinish = List.copyOf(firstFinish);
             personalBest = List.copyOf(personalBest);
             courseRecord = List.copyOf(courseRecord);
+            seasonRecord = List.copyOf(seasonRecord);
         }
     }
 
@@ -299,6 +302,7 @@ public record ParkourConfiguration(
                     AcidIslandConfiguration.strings(paid.node("first-finish"), Rewards.SHIPPED.firstFinish()),
                     AcidIslandConfiguration.strings(paid.node("personal-best"), Rewards.SHIPPED.personalBest()),
                     AcidIslandConfiguration.strings(paid.node("course-record"), Rewards.SHIPPED.courseRecord()),
+                    AcidIslandConfiguration.strings(paid.node("season-record"), Rewards.SHIPPED.seasonRecord()),
                     AcidIslandConfiguration.durationOf(
                             paid.node("again-after").getString(""), Rewards.SHIPPED.againAfter()),
                     AcidIslandConfiguration.durationOf(

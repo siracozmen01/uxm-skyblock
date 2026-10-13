@@ -34,6 +34,7 @@ import com.uxplima.uxmskyblock.bukkit.effect.InteractionEffects;
 import com.uxplima.uxmskyblock.bukkit.i18n.Messages;
 import com.uxplima.uxmskyblock.bukkit.listener.IslandProtectionListener;
 import com.uxplima.uxmskyblock.core.application.parkour.ParkourPort;
+import com.uxplima.uxmskyblock.core.application.parkour.ParkourSeasonService;
 import com.uxplima.uxmskyblock.core.application.parkour.ParkourService;
 import com.uxplima.uxmskyblock.core.application.scheduler.SchedulerPort;
 import com.uxplima.uxmskyblock.core.domain.identity.IslandId;
@@ -59,6 +60,8 @@ public final class ParkourRuns implements Listener {
 
     public static final String COURSE_RECORD = "course-record";
 
+    public static final String SEASON_RECORD = "season-record";
+
     /** How long a runner standing on the start plate goes before being told again that a run began. */
     private static final Duration TOLD_AGAIN = Duration.ofSeconds(3);
 
@@ -78,6 +81,7 @@ public final class ParkourRuns implements Listener {
     private volatile @org.jspecify.annotations.Nullable ParkourGhosts ghosts;
     private volatile @org.jspecify.annotations.Nullable ParkourSplits splits;
     private volatile @org.jspecify.annotations.Nullable ParkourChecks checks;
+    private volatile @org.jspecify.annotations.Nullable ParkourSeasonService seasons;
     private volatile InteractionEffects rewards = InteractionEffects.none();
     private volatile com.uxplima.uxmskyblock.core.application.parkour.@org.jspecify.annotations.Nullable ParkourRewardsPort
             ledger;
@@ -123,6 +127,11 @@ public final class ParkourRuns implements Listener {
         this.rewards = Objects.requireNonNull(paid, "paid must not be null");
         this.ledger = Objects.requireNonNull(ledger, "ledger must not be null");
         this.terms = Objects.requireNonNull(written, "written must not be null");
+    }
+
+    /** Counts each finish in the season under way, which keeps its own record. */
+    public void seasons(ParkourSeasonService counting) {
+        this.seasons = Objects.requireNonNull(counting, "counting must not be null");
     }
 
     /** Ends a run that is not run on foot. */
@@ -286,13 +295,26 @@ public final class ParkourRuns implements Listener {
                             && before.map(was -> time.toMillis() < was.millis()).orElse(true);
             String recordWas =
                     before.map(was -> format(Duration.ofMillis(was.millis()))).orElse("");
-            List<String> lists = team ? List.of() : claimed(course, who, finish, courseRecord, time);
+            Optional<ParkourSeasonService.Counted> season = counted(course, who, time);
+            boolean seasonRecord =
+                    season.filter(ParkourSeasonService.Counted::record).isPresent();
+            String seasonWas = season.flatMap(ParkourSeasonService.Counted::was)
+                    .map(was -> format(Duration.ofMillis(was)))
+                    .orElse("");
+            List<String> lists = team ? List.of() : claimed(course, who, finish, courseRecord, seasonRecord, time);
             scheduler.onEntity(who, () -> {
                 told(runner, finish);
                 if (courseRecord) {
                     messages.send(runner, "parkour.course_record", timed("time", time));
                 }
-                paid(runner, finish, lists, recordWas);
+                if (seasonRecord) {
+                    messages.send(
+                            runner,
+                            "parkour.season.record",
+                            timed("time", time),
+                            Placeholder.unparsed("season", season.get().season().name()));
+                }
+                paid(runner, finish, lists, recordWas, seasonWas);
             });
         });
     }
@@ -301,7 +323,8 @@ public final class ParkourRuns implements Listener {
      * Pays the finish: the first on the course, a new best of the runner's own, and a course record, each its list.
      * {@code recordWas} is the course's best this run beat, empty when there was none.
      */
-    private void paid(Player runner, ParkourService.Finish finish, List<String> lists, String recordWas) {
+    private void paid(
+            Player runner, ParkourService.Finish finish, List<String> lists, String recordWas, String seasonWas) {
         Map<String, String> says = said(finish.time());
         for (String list : lists) {
             String was =
@@ -309,6 +332,7 @@ public final class ParkourRuns implements Listener {
                         case PERSONAL_BEST ->
                             finish instanceof ParkourService.Finish.Beaten beaten ? format(beaten.was()) : "";
                         case COURSE_RECORD -> recordWas;
+                        case SEASON_RECORD -> seasonWas;
                         default -> "";
                     };
             effectPlayer.fire(rewards, list, runner, with(says, was));
@@ -320,7 +344,12 @@ public final class ParkourRuns implements Listener {
      * in their period, none for a run quicker than the shortest. Off the main thread.
      */
     private List<String> claimed(
-            IslandId course, PlayerUuid who, ParkourService.Finish finish, boolean courseRecord, Duration time) {
+            IslandId course,
+            PlayerUuid who,
+            ParkourService.Finish finish,
+            boolean courseRecord,
+            boolean seasonRecord,
+            Duration time) {
         com.uxplima.uxmskyblock.core.application.parkour.ParkourRewardsPort paidIn = ledger;
         ParkourConfiguration.Rewards written = terms;
         if (paidIn == null || time.compareTo(written.shortestRun()) < 0) {
@@ -338,7 +367,24 @@ public final class ParkourRuns implements Listener {
         if (courseRecord) {
             claim(paidIn, course, who, COURSE_RECORD, now, again, lists);
         }
+        if (seasonRecord) {
+            claim(paidIn, course, who, SEASON_RECORD, now, again, lists);
+        }
         return List.copyOf(lists);
+    }
+
+    /** The finish counted in the season under way, if one is and it could be counted. Off the main thread. */
+    private Optional<ParkourSeasonService.Counted> counted(IslandId course, PlayerUuid who, Duration time) {
+        ParkourSeasonService counting = seasons;
+        if (counting == null) {
+            return Optional.empty();
+        }
+        try {
+            return counting.count(course, who, time);
+        } catch (RuntimeException e) {
+            LOGGER.log(Level.WARNING, e, () -> "A run on course " + course + " could not be counted in its season.");
+            return Optional.empty();
+        }
     }
 
     private static void claim(

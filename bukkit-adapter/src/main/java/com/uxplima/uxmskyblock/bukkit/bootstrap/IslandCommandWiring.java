@@ -472,9 +472,10 @@ final class IslandCommandWiring {
         }
         if (gameplay.parkourWiring().enabled()) {
             modes.add(new com.uxplima.uxmskyblock.bukkit.parkour.ParkourAdmin(
-                    gameplay.parkourWiring().service(),
-                    name -> java.util.Optional.ofNullable(org.bukkit.Bukkit.getOfflinePlayerIfCached(name))
-                            .map(org.bukkit.OfflinePlayer::getUniqueId)));
+                            gameplay.parkourWiring().service(),
+                            name -> java.util.Optional.ofNullable(org.bukkit.Bukkit.getOfflinePlayerIfCached(name))
+                                    .map(org.bukkit.OfflinePlayer::getUniqueId))
+                    .seasons(gameplay.parkourWiring().seasons()));
         }
         // Loot tables serve every mode, so their branch is always there.
         modes.add(new com.uxplima.uxmskyblock.bukkit.loot.LootAdmin(config::lootTables));

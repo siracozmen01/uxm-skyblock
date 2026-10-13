@@ -787,7 +787,17 @@ public final class IslandCommandTree {
                                         ctx,
                                         shop -> player ->
                                                 shop.side(player, StringArgumentType.getString(ctx, "side"))))))
-                .then(Cmd.literal("course").executes(this::executeCourse))
+                .then(Cmd.literal("course")
+                        .executes(this::executeCourse)
+                        .then(Cmd.literal("season")
+                                .executes(ctx -> executeCourseSeason(ctx, java.util.OptionalInt.empty()))
+                                .then(Cmd.argument(
+                                                "number", com.mojang.brigadier.arguments.IntegerArgumentType.integer(1))
+                                        .executes(ctx -> executeCourseSeason(
+                                                ctx,
+                                                java.util.OptionalInt.of(
+                                                        com.mojang.brigadier.arguments.IntegerArgumentType.getInteger(
+                                                                ctx, "number")))))))
                 .then(Cmd.literal("courses").executes(this::executeCourses))
                 .then(Cmd.literal("coursetag")
                         .then(courseTag(
@@ -998,6 +1008,20 @@ public final class IslandCommandTree {
             return Cmd.OK;
         }
         board.show(player);
+        return Cmd.OK;
+    }
+
+    private int executeCourseSeason(CommandContext<CommandSourceStack> ctx, java.util.OptionalInt number) {
+        if (!(ctx.getSource().getSender() instanceof Player player)) {
+            send(ctx.getSource().getSender(), "error.players_only");
+            return Cmd.OK;
+        }
+        com.uxplima.uxmskyblock.bukkit.parkour.ParkourBoard board = this.parkourBoard;
+        if (board == null) {
+            send(player, "parkour.not_course");
+            return Cmd.OK;
+        }
+        board.showSeason(player, number);
         return Cmd.OK;
     }
 

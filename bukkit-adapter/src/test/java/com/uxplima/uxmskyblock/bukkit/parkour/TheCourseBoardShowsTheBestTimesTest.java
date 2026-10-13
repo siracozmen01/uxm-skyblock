@@ -177,6 +177,87 @@ class TheCourseBoardShowsTheBestTimesTest extends MockBukkitHarness {
     }
 
     @Test
+    @DisplayName(
+            "A season's board lists its own fastest, the one under way or the one numbered, and says when there is none")
+    void aSeasonsBoard() {
+        com.uxplima.uxmskyblock.core.application.season.IslandSeasonStoragePort storage =
+                mock(com.uxplima.uxmskyblock.core.application.season.IslandSeasonStoragePort.class);
+        Instant now = Instant.now();
+        com.uxplima.uxmskyblock.core.domain.season.SeasonRecord summer =
+                new com.uxplima.uxmskyblock.core.domain.season.SeasonRecord(
+                        com.uxplima.uxmskyblock.core.domain.season.SeasonId.of(2),
+                        "Summer",
+                        now.minusSeconds(60),
+                        now.plusSeconds(600),
+                        com.uxplima.uxmskyblock.core.domain.season.SeasonState.ACTIVE);
+        com.uxplima.uxmskyblock.core.domain.season.SeasonRecord spring =
+                new com.uxplima.uxmskyblock.core.domain.season.SeasonRecord(
+                        com.uxplima.uxmskyblock.core.domain.season.SeasonId.of(1),
+                        "Spring",
+                        now.minusSeconds(6000),
+                        now.minusSeconds(600),
+                        com.uxplima.uxmskyblock.core.domain.season.SeasonState.COMPLETED);
+        org.mockito.Mockito.when(storage.findSeason(com.uxplima.uxmskyblock.core.domain.season.SeasonId.of(1)))
+                .thenReturn(java.util.Optional.of(spring));
+        org.mockito.Mockito.when(storage.findSeason(com.uxplima.uxmskyblock.core.domain.season.SeasonId.of(9)))
+                .thenReturn(java.util.Optional.empty());
+        List<String> read = new ArrayList<>();
+        board.seasons(new com.uxplima.uxmskyblock.core.application.parkour.ParkourSeasonService(
+                new com.uxplima.uxmskyblock.core.application.parkour.ParkourSeasonsPort() {
+                    @Override
+                    public void finish(IslandId on, int season, PlayerUuid runner, long millis) {
+                        throw new UnsupportedOperationException("the board writes nothing");
+                    }
+
+                    @Override
+                    public List<ParkourPort.Best> top(IslandId on, int season, int limit) {
+                        read.add(season + "x" + limit);
+                        return season == 2 && on.equals(course.id())
+                                ? List.of(new ParkourPort.Best(PlayerUuid.of(SLOW), 4_000, 3))
+                                : List.of();
+                    }
+
+                    @Override
+                    public int clear(IslandId on, java.util.Optional<PlayerUuid> runner) {
+                        throw new UnsupportedOperationException("nothing here clears a course");
+                    }
+                },
+                storage,
+                java.time.Clock.systemUTC()));
+
+        standAt(8);
+        org.mockito.Mockito.when(storage.findActiveSeason()).thenReturn(java.util.Optional.empty());
+        board.showSeason(player, java.util.OptionalInt.empty());
+        assertThat(said()).contains("There is no season under way.");
+
+        org.mockito.Mockito.when(storage.findActiveSeason()).thenReturn(java.util.Optional.of(summer));
+        board.showSeason(player, java.util.OptionalInt.empty());
+        assertThat(said())
+                .contains("Summer: the best times")
+                .doesNotContain("Season Summer")
+                .contains("#1 Steady 0:04.000 (3 runs)");
+
+        board.showSeason(player, java.util.OptionalInt.of(1));
+        assertThat(said()).contains("Nobody finished this course in Spring yet.");
+
+        board.showSeason(player, java.util.OptionalInt.of(9));
+        assertThat(said()).contains("There is no season 9.");
+
+        standAt(2008);
+        board.showSeason(player, java.util.OptionalInt.empty());
+        assertThat(said()).contains("You are not on a Parkour course");
+        assertThat(read).describedAs("as many as the operator wrote").containsExactly("2x2", "1x2");
+    }
+
+    @Test
+    @DisplayName("Without the season boards, a season's board is said to be none")
+    void noSeasonBoards() {
+        standAt(8);
+        board.showSeason(player, java.util.OptionalInt.empty());
+        assertThat(said()).contains("There is no season under way.");
+    }
+
+    @Test
     @DisplayName("The board's length is read from the file, and one out of bounds falls back to ten")
     void theBoardSizeIsRead() throws Exception {
         assertThat(sizeWritten("runs { board-size = 3 }")).isEqualTo(3);

@@ -14,6 +14,7 @@ import com.uxplima.uxmskyblock.bukkit.parkour.CourseStart;
 import com.uxplima.uxmskyblock.bukkit.parkour.ParkourRuns;
 import com.uxplima.uxmskyblock.bukkit.schematic.IslandStart;
 import com.uxplima.uxmskyblock.core.application.gamemode.CreationActionProvider;
+import com.uxplima.uxmskyblock.core.application.parkour.ParkourSeasonService;
 import com.uxplima.uxmskyblock.core.application.parkour.ParkourService;
 import com.uxplima.uxmskyblock.core.application.scheduler.SchedulerPort;
 import com.uxplima.uxmskyblock.persistence.bootstrap.PersistenceBootstrap;
@@ -27,6 +28,7 @@ public final class ParkourWiring implements AutoCloseable {
     private final ParkourService service;
     private final SchedulerPort scheduler;
     private final ParkourRuns runs;
+    private final ParkourSeasonService seasons;
     private final com.uxplima.uxmskyblock.bukkit.parkour.ParkourChecks checks;
     private final com.uxplima.uxmskyblock.bukkit.parkour.ParkourModes modes;
     private final com.uxplima.uxmskyblock.bukkit.parkour.ParkourBoard board;
@@ -68,6 +70,9 @@ public final class ParkourWiring implements AutoCloseable {
         this.checks =
                 new com.uxplima.uxmskyblock.bukkit.parkour.ParkourChecks(runs, config.checks(), Clock.systemUTC());
         runs.checks(checks);
+        this.seasons = new ParkourSeasonService(
+                persistence.parkourSeasonsPort(), persistence.islandSeasonStoragePort(), Clock.systemUTC());
+        runs.seasons(seasons);
         runs.rewards(
                 new com.uxplima.uxmskyblock.bukkit.effect.InteractionEffects(Map.of(
                         ParkourRuns.FIRST_FINISH,
@@ -81,7 +86,11 @@ public final class ParkourWiring implements AutoCloseable {
                         ParkourRuns.COURSE_RECORD,
                         com.uxplima.uxmskyblock.bukkit.config.EffectsConfiguration.parseAll(
                                 "the Parkour course-record rewards",
-                                config.rewards().courseRecord()))),
+                                config.rewards().courseRecord()),
+                        ParkourRuns.SEASON_RECORD,
+                        com.uxplima.uxmskyblock.bukkit.config.EffectsConfiguration.parseAll(
+                                "the Parkour season-record rewards",
+                                config.rewards().seasonRecord()))),
                 persistence.parkourRewardsPort(),
                 config.rewards());
         runs.splits(new com.uxplima.uxmskyblock.bukkit.parkour.ParkourSplits(
@@ -103,6 +112,7 @@ public final class ParkourWiring implements AutoCloseable {
                 configuration.messages(),
                 config.runs().boardSize(),
                 uuid -> org.bukkit.Bukkit.getOfflinePlayer(uuid).getName());
+        board.seasons(seasons);
         this.tagging = new com.uxplima.uxmskyblock.bukkit.parkour.ParkourTagging(
                 service,
                 persistence.parkourTagsPort(),
@@ -138,6 +148,11 @@ public final class ParkourWiring implements AutoCloseable {
 
     public ParkourRuns runs() {
         return runs;
+    }
+
+    /** Each season's times on each course. */
+    public ParkourSeasonService seasons() {
+        return seasons;
     }
 
     /** What ends a run that is not run on foot: teleports, flight and gliding. */

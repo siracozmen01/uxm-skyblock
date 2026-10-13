@@ -69,6 +69,11 @@ class TheCourseBranchShowsTheBoardTest {
         dispatcher().execute("island course", source());
 
         verify(board).show(player);
+
+        dispatcher().execute("island course season", source());
+        verify(board).showSeason(player, java.util.OptionalInt.empty());
+        dispatcher().execute("island course season 3", source());
+        verify(board).showSeason(player, java.util.OptionalInt.of(3));
     }
 
     @Test
@@ -77,6 +82,9 @@ class TheCourseBranchShowsTheBoardTest {
         dispatcher().execute("island course", source());
 
         verify(player).sendMessage(any(Component.class));
+
+        dispatcher().execute("island course season", source());
+        verify(player, org.mockito.Mockito.times(2)).sendMessage(any(Component.class));
     }
 
     @Test
