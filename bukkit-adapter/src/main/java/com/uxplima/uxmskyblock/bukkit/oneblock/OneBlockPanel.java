@@ -49,6 +49,13 @@ public final class OneBlockPanel {
             config;
     private volatile @Nullable OneBlockProgressBars bars;
     private volatile @Nullable OneBlockPhasesMenu phasesMenu;
+    private volatile com.uxplima.uxmskyblock.core.application.oneblock.@Nullable OneBlockContributions contributions;
+    private volatile Function<UUID, String> names = OneBlockPanel::nameOf;
+
+    /** Read once the island is, on the player's thread: the island, its way and its count. */
+    private interface Read {
+        void shown(IslandId islandId, OneBlockPhases way, long broken);
+    }
 
     /** The verb the panel's bar button runs to switch where the player's progress shows. */
     static final String SWITCH_BAR = "skyblock:oneblock-bar";
@@ -80,6 +87,17 @@ public final class OneBlockPanel {
         this.bars = Objects.requireNonNull(bars, "bars must not be null");
     }
 
+    /** How many blocks each player broke on each island, which the panel and the placeholders tell. */
+    public void useContributions(
+            com.uxplima.uxmskyblock.core.application.oneblock.OneBlockContributions contributions) {
+        this.contributions = Objects.requireNonNull(contributions, "contributions must not be null");
+    }
+
+    /** A player's name by their uuid, in place of the server's own record of it. */
+    void useNames(Function<UUID, String> names) {
+        this.names = Objects.requireNonNull(names, "names must not be null");
+    }
+
     /** The window that lists every phase, which the panel's phases button opens. */
     public void usePhasesMenu(OneBlockPhasesMenu phasesMenu) {
         this.phasesMenu = Objects.requireNonNull(phasesMenu, "phasesMenu must not be null");
@@ -99,7 +117,7 @@ public final class OneBlockPanel {
             engine.action(PHASES, ctx -> {
                 OneBlockPhasesMenu listed = phasesMenu;
                 if (listed != null) {
-                    read(ctx.player(), (way, broken) -> listed.show(ctx.player(), way, broken));
+                    read(ctx.player(), (islandId, way, broken) -> listed.show(ctx.player(), way, broken));
                 }
             });
         }
@@ -107,14 +125,14 @@ public final class OneBlockPanel {
 
     /** Shows the player where their island stands, or says why there is nothing to show. */
     public void open(Player player) {
-        read(player, (way, broken) -> show(player, way, broken));
+        read(player, (islandId, way, broken) -> show(player, islandId, way, broken));
     }
 
     /**
      * Reads the player's island off their thread and hands its way and count to {@code shown} on it, or says why
      * there is nothing to show.
      */
-    private void read(Player player, java.util.function.ObjLongConsumer<OneBlockPhases> shown) {
+    private void read(Player player, Read shown) {
         Objects.requireNonNull(player, "player must not be null");
         PlayerUuid playerUuid = new PlayerUuid(player.getUniqueId());
         Optional<ProfileId> profile = activeProfile.apply(player.getUniqueId());
@@ -135,15 +153,15 @@ public final class OneBlockPanel {
                 if (oneBlock.isEmpty()) {
                     messages.send(player, "oneblock.not_oneblock");
                 } else {
-                    shown.accept(way, oneBlock.get().blocksBroken());
+                    shown.shown(islandId.get(), way, oneBlock.get().blocksBroken());
                 }
             });
         });
     }
 
     /** Draws the panel on the player's own thread from a count already read. */
-    void show(Player player, OneBlockPhases way, long broken) {
-        Map<String, String> values = values(player, way, broken);
+    void show(Player player, IslandId islandId, OneBlockPhases way, long broken) {
+        Map<String, String> values = values(player, islandId, way, broken);
         SkyblockMenuEngine menus = this.engine;
         if (menus != null && menus.open(player, MENU, values)) {
             return;
@@ -170,6 +188,9 @@ public final class OneBlockPanel {
      *   <li>{@code next_moment}: how many breaks until the next moment the phase file writes, empty when none is left
      *   <li>{@code cycle}: which pass through the phases the island is on, from 1
      *   <li>{@code bar}: where the viewer's progress shows, in their language, empty for a viewer who is no player
+     *   <li>{@code my_breaks}: how many of the island's blocks the viewer broke
+     *   <li>{@code top_member} and {@code top_member_breaks}: who broke the most of them, and how many; empty
+     *       before anyone broke one
      * </ul>
      */
     public Map<String, String> values(@Nullable Audience viewer, long broken) {
@@ -178,6 +199,12 @@ public final class OneBlockPanel {
 
     /** The same, along an island's own way through the phases, which its picks set. */
     Map<String, String> values(@Nullable Audience viewer, OneBlockPhases phases, long broken) {
+        return values(viewer, null, phases, broken);
+    }
+
+    /** The same, for the island {@code islandId}, so each member's breaks are told too. */
+    Map<String, String> values(
+            @Nullable Audience viewer, @Nullable IslandId islandId, OneBlockPhases phases, long broken) {
         OneBlockPhases.Position at = phases.positionAt(broken);
         String key = at.phase().key();
         long into = at.intoPhase();
@@ -203,7 +230,36 @@ public final class OneBlockPanel {
         values.put(
                 "bar",
                 shown != null && viewer instanceof Player player ? shown.named(player, shown.shownTo(player)) : "");
+        members(values, viewer, islandId);
         return values;
+    }
+
+    /** Each member's share of the island's breaks: the viewer's own, and who broke the most. */
+    private void members(Map<String, String> values, @Nullable Audience viewer, @Nullable IslandId islandId) {
+        var counted = contributions;
+        if (counted == null || islandId == null) {
+            values.put("my_breaks", "0");
+            values.put("top_member", "");
+            values.put("top_member_breaks", "");
+            return;
+        }
+        values.put(
+                "my_breaks",
+                viewer instanceof Player player
+                        ? Long.toString(counted.of(islandId, new PlayerUuid(player.getUniqueId())))
+                        : "0");
+        var most = counted.of(islandId).stream().findFirst();
+        values.put(
+                "top_member", most.map(one -> names.apply(one.player().value())).orElse(""));
+        values.put(
+                "top_member_breaks",
+                most.map(one -> Long.toString(one.breaks())).orElse(""));
+    }
+
+    /** The name the server last saw a player under, or the start of their uuid when it never saw them. */
+    private static String nameOf(UUID uuid) {
+        String name = org.bukkit.Bukkit.getOfflinePlayer(uuid).getName();
+        return name != null ? name : uuid.toString().substring(0, 8);
     }
 
     /** The phase after the one at {@code at}: the next along the way, the first again past the last when it repeats. */
@@ -250,6 +306,7 @@ public final class OneBlockPanel {
         Player online = player == null ? null : player.getPlayer();
         Map<String, String> values = values(
                 online,
+                IslandId.of(islandId),
                 service.phasesInMemory(IslandId.of(islandId)).orElse(service.phases()),
                 held.map(OneBlockProgressPort.OneBlockIsland::blocksBroken).orElse(0L));
         if (!values.containsKey(name)) {

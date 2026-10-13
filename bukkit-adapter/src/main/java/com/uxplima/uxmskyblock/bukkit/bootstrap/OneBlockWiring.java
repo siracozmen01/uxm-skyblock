@@ -27,6 +27,7 @@ public final class OneBlockWiring implements AutoCloseable {
     private final com.uxplima.uxmskyblock.bukkit.oneblock.OneBlockBranches branches;
     private final com.uxplima.uxmskyblock.bukkit.oneblock.OneBlockPhasesMenu phasesMenu;
     private final com.uxplima.uxmskyblock.bukkit.oneblock.OneBlockBiomes biomes;
+    private final com.uxplima.uxmskyblock.core.application.oneblock.OneBlockContributions contributions;
 
     public OneBlockWiring(
             ConfigurationWiring configuration,
@@ -45,7 +46,15 @@ public final class OneBlockWiring implements AutoCloseable {
                 config.phases(),
                 new SplittableRandom());
         service.lookAhead(config.creatureWarning());
-        this.saving = scheduler.repeatAsync(service::flush, config.saveInterval(), config.saveInterval());
+        this.contributions = new com.uxplima.uxmskyblock.core.application.oneblock.OneBlockContributions(
+                persistence.oneBlockContributionPort());
+        this.saving = scheduler.repeatAsync(
+                () -> {
+                    service.flush();
+                    contributions.flush();
+                },
+                config.saveInterval(),
+                config.saveInterval());
         this.listener = new com.uxplima.uxmskyblock.bukkit.oneblock.OneBlockListener(
                 service,
                 islands,
@@ -82,11 +91,14 @@ public final class OneBlockWiring implements AutoCloseable {
         this.biomes = new com.uxplima.uxmskyblock.bukkit.oneblock.OneBlockBiomes(
                 () -> config, scheduler, persistence.islandStoragePort()::findIslandById);
         listener.useBiomes(biomes);
+        listener.useContributions(contributions);
+        panel.useContributions(contributions);
         // Every OneBlock island into memory before players break anything, so no break is a query on
         // the region's thread. A break before it finishes reads its island once.
         scheduler.async(() -> {
             try {
                 int count = service.prime();
+                contributions.prime();
                 LOGGER.fine(() -> count + " OneBlock islands are in memory.");
                 // A wait that was counting down before the restart goes on where it stood.
                 for (var waiting : service.timedWaits()) {
@@ -139,7 +151,8 @@ public final class OneBlockWiring implements AutoCloseable {
         if (!config.enabled()) {
             return java.util.List.of();
         }
-        return java.util.List.of(new com.uxplima.uxmskyblock.bukkit.oneblock.OneBlockStart(service, draws, biomes));
+        return java.util.List.of(
+                new com.uxplima.uxmskyblock.bukkit.oneblock.OneBlockStart(service, draws, biomes, contributions));
     }
 
     /**
@@ -272,5 +285,6 @@ public final class OneBlockWiring implements AutoCloseable {
             LOGGER.log(Level.WARNING, "Stopping the OneBlock save schedule failed.", e);
         }
         service.flush();
+        contributions.flush();
     }
 }

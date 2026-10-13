@@ -684,8 +684,11 @@ public final class GameplayWiring {
     private void modeBoards(com.uxplima.uxmskyblock.core.application.leaderboard.ModeStandingsPort standings) {
         var metrics = creationWiring.leaderboardMetrics();
         if (this.oneBlockWiring.enabled()) {
+            var oneBlock = this.oneBlockWiring.service();
             com.uxplima.uxmskyblock.core.application.leaderboard.ModeMetrics.oneBlock(
-                    metrics, standings, this.oneBlockWiring.service().phases());
+                    metrics,
+                    standings,
+                    island -> oneBlock.phasesInMemory(island).orElse(oneBlock.phases()));
         }
         if (this.parkourWiring.enabled()) {
             com.uxplima.uxmskyblock.core.application.leaderboard.ModeMetrics.parkour(metrics, standings);

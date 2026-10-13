@@ -58,6 +58,8 @@ public final class OneBlockListener implements Listener {
     private volatile @org.jspecify.annotations.Nullable OneBlockProgressBars bars;
     private volatile @org.jspecify.annotations.Nullable OneBlockBlockLines blockLines;
     private volatile @org.jspecify.annotations.Nullable OneBlockBiomes biomes;
+    private volatile com.uxplima.uxmskyblock.core.application.oneblock.@org.jspecify.annotations.Nullable OneBlockContributions
+            contributions;
     private volatile java.util.function.DoubleSupplier luck =
             () -> java.util.concurrent.ThreadLocalRandom.current().nextDouble();
 
@@ -93,6 +95,12 @@ public final class OneBlockListener implements Listener {
     /** Rolls whether a break is lucky, from 0 to 1, in place of the server's own chance. */
     void useLuck(java.util.function.DoubleSupplier luck) {
         this.luck = Objects.requireNonNull(luck, "luck must not be null");
+    }
+
+    /** Counts each break for the player whose break it was. */
+    public void useContributions(
+            com.uxplima.uxmskyblock.core.application.oneblock.OneBlockContributions contributions) {
+        this.contributions = Objects.requireNonNull(contributions, "contributions must not be null");
     }
 
     /** Tells it how a phase gives its island its biome. */
@@ -229,6 +237,11 @@ public final class OneBlockListener implements Listener {
      * lists, and a phase that waits begins with bedrock.
      */
     private void counted(Island owner, Player player, World world, int x, int y, int z, OneBlockService.Broken next) {
+        var members = contributions;
+        if (members != null) {
+            members.count(
+                    owner.id(), new com.uxplima.uxmskyblock.core.domain.identity.PlayerUuid(player.getUniqueId()));
+        }
         OneBlockPauses waits = pauses;
         OneBlockDraws ahead = draws;
         OneBlockProgressBars shown = bars;

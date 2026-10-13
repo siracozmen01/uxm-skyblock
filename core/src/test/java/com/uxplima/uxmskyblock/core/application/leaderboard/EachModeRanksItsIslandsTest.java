@@ -92,6 +92,20 @@ class EachModeRanksItsIslandsTest {
     }
 
     @Test
+    @DisplayName("Each island's phases are counted along its own way, which its picks set where a phase branches")
+    void alongItsOwnWay() {
+        OneBlockPhases file =
+                new OneBlockPhases(List.of(phase("plains", 3), phase("cave", 7)), OneBlockPhases.AfterTheLast.REPEAT);
+        OneBlockPhases picked = new OneBlockPhases(
+                List.of(phase("plains", 3), phase("forest", 1), phase("end", 5)), OneBlockPhases.AfterTheLast.REPEAT);
+        ModeMetrics.oneBlock(registry, port, island -> island.equals(SECOND) ? picked : file);
+
+        assertThat(board(ModeMetrics.ONEBLOCK_PHASE))
+                .describedAs("4 breaks along plains, forest and end is the third phase reached")
+                .containsExactly("Tower 6", "Garden 3", "c 1");
+    }
+
+    @Test
     @DisplayName("An island that stays in the last phase has reached every phase, and no more")
     void stayingInTheLast() {
         OneBlockPhases phases =

@@ -5,7 +5,6 @@ import java.util.Locale;
 import java.util.Objects;
 import java.util.function.IntFunction;
 import java.util.function.LongFunction;
-import java.util.function.LongUnaryOperator;
 
 import com.uxplima.uxmskyblock.api.NamespacedId;
 import com.uxplima.uxmskyblock.api.leaderboard.LeaderboardMetricProvider;
@@ -36,6 +35,20 @@ public final class ModeMetrics {
      */
     public static void oneBlock(LeaderboardMetricRegistry registry, ModeStandingsPort port, OneBlockPhases phases) {
         Objects.requireNonNull(phases, "phases must not be null");
+        oneBlock(registry, port, island -> phases);
+    }
+
+    /**
+     * The same, each island's phases counted along its own way through them, which its picks set where a phase
+     * branches.
+     *
+     * @param wayOf an island's way through the phases, read from memory
+     */
+    public static void oneBlock(
+            LeaderboardMetricRegistry registry,
+            ModeStandingsPort port,
+            java.util.function.Function<com.uxplima.uxmskyblock.core.domain.identity.IslandId, OneBlockPhases> wayOf) {
+        Objects.requireNonNull(wayOf, "wayOf must not be null");
         registry.register(new Board(
                 ONEBLOCK_BLOCKS,
                 "OneBlock blocks",
@@ -43,7 +56,7 @@ public final class ModeMetrics {
                 SortDirection.HIGHEST_FIRST,
                 MetricConsistency.BATCH_SCHEDULED,
                 port::mostBroken,
-                broken -> broken,
+                ModeStandingsPort.Standing::value,
                 Long::toString));
         registry.register(new Board(
                 ONEBLOCK_PHASE,
@@ -52,7 +65,7 @@ public final class ModeMetrics {
                 SortDirection.HIGHEST_FIRST,
                 MetricConsistency.BATCH_SCHEDULED,
                 port::mostBroken,
-                broken -> phasesReached(phases, broken),
+                standing -> phasesReached(wayOf.apply(standing.islandId()), standing.value()),
                 Long::toString));
     }
 
@@ -65,7 +78,7 @@ public final class ModeMetrics {
                 SortDirection.LOWEST_FIRST,
                 MetricConsistency.EVENT_DRIVEN_EXACT,
                 port::fastestCourses,
-                millis -> millis,
+                ModeStandingsPort.Standing::value,
                 ModeMetrics::time));
     }
 
@@ -79,7 +92,7 @@ public final class ModeMetrics {
                 SortDirection.HIGHEST_FIRST,
                 MetricConsistency.EVENT_DRIVEN_EXACT,
                 port::mostEarned,
-                earned -> 2L * rules.radius(earned) + 1,
+                standing -> 2L * rules.radius(standing.value()) + 1,
                 across -> across + "×" + across));
     }
 
@@ -92,7 +105,7 @@ public final class ModeMetrics {
                 SortDirection.HIGHEST_FIRST,
                 MetricConsistency.EVENT_DRIVEN_EXACT,
                 port::mostChunks,
-                chunks -> chunks,
+                ModeStandingsPort.Standing::value,
                 Long::toString));
     }
 
@@ -119,7 +132,7 @@ public final class ModeMetrics {
             SortDirection sortDirection,
             MetricConsistency consistency,
             IntFunction<List<ModeStandingsPort.Standing>> standings,
-            LongUnaryOperator value,
+            java.util.function.ToLongFunction<ModeStandingsPort.Standing> value,
             LongFunction<String> written)
             implements LeaderboardMetricProvider {
 
@@ -132,9 +145,7 @@ public final class ModeMetrics {
         public List<MetricReading> read(int limit) {
             return standings.apply(limit).stream()
                     .map(standing -> new MetricReading(
-                            standing.islandId().value().toString(),
-                            standing.name(),
-                            value.applyAsLong(standing.value())))
+                            standing.islandId().value().toString(), standing.name(), value.applyAsLong(standing)))
                     .toList();
         }
 

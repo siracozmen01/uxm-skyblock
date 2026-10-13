@@ -6,6 +6,7 @@ import org.bukkit.Material;
 
 import com.uxplima.uxmskyblock.bukkit.schematic.IslandStart;
 import com.uxplima.uxmskyblock.core.application.gamemode.CreationActionProvider;
+import com.uxplima.uxmskyblock.core.application.oneblock.OneBlockContributions;
 import com.uxplima.uxmskyblock.core.application.oneblock.OneBlockService;
 import org.jspecify.annotations.Nullable;
 
@@ -24,16 +25,25 @@ public final class OneBlockStart implements CreationActionProvider<IslandStart> 
     private final OneBlockService service;
     private final OneBlockDraws draws;
     private final @Nullable OneBlockBiomes biomes;
+    private final @Nullable OneBlockContributions contributions;
 
     public OneBlockStart(OneBlockService service) {
-        this(service, OneBlockDraws.PLAIN, null);
+        this(service, OneBlockDraws.PLAIN, null, null);
     }
 
-    /** With the biome of the first phase given to the island, when its file names one. */
-    public OneBlockStart(OneBlockService service, OneBlockDraws draws, @Nullable OneBlockBiomes biomes) {
+    /**
+     * With the biome of the first phase given to the island, when its file names one, and each member's breaks
+     * counted from nothing.
+     */
+    public OneBlockStart(
+            OneBlockService service,
+            OneBlockDraws draws,
+            @Nullable OneBlockBiomes biomes,
+            @Nullable OneBlockContributions contributions) {
         this.service = Objects.requireNonNull(service, "service must not be null");
         this.draws = Objects.requireNonNull(draws, "draws must not be null");
         this.biomes = biomes;
+        this.contributions = contributions;
     }
 
     @Override
@@ -44,6 +54,9 @@ public final class OneBlockStart implements CreationActionProvider<IslandStart> 
     @Override
     public void apply(IslandStart start) {
         String first = service.start(start.islandId(), start.centerX(), start.y(), start.centerZ());
+        if (contributions != null) {
+            contributions.start(start.islandId());
+        }
         draws.lay(start.world(), start.centerX(), start.y(), start.centerZ(), first);
         // Nobody broke anything yet, so a rarity has nobody to fire for.
         var unused = draws.fill(

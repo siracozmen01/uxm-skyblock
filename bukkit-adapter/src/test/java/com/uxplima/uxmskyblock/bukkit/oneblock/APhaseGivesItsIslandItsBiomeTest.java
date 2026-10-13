@@ -251,7 +251,7 @@ class APhaseGivesItsIslandItsBiomeTest extends MockBukkitHarness {
         OneBlockConfiguration config = configured("biome = \"snowy_plains\"", "");
         OneBlockService service = new OneBlockService(memory(), config.phases(), new SplittableRandom(1));
         StarterSchematicEngine engine = new StarterSchematicEngine();
-        engine.actions().register(new OneBlockStart(service, OneBlockDraws.PLAIN, biomes(config)));
+        engine.actions().register(new OneBlockStart(service, OneBlockDraws.PLAIN, biomes(config), null));
 
         engine.start(new IslandStart(
                         world,
