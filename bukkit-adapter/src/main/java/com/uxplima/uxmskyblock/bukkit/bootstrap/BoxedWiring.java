@@ -60,7 +60,8 @@ public final class BoxedWiring implements AutoCloseable {
                 persistence.islandStoragePort()::findLocationByIslandId,
                 new com.uxplima.uxmskyblock.bukkit.boxed.TemplateChunks(scheduler, org.bukkit.Bukkit::getWorld),
                 scheduler,
-                config.land());
+                config.land(),
+                () -> persistence.gridAllocator().gridSpacing());
         this.listener = new BoxedListener(
                 service,
                 islands,

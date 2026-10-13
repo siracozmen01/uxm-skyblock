@@ -68,6 +68,7 @@ class TheTemplatesLandIsLaidTest extends MockBukkitHarness {
     private final List<CompletableFuture<Void>> pending = new ArrayList<>();
     private boolean holdChunks;
     private boolean otherNodeMoves;
+    private int spacing = 5120;
 
     private final BoxedService service = new BoxedService(
             new BoxedIslandsPort() {
@@ -169,6 +170,25 @@ class TheTemplatesLandIsLaidTest extends MockBukkitHarness {
         copied.clear();
         copier.catchUp(islandId).join();
         assertThat(copied).describedAs("nothing more to copy").isEmpty();
+    }
+
+    @Test
+    @DisplayName("No chunk is laid past the island's own cell of the grid, so a neighbour's land is never touched")
+    void keptToItsCell() {
+        service.start(islandId);
+        // The centre at block 168, -72; a spacing of 64 leaves 32 each way, blocks 137 to 199 and -103 to -41.
+        spacing = 64;
+        service.grant(islandId, 60);
+
+        copier(LAND).begin(islandId).join();
+
+        assertThat(rings)
+                .describedAs("every ring the box wants is written down")
+                .containsEntry(islandId, 5);
+        assertThat(copied)
+                .describedAs("chunks 9 to 11 along x and -6 to -4 along z lie whole inside the cell")
+                .hasSize(9)
+                .allSatisfy(line -> assertThat(line).matches("boxed \\d+,\\d+ to (9|10|11),-[4-6]"));
     }
 
     @Test
@@ -385,6 +405,7 @@ class TheTemplatesLandIsLaidTest extends MockBukkitHarness {
                     return held;
                 },
                 scheduler,
-                land);
+                land,
+                () -> spacing);
     }
 }

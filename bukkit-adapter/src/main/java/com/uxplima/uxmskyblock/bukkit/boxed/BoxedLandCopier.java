@@ -24,6 +24,10 @@ import com.uxplima.uxmskyblock.core.domain.island.IslandLocation;
  * and {@link BoxedLand#ahead()} blocks past it, so the land a player sees past the box is the land it grows into.
  * Each ring is written down once it stands, so a ring cut short by a stop is copied again, whole, the next time the
  * island is looked at. One island copies one ring at a time, a chunk at a time, each on the thread that owns it.
+ *
+ * <p>A chunk is laid only when all of it lies inside the island's own cell of the grid, less than half the spacing
+ * from its centre. A box and the land ahead of it that reach further, as a large box on a tight grid does, stop at
+ * the cell's edge, so no island's land is ever laid over a neighbour's.
  */
 public final class BoxedLandCopier {
 
@@ -41,17 +45,25 @@ public final class BoxedLandCopier {
     private final ChunkCopy chunks;
     private final SchedulerPort scheduler;
     private final BoxedLand land;
+    private final java.util.function.IntSupplier spacing;
+    private final java.util.concurrent.atomic.AtomicBoolean toldOfTheEdge =
+            new java.util.concurrent.atomic.AtomicBoolean();
     private final Map<IslandId, CompletableFuture<Void>> running = new ConcurrentHashMap<>();
     private final Map<IslandId, CompletableFuture<Void>> after = new ConcurrentHashMap<>();
 
-    /** @param places where an island stands, read from storage */
+    /**
+     * @param places where an island stands, read from storage
+     * @param spacing how far apart the grid places islands
+     */
     public BoxedLandCopier(
             BoxedLandPort port,
             BoxedService service,
             Function<IslandId, Optional<IslandLocation>> places,
             ChunkCopy chunks,
             SchedulerPort scheduler,
-            BoxedLand land) {
+            BoxedLand land,
+            java.util.function.IntSupplier spacing) {
+        this.spacing = Objects.requireNonNull(spacing, "spacing");
         this.port = Objects.requireNonNull(port, "port");
         this.service = Objects.requireNonNull(service, "service");
         this.places = Objects.requireNonNull(places, "places");
@@ -171,10 +183,21 @@ public final class BoxedLandCopier {
         int centerZ = Math.floorDiv(place.bounds().centerZ(), 16);
         int fromX = Math.floorDiv(land.x(), 16);
         int fromZ = Math.floorDiv(land.z(), 16);
+        int blockX = place.bounds().centerX();
+        int blockZ = place.bounds().centerZ();
+        int half = spacing.getAsInt() / 2;
         CompletableFuture<Void> chain = CompletableFuture.completedFuture(null);
         for (int dx = -ring; dx <= ring; dx++) {
             for (int dz = -ring; dz <= ring; dz++) {
                 if (Math.max(Math.abs(dx), Math.abs(dz)) != ring) {
+                    continue;
+                }
+                if (!inCell((centerX + dx) * 16, blockX, half) || !inCell((centerZ + dz) * 16, blockZ, half)) {
+                    if (!toldOfTheEdge.getAndSet(true)) {
+                        LOGGER.warning(() -> "modules/boxed.conf: a box and the land copied ahead of it reach past"
+                                + " half the grid spacing of " + spacing.getAsInt() + " blocks. The land stops at"
+                                + " the edge of each island's cell; lower max-radius or ahead to keep within it.");
+                    }
                     continue;
                 }
                 int x = dx;
@@ -184,6 +207,11 @@ public final class BoxedLandCopier {
             }
         }
         return chain;
+    }
+
+    /** Whether the chunk starting at {@code start} lies, all sixteen blocks of it, less than {@code half} from {@code center}. */
+    private static boolean inCell(int start, int center, int half) {
+        return start > center - half && start + 15 < center + half;
     }
 
     private void finish(IslandId islandId, CompletableFuture<Void> job) {
