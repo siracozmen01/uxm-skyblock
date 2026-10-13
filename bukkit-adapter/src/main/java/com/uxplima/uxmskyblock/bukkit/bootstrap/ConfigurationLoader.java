@@ -121,7 +121,8 @@ public final class ConfigurationLoader {
             "island-alliances.conf",
             "island-bank-currency.conf",
             "island-border.conf",
-            "island-chunk.conf");
+            "island-chunk.conf",
+            "oneblock-branch.conf");
 
     private ConfigurationLoader() {
         throw new UnsupportedOperationException("ConfigurationLoader is a set of loading steps, not a thing to hold.");

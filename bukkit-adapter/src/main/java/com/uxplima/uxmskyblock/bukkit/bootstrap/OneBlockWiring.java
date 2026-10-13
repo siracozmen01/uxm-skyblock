@@ -24,6 +24,7 @@ public final class OneBlockWiring implements AutoCloseable {
     private final com.uxplima.uxmskyblock.bukkit.oneblock.OneBlockListener listener;
     private final com.uxplima.uxmskyblock.bukkit.oneblock.OneBlockPanel panel;
     private final com.uxplima.uxmskyblock.bukkit.oneblock.OneBlockDraws draws;
+    private final com.uxplima.uxmskyblock.bukkit.oneblock.OneBlockBranches branches;
 
     public OneBlockWiring(
             ConfigurationWiring configuration,
@@ -38,6 +39,7 @@ public final class OneBlockWiring implements AutoCloseable {
                 persistence.oneBlockProgressPort(),
                 persistence.oneBlockRewardPort(),
                 persistence.oneBlockWaitPort(),
+                persistence.oneBlockBranchPort(),
                 config.phases(),
                 new SplittableRandom());
         this.saving = scheduler.repeatAsync(service::flush, config.saveInterval(), config.saveInterval());
@@ -55,6 +57,9 @@ public final class OneBlockWiring implements AutoCloseable {
                 new com.uxplima.uxmskyblock.bukkit.oneblock.OneBlockPauses(
                         () -> config, service, scheduler, configuration.messages(), draws, bedrockPlayer());
         listener.usePauses(pauses);
+        this.branches = new com.uxplima.uxmskyblock.bukkit.oneblock.OneBlockBranches(
+                () -> config, service, scheduler, configuration.messages(), java.time.Clock.systemUTC());
+        listener.useBranches(branches);
         listener.usePhaseLists(new com.uxplima.uxmskyblock.bukkit.oneblock.OneBlockPhaseLists(
                 () -> config, scheduler, org.bukkit.Bukkit::getPlayer));
         listener.useMoments(new com.uxplima.uxmskyblock.bukkit.oneblock.OneBlockMoments(
@@ -126,6 +131,7 @@ public final class OneBlockWiring implements AutoCloseable {
             return null;
         }
         panel.useMenuEngine(engine);
+        branches.useMenuEngine(engine);
         return panel;
     }
 

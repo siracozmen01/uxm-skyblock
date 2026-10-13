@@ -102,7 +102,23 @@ public final class OneBlockAdmin implements ModeAdminCommands.Mode {
                                             .toList())));
             return Cmd.OK;
         }
-        return change(admin, ctx, island -> service.setBroken(island, start.getAsLong()));
+        CommandSourceStack source = ctx.getSource();
+        String target = StringArgumentType.getString(ctx, "target");
+        admin.island(source, target, island -> {
+            Optional<OneBlockPhases> way = service.phasesOf(island);
+            java.util.OptionalLong along = way.map(read -> read.startOf(phase)).orElse(java.util.OptionalLong.empty());
+            if (way.isPresent() && along.isEmpty()) {
+                // A phase on a way the island did not pick: it cannot stand there.
+                admin.send(
+                        source.getSender(),
+                        "isadmin.oneblock.off_way",
+                        Placeholder.unparsed("phase", phase),
+                        Placeholder.unparsed("target", target));
+                return;
+            }
+            changed(admin, source, target, island, service.setBroken(island, along.orElse(start.getAsLong())));
+        });
+        return Cmd.OK;
     }
 
     private int change(
@@ -111,24 +127,32 @@ public final class OneBlockAdmin implements ModeAdminCommands.Mode {
             java.util.function.Function<IslandId, Optional<OneBlockService.Changed>> how) {
         CommandSourceStack source = ctx.getSource();
         String target = StringArgumentType.getString(ctx, "target");
-        admin.island(source, target, island -> {
-            Optional<OneBlockService.Changed> changed = how.apply(island);
-            if (changed.isEmpty()) {
-                notOneBlock(admin, source.getSender(), target);
-                return;
-            }
-            OneBlockPhases.Position now =
-                    service.phases().positionAt(changed.get().now());
-            admin.send(
-                    source.getSender(),
-                    "isadmin.oneblock.set",
-                    Placeholder.unparsed("target", target),
-                    Placeholder.unparsed("was", Long.toString(changed.get().was())),
-                    Placeholder.unparsed("now", Long.toString(changed.get().now())),
-                    Placeholder.unparsed("phase", title(admin, source.getSender(), now.phase())));
-            layAgain(admin, source.getSender(), target, island, false);
-        });
+        admin.island(source, target, island -> changed(admin, source, target, island, how.apply(island)));
         return Cmd.OK;
+    }
+
+    /** Tells the sender what an operator's change did, and lays the block again from the phase it stands in now. */
+    private void changed(
+            ModeAdminCommands admin,
+            CommandSourceStack source,
+            String target,
+            IslandId island,
+            Optional<OneBlockService.Changed> changed) {
+        if (changed.isEmpty()) {
+            notOneBlock(admin, source.getSender(), target);
+            return;
+        }
+        OneBlockPhases.Position now = service.phasesOf(island)
+                .orElse(service.phases())
+                .positionAt(changed.get().now());
+        admin.send(
+                source.getSender(),
+                "isadmin.oneblock.set",
+                Placeholder.unparsed("target", target),
+                Placeholder.unparsed("was", Long.toString(changed.get().was())),
+                Placeholder.unparsed("now", Long.toString(changed.get().now())),
+                Placeholder.unparsed("phase", title(admin, source.getSender(), now.phase())));
+        layAgain(admin, source.getSender(), target, island, false);
     }
 
     private int check(ModeAdminCommands admin, CommandContext<CommandSourceStack> ctx) {
@@ -141,7 +165,8 @@ public final class OneBlockAdmin implements ModeAdminCommands.Mode {
                 return;
             }
             long broken = read.get().blocksBroken();
-            OneBlockPhases.Position at = service.phases().positionAt(broken);
+            OneBlockPhases way = service.phasesOf(island).orElse(service.phases());
+            OneBlockPhases.Position at = way.positionAt(broken);
             admin.send(
                     source.getSender(),
                     "isadmin.oneblock.check",
@@ -149,8 +174,7 @@ public final class OneBlockAdmin implements ModeAdminCommands.Mode {
                     Placeholder.unparsed("phase", title(admin, source.getSender(), at.phase())),
                     Placeholder.unparsed("phase_number", Integer.toString(at.index() + 1)),
                     Placeholder.unparsed(
-                            "phase_count",
-                            Integer.toString(service.phases().phases().size())),
+                            "phase_count", Integer.toString(way.phases().size())),
                     Placeholder.unparsed("phase_blocks", Long.toString(at.intoPhase())),
                     Placeholder.unparsed("phase_length", Long.toString(at.phaseLength())),
                     Placeholder.unparsed("blocks_broken", Long.toString(broken)),

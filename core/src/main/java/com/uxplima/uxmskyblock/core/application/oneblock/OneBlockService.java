@@ -54,6 +54,10 @@ public final class OneBlockService {
         final java.util.concurrent.atomic.AtomicBoolean replaced = new java.util.concurrent.atomic.AtomicBoolean();
         /** The last pass each reward of a phase was paid in, keyed by {@link #paidKey}. */
         final Map<String, Long> paid = new ConcurrentHashMap<>();
+        /** The phase the island picked to follow each phase that branches, by the phase it follows. */
+        final Map<String, String> picks = new ConcurrentHashMap<>();
+        /** The island's way through the phases with its picks, worked out again after a pick. */
+        volatile @Nullable OneBlockPhases route;
         /** What the island waits for before its next phase, or nothing. */
         final java.util.concurrent.atomic.AtomicReference<OneBlockWaitPort.@Nullable Waiting> waiting =
                 new java.util.concurrent.atomic.AtomicReference<>();
@@ -67,6 +71,7 @@ public final class OneBlockService {
     private final OneBlockProgressPort progress;
     private final OneBlockRewardPort rewards;
     private final OneBlockWaitPort waits;
+    private final OneBlockBranchPort branches;
     private final OneBlockPhases phases;
     private final RandomGenerator random;
     private final Map<IslandId, Counted> counted = new ConcurrentHashMap<>();
@@ -99,7 +104,18 @@ public final class OneBlockService {
             OneBlockWaitPort waits,
             OneBlockPhases phases,
             RandomGenerator random) {
+        this(progress, rewards, waits, OneBlockBranchPort.NONE, phases, random);
+    }
+
+    public OneBlockService(
+            OneBlockProgressPort progress,
+            OneBlockRewardPort rewards,
+            OneBlockWaitPort waits,
+            OneBlockBranchPort branches,
+            OneBlockPhases phases,
+            RandomGenerator random) {
         this.progress = Objects.requireNonNull(progress, "progress must not be null");
+        this.branches = Objects.requireNonNull(branches, "branches must not be null");
         this.rewards = Objects.requireNonNull(rewards, "rewards must not be null");
         this.waits = Objects.requireNonNull(waits, "waits must not be null");
         this.phases = Objects.requireNonNull(phases, "phases must not be null");
@@ -142,13 +158,13 @@ public final class OneBlockService {
     /** Where the island stands in its phases now, if it is a OneBlock island. */
     public Optional<OneBlockPhases.Position> position(IslandId islandId) {
         Counted held = held(islandId);
-        return held == null ? Optional.empty() : Optional.of(phases.positionAt(held.total.get()));
+        return held == null ? Optional.empty() : Optional.of(routeOf(held).positionAt(held.total.get()));
     }
 
     /** What the island's block is laid as now, drawn from the phase it stands in, or nothing if it is not one. */
     public Optional<String> blockNow(IslandId islandId) {
         Counted held = held(islandId);
-        return held == null ? Optional.empty() : Optional.of(phases.nextBlock(held.total.get(), random));
+        return held == null ? Optional.empty() : Optional.of(routeOf(held).nextBlock(held.total.get(), random));
     }
 
     /** Counts one break of the island's block and says what it turns into, or nothing if it is not one. */
@@ -159,16 +175,17 @@ public final class OneBlockService {
         }
         long broken = held.total.incrementAndGet();
         held.unwritten.incrementAndGet();
+        OneBlockPhases way = routeOf(held);
         return Optional.of(new Broken(
-                phases.nextBlock(broken, random),
-                phases.nextCreature(broken, random),
-                phases.positionAt(broken),
-                phases.startsAPhase(broken),
-                phases.startsAPhase(broken)
-                        ? Optional.of(phases.positionAt(broken - 1).phase())
+                way.nextBlock(broken, random),
+                way.nextCreature(broken, random),
+                way.positionAt(broken),
+                way.startsAPhase(broken),
+                way.startsAPhase(broken)
+                        ? Optional.of(way.positionAt(broken - 1).phase())
                         : Optional.empty(),
-                phases.cycleOf(broken - 1),
-                phases.cycleOf(broken)));
+                way.cycleOf(broken - 1),
+                way.cycleOf(broken)));
     }
 
     /**
@@ -212,6 +229,83 @@ public final class OneBlockService {
         }
     }
 
+    /** The island's way through the phases, with the phases it picked, if it is a OneBlock island. */
+    public Optional<OneBlockPhases> phasesOf(IslandId islandId) {
+        Counted held = held(islandId);
+        return held == null ? Optional.empty() : Optional.of(routeOf(held));
+    }
+
+    /** The island's way through the phases if it is in memory, without reading storage, for a placeholder. */
+    public Optional<OneBlockPhases> phasesInMemory(IslandId islandId) {
+        Counted held = counted.get(islandId);
+        return held == null ? Optional.empty() : Optional.of(routeOf(held));
+    }
+
+    private OneBlockPhases routeOf(Counted held) {
+        OneBlockPhases way = held.route;
+        if (way == null) {
+            way = phases.route(Map.copyOf(held.picks));
+            held.route = way;
+        }
+        return way;
+    }
+
+    /**
+     * The phases the island may pick from to follow the one it stands in, when its next break would end that phase
+     * and it has not picked yet; none otherwise.
+     */
+    public java.util.List<String> branchAhead(IslandId islandId) {
+        Counted held = held(islandId);
+        if (held == null) {
+            return java.util.List.of();
+        }
+        OneBlockPhases way = routeOf(held);
+        long total = held.total.get();
+        if (!way.startsAPhase(total + 1)) {
+            return java.util.List.of();
+        }
+        String standing = way.positionAt(total).phase().key();
+        return held.picks.containsKey(standing) ? java.util.List.of() : phases.optionsAfter(standing);
+    }
+
+    /**
+     * Has the island follow {@code phase} with {@code chosen}, in memory; {@link #storePick} writes it.
+     *
+     * @return whether it was picked: {@code chosen} must be one of the phases that may follow {@code phase}
+     */
+    public boolean pick(IslandId islandId, String phase, String chosen) {
+        Counted held = held(islandId);
+        if (held == null || !phases.optionsAfter(phase).contains(chosen)) {
+            return false;
+        }
+        held.picks.put(phase, chosen);
+        held.route = null;
+        return true;
+    }
+
+    /**
+     * Writes the island's pick for {@code phase} as it stands in memory. Run off the region threads.
+     *
+     * @return whether it was written
+     */
+    public boolean storePick(IslandId islandId, String phase) {
+        Counted held = held(islandId);
+        String chosen = held == null ? null : held.picks.get(phase);
+        if (chosen == null) {
+            return false;
+        }
+        try {
+            branches.pick(new OneBlockBranchPort.Pick(islandId, phase, chosen));
+            return true;
+        } catch (RuntimeException failed) {
+            LOGGER.log(
+                    Level.WARNING,
+                    failed,
+                    () -> "Writing the OneBlock pick of island " + islandId + " failed; it is kept in memory.");
+            return false;
+        }
+    }
+
     /** The phase the island's next break begins, if it begins one. */
     public Optional<OneBlockPhase> phaseAhead(IslandId islandId) {
         Counted held = held(islandId);
@@ -219,7 +313,8 @@ public final class OneBlockService {
             return Optional.empty();
         }
         long next = held.total.get() + 1;
-        return phases.startsAPhase(next) ? Optional.of(phases.positionAt(next).phase()) : Optional.empty();
+        OneBlockPhases way = routeOf(held);
+        return way.startsAPhase(next) ? Optional.of(way.positionAt(next).phase()) : Optional.empty();
     }
 
     /** What the island waits for before its next phase, if it waits. Asks storage nothing. */
@@ -405,6 +500,13 @@ public final class OneBlockService {
                 remember(held, those);
             }
         });
+        for (OneBlockBranchPort.Pick one : branches.findAll()) {
+            Counted held = counted.get(one.islandId());
+            if (held != null) {
+                held.picks.putIfAbsent(one.phase(), one.chosen());
+                held.route = null;
+            }
+        }
         for (OneBlockWaitPort.Waiting one : waits.findAll()) {
             Counted held = counted.get(one.islandId());
             if (held != null) {
@@ -425,9 +527,10 @@ public final class OneBlockService {
         // An island that starts over is owed every reward again.
         rewards.clear(islandId);
         waits.clear(islandId);
+        branches.clear(islandId);
         notOneBlock.remove(islandId);
         counted.put(islandId, new Counted(new OneBlockProgressPort.OneBlockIsland(islandId, x, y, z, 0)));
-        return phases.nextBlock(0, random);
+        return phases.route(Map.of()).nextBlock(0, random);
     }
 
     /**
@@ -476,10 +579,12 @@ public final class OneBlockService {
         }
         java.util.List<OneBlockRewardPort.Paid> paid = rewards.find(islandId);
         Optional<OneBlockWaitPort.Waiting> waiting = waits.find(islandId);
+        java.util.List<OneBlockBranchPort.Pick> picked = branches.find(islandId);
         return counted.computeIfAbsent(islandId, id -> {
             Counted read = new Counted(stored.get());
             remember(read, paid);
             read.waiting.set(waiting.orElse(null));
+            picked.forEach(one -> read.picks.put(one.phase(), one.chosen()));
             return read;
         });
     }

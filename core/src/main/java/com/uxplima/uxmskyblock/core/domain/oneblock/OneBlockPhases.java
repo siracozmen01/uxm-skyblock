@@ -2,6 +2,7 @@ package com.uxplima.uxmskyblock.core.domain.oneblock;
 
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
@@ -13,8 +14,14 @@ import java.util.random.RandomGenerator;
  * <p>A phase lasts a number of breaks. The count is the island's whole life, so the phase a count
  * falls in is found by walking the phases. Past the last one the island either stays in it or starts
  * again from the first, as the operator chooses.
+ *
+ * <p>A phase may name the phases that can follow it, and each island picks one: its own way through the phases is
+ * its {@link #route}, the phases in the order it goes through them. A phase that names none is followed by the one
+ * after it in the list, and the way ends at a phase with nothing after it, or at one it has been through already.
+ *
+ * @param next the phases each phase may be followed by, for a phase that names any
  */
-public record OneBlockPhases(List<OneBlockPhase> phases, AfterTheLast afterTheLast) {
+public record OneBlockPhases(List<OneBlockPhase> phases, AfterTheLast afterTheLast, Map<String, List<String>> next) {
 
     /** What an island that has broken its way through every phase does next. */
     public enum AfterTheLast {
@@ -37,6 +44,67 @@ public record OneBlockPhases(List<OneBlockPhase> phases, AfterTheLast afterTheLa
             }
         }
         phases = List.copyOf(phases);
+        Objects.requireNonNull(next, "next");
+        Map<String, List<String>> copied = new java.util.LinkedHashMap<>();
+        next.forEach((phase, options) -> {
+            if (!seen.contains(phase)) {
+                throw new IllegalArgumentException("No phase is called " + phase + ", so it cannot branch");
+            }
+            for (String option : options) {
+                if (!seen.contains(option)) {
+                    throw new IllegalArgumentException(phase + " is followed by " + option + ", which is no phase");
+                }
+            }
+            copied.put(phase, List.copyOf(options));
+        });
+        next = java.util.Collections.unmodifiableMap(copied);
+    }
+
+    public OneBlockPhases(List<OneBlockPhase> phases, AfterTheLast afterTheLast) {
+        this(phases, afterTheLast, Map.of());
+    }
+
+    /** The phases {@code phase} may be followed by, when it names more than one to pick from; none otherwise. */
+    public List<String> optionsAfter(String phase) {
+        List<String> options = next.getOrDefault(phase, List.of());
+        return options.size() > 1 ? options : List.of();
+    }
+
+    /**
+     * The phases an island goes through, in order, with its picks: from the first phase, each followed by the one it
+     * picked, the first it may pick while it picked none, or the one after it in the list when it names none to
+     * follow it. The way ends at a phase that names nothing to follow it and has none after it, or at one already
+     * gone through. The phases with no branch are the phases themselves.
+     */
+    public OneBlockPhases route(Map<String, String> picks) {
+        Objects.requireNonNull(picks, "picks");
+        if (next.isEmpty()) {
+            return this;
+        }
+        Map<String, Integer> index = new java.util.HashMap<>();
+        for (int at = 0; at < phases.size(); at++) {
+            index.put(phases.get(at).key(), at);
+        }
+        List<OneBlockPhase> way = new java.util.ArrayList<>();
+        Set<String> gone = new HashSet<>();
+        @org.jspecify.annotations.Nullable OneBlockPhase at = phases.getFirst();
+        while (at != null && gone.add(at.key())) {
+            way.add(at);
+            List<String> options = next.get(at.key());
+            String following;
+            if (options == null) {
+                int after = index.getOrDefault(at.key(), phases.size()) + 1;
+                following = after < phases.size() ? phases.get(after).key() : null;
+            } else if (options.isEmpty()) {
+                following = null;
+            } else {
+                String picked = picks.get(at.key());
+                following = picked != null && options.contains(picked) ? picked : options.getFirst();
+            }
+            Integer found = following == null ? null : index.get(following);
+            at = found == null ? null : phases.get(found);
+        }
+        return new OneBlockPhases(way, afterTheLast);
     }
 
     /** How many breaks one pass through every phase takes. */

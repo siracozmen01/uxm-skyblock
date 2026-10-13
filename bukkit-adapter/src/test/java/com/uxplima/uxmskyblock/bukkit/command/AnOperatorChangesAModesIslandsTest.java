@@ -108,8 +108,12 @@ class AnOperatorChangesAModesIslandsTest extends MockBukkitHarness {
         service = new OneBlockService(
                 port,
                 new OneBlockPhases(
-                        List.of(phase("plains", 10, "GRASS_BLOCK"), phase("cave", 20, "STONE")),
-                        OneBlockPhases.AfterTheLast.STAY),
+                        List.of(
+                                phase("plains", 10, "GRASS_BLOCK"),
+                                phase("cave", 20, "STONE"),
+                                phase("forest", 5, "OAK_LOG")),
+                        OneBlockPhases.AfterTheLast.STAY,
+                        java.util.Map.of("plains", List.of("cave", "forest"), "cave", List.of())),
                 new SplittableRandom(1));
         service.prime();
         IslandLocationService locations = mock(IslandLocationService.class);
@@ -206,6 +210,25 @@ class AnOperatorChangesAModesIslandsTest extends MockBukkitHarness {
         assertThat(stored).containsEntry(ISLAND, 10L);
         assertThat(world.getBlockAt(0, 100, 0).getType()).isEqualTo(Material.STONE);
         assertThat(said).contains("10").contains("was 12").contains("cave");
+    }
+
+    @Test
+    @DisplayName("A phase is set along the way the island picked, and one off its way is refused")
+    void alongItsWay() throws Exception {
+        String said = run("isadmin oneblock setphase " + ISLAND.value() + " forest");
+        assertThat(said).contains("forest").contains("not on the way");
+        assertThat(stored).containsEntry(ISLAND, 12L);
+
+        service.pick(ISLAND, "plains", "forest");
+        assertThat(run("isadmin oneblock setphase " + ISLAND.value() + " forest"))
+                .contains("forest")
+                .doesNotContain("cave");
+
+        assertThat(stored).containsEntry(ISLAND, 10L);
+        assertThat(world.getBlockAt(0, 100, 0).getType()).isEqualTo(Material.OAK_LOG);
+        assertThat(run("isadmin oneblock check " + ISLAND.value()))
+                .contains("forest")
+                .contains("(2/2)");
     }
 
     @Test

@@ -40,6 +40,8 @@ import org.spongepowered.configurate.ConfigurationNode;
  * @param moments what happens at exact breaks, by phase, then by how many of the phase's blocks were broken
  * @param lists what each phase runs when it begins, finishes and first finishes, by phase, then by event
  * @param gates what stands before each phase begins, by phase, for a phase that writes anything
+ * @param chooseWithin how long an island at the end of a phase that branches has to pick the way on, before the
+ *     first is taken
  */
 public record OneBlockConfiguration(
         boolean enabled,
@@ -49,7 +51,11 @@ public record OneBlockConfiguration(
         OneBlockEntries entries,
         Map<String, Map<Long, OneBlockMoment>> moments,
         Map<String, Map<String, OneBlockLists>> lists,
-        Map<String, OneBlockGate> gates) {
+        Map<String, OneBlockGate> gates,
+        Duration chooseWithin) {
+
+    /** How long an island has to pick the way on, when the file names no time. */
+    public static final Duration DEFAULT_CHOOSE_WITHIN = Duration.ofSeconds(60);
 
     /** The icon of a phase whose file names none. */
     public static final String DEFAULT_ICON = "GRASS_BLOCK";
@@ -159,7 +165,16 @@ public record OneBlockConfiguration(
     static final java.util.regex.Pattern NAME = java.util.regex.Pattern.compile("[a-z0-9_-]{1,64}");
 
     public OneBlockConfiguration(boolean enabled, OneBlockPhases phases, java.time.Duration saveInterval) {
-        this(enabled, phases, saveInterval, Map.of(), OneBlockEntries.NONE, Map.of(), Map.of(), Map.of());
+        this(
+                enabled,
+                phases,
+                saveInterval,
+                Map.of(),
+                OneBlockEntries.NONE,
+                Map.of(),
+                Map.of(),
+                Map.of(),
+                DEFAULT_CHOOSE_WITHIN);
     }
 
     /** How often counted breaks are written, when the file names no interval. */
@@ -182,6 +197,7 @@ public record OneBlockConfiguration(
         lists.forEach((phase, byEvent) -> listed.put(phase, Map.copyOf(byEvent)));
         lists = java.util.Collections.unmodifiableMap(listed);
         gates = Map.copyOf(gates);
+        Objects.requireNonNull(chooseWithin, "chooseWithin");
     }
 
     /** What stands before the phase {@code phase} begins: nothing, unless its file writes a wait or requirements. */
@@ -246,6 +262,7 @@ public record OneBlockConfiguration(
         Map<String, OneBlockEntries.Creature> creatureEntries = new LinkedHashMap<>();
         Map<String, String> tables = new LinkedHashMap<>();
         Map<String, OneBlockGate> gates = new LinkedHashMap<>();
+        Map<String, List<String>> next = new LinkedHashMap<>();
         Map<String, Map<Long, OneBlockMoment>> moments = new LinkedHashMap<>();
         Map<String, Map<String, OneBlockLists>> lists = new LinkedHashMap<>();
         // A list, because the phases are gone through in order and a HOCON object keeps none.
@@ -269,6 +286,13 @@ public record OneBlockConfiguration(
                         new WeightedPool(creatures(key, phase.node("creatures"), creatureEntries)),
                         phase.node("creature-chance").getDouble(0)));
                 lists.put(key, lists(key, phase));
+                if (!phase.node("next").virtual()) {
+                    List<String> following = new ArrayList<>();
+                    for (ConfigurationNode named : phase.node("next").childrenList()) {
+                        following.add(named.getString("").strip());
+                    }
+                    next.put(key, following);
+                }
                 OneBlockGate gate = gate(key, phase);
                 if (!gate.isOpen()) {
                     gates.put(key, gate);
@@ -293,15 +317,41 @@ public record OneBlockConfiguration(
             LOGGER.warning("modules/oneblock.conf holds no usable phase, so the built in one is used.");
             return new OneBlockConfiguration(enabled, defaultConfiguration().phases(), saveInterval);
         }
+        java.util.Set<String> kept = new java.util.HashSet<>();
+        phases.forEach(phase -> kept.add(phase.key()));
+        Map<String, List<String>> branches = new LinkedHashMap<>();
+        next.forEach((from, following) -> {
+            List<String> known = new ArrayList<>();
+            for (String to : following) {
+                if (kept.contains(to)) {
+                    known.add(to);
+                } else {
+                    LOGGER.warning(() -> "OneBlock phase '" + from + "' is followed by '" + to
+                            + "', which is no phase in modules/oneblock.conf, and the way is left out.");
+                }
+            }
+            if (kept.contains(from)) {
+                branches.put(from, known);
+            }
+        });
+        String within = root.node("choose-within").getString("").strip();
+        Duration chooseWithin = within.isEmpty()
+                ? DEFAULT_CHOOSE_WITHIN
+                : RequirementLines.duration(within).orElseGet(() -> {
+                    LOGGER.warning(() -> "choose-within is '" + within + "', which is no time, so "
+                            + DEFAULT_CHOOSE_WITHIN.toSeconds() + " seconds is used.");
+                    return DEFAULT_CHOOSE_WITHIN;
+                });
         return new OneBlockConfiguration(
                 enabled,
-                new OneBlockPhases(phases, after),
+                new OneBlockPhases(phases, after, branches),
                 saveInterval,
                 icons,
                 new OneBlockEntries(blockEntries, creatureEntries, tables),
                 moments,
                 lists,
-                gates);
+                gates,
+                chooseWithin);
     }
 
     /**

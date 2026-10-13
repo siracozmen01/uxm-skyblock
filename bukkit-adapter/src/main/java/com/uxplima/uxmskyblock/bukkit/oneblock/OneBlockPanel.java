@@ -81,19 +81,20 @@ public final class OneBlockPanel {
             }
             // Off the player's thread, so an island not yet in memory may be read here.
             Optional<OneBlockProgressPort.OneBlockIsland> oneBlock = service.island(islandId.get());
+            OneBlockPhases way = service.phasesOf(islandId.get()).orElse(service.phases());
             scheduler.onEntity(playerUuid, () -> {
                 if (oneBlock.isEmpty()) {
                     messages.send(player, "oneblock.not_oneblock");
                 } else {
-                    show(player, oneBlock.get().blocksBroken());
+                    show(player, way, oneBlock.get().blocksBroken());
                 }
             });
         });
     }
 
     /** Draws the panel on the player's own thread from a count already read. */
-    void show(Player player, long broken) {
-        Map<String, String> values = values(player, broken);
+    void show(Player player, OneBlockPhases way, long broken) {
+        Map<String, String> values = values(player, way, broken);
         SkyblockMenuEngine menus = this.engine;
         if (menus != null && menus.open(player, MENU, values)) {
             return;
@@ -118,7 +119,11 @@ public final class OneBlockPanel {
      * </ul>
      */
     public Map<String, String> values(@Nullable Audience viewer, long broken) {
-        OneBlockPhases phases = service.phases();
+        return values(viewer, service.phases(), broken);
+    }
+
+    /** The same, along an island's own way through the phases, which its picks set. */
+    Map<String, String> values(@Nullable Audience viewer, OneBlockPhases phases, long broken) {
         OneBlockPhases.Position at = phases.positionAt(broken);
         String key = at.phase().key();
         long into = at.intoPhase();
@@ -157,6 +162,7 @@ public final class OneBlockPanel {
         Player online = player == null ? null : player.getPlayer();
         Map<String, String> values = values(
                 online,
+                service.phasesInMemory(IslandId.of(islandId)).orElse(service.phases()),
                 held.map(OneBlockProgressPort.OneBlockIsland::blocksBroken).orElse(0L));
         if (!values.containsKey(name)) {
             return null;

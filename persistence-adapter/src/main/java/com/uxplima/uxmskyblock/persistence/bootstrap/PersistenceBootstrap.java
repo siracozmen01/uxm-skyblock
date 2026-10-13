@@ -134,6 +134,7 @@ public final class PersistenceBootstrap implements AutoCloseable {
     private final com.uxplima.uxmskyblock.persistence.oneblock.SqlOneBlockProgressAdapter oneBlockProgressAdapter;
     private final com.uxplima.uxmskyblock.persistence.oneblock.SqlOneBlockRewardAdapter oneBlockRewardAdapter;
     private final com.uxplima.uxmskyblock.persistence.oneblock.SqlOneBlockWaitAdapter oneBlockWaitAdapter;
+    private final com.uxplima.uxmskyblock.persistence.oneblock.SqlOneBlockBranchAdapter oneBlockBranchAdapter;
     private final com.uxplima.uxmskyblock.persistence.lifecycle.SqlLifecycleOwedEffectsAdapter
             lifecycleOwedEffectsAdapter;
     private final SqlNotificationAdapter notificationAdapter;
@@ -219,6 +220,8 @@ public final class PersistenceBootstrap implements AutoCloseable {
                 new com.uxplima.uxmskyblock.persistence.oneblock.SqlOneBlockRewardAdapter(database.dataSource());
         this.oneBlockWaitAdapter =
                 new com.uxplima.uxmskyblock.persistence.oneblock.SqlOneBlockWaitAdapter(database.dataSource());
+        this.oneBlockBranchAdapter =
+                new com.uxplima.uxmskyblock.persistence.oneblock.SqlOneBlockBranchAdapter(database.dataSource());
         this.lifecycleOwedEffectsAdapter =
                 new com.uxplima.uxmskyblock.persistence.lifecycle.SqlLifecycleOwedEffectsAdapter(database.dataSource());
         this.notificationAdapter = new SqlNotificationAdapter(database.dataSource());
@@ -585,6 +588,11 @@ public final class PersistenceBootstrap implements AutoCloseable {
     /** Which OneBlock islands wait before a phase, for a time or for its requirements. */
     public com.uxplima.uxmskyblock.core.application.oneblock.OneBlockWaitPort oneBlockWaitPort() {
         return oneBlockWaitAdapter;
+    }
+
+    /** The phase each OneBlock island picked to follow one that branches. */
+    public com.uxplima.uxmskyblock.core.application.oneblock.OneBlockBranchPort oneBlockBranchPort() {
+        return oneBlockBranchAdapter;
     }
 
     public NotificationStoragePort notificationStoragePort() {
