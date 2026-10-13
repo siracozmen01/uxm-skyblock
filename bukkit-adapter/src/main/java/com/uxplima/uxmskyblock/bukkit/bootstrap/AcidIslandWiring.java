@@ -50,6 +50,15 @@ public final class AcidIslandWiring implements AutoCloseable {
                 config,
                 configuration.effectsConfig(),
                 new InteractionEffectPlayer(scheduler, configuration.messages()));
+        // Items dissolve and creatures burn in the sea, around each player, on the threads that own them.
+        hazard.alsoLookAt(new com.uxplima.uxmskyblock.bukkit.acid.AcidSeaLife(
+                service,
+                islands,
+                config,
+                configuration.effectsConfig(),
+                new InteractionEffectPlayer(scheduler, configuration.messages()),
+                System::nanoTime,
+                org.bukkit.Bukkit::isOwnedByCurrentRegion));
         this.waterListener = new AcidWaterListener(hazard, configuration.messages());
         if (config.enabled()) {
             this.beat = hazard.start();

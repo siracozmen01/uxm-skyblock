@@ -90,6 +90,9 @@ public final class EffectsConfiguration {
                 "acid-clean-water-filled",
                 parseAll("acid-clean-water-filled", List.of("[sound] item.bottle.fill 1.0 1.0")));
         defaults.put("acid-vent-fumes", parseAll("acid-vent-fumes", List.of("[particle] CAMPFIRE_COSY_SMOKE 4 0.4")));
+        defaults.put(
+                "acid-item-dissolved",
+                parseAll("acid-item-dissolved", List.of("[sound] block.lava.extinguish 0.4 1.8")));
         defaults.put("boxed-grew", parseAll("boxed-grew", List.of("[sound] entity.player.levelup 0.8 1.6")));
         defaults.put("boxed-moved", parseAll("boxed-moved", List.of("[sound] entity.enderman.teleport 0.8 1.2")));
         defaults.put(

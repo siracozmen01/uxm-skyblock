@@ -54,6 +54,7 @@ public final class AcidHazard {
     private final AcidIslandConfiguration.Sea sea;
     private final InteractionEffects effects;
     private final InteractionEffectPlayer effectPlayer;
+    private @Nullable AcidSeaLife seaLife;
 
     public AcidHazard(
             AcidIslandService service,
@@ -88,9 +89,23 @@ public final class AcidHazard {
         return scheduler.repeatGlobal(this::round, rules.checkEvery(), rules.checkEvery());
     }
 
+    /** Has each check also look at the items and creatures in the sea around the player. */
+    public void alsoLookAt(AcidSeaLife life) {
+        this.seaLife = Objects.requireNonNull(life, "life must not be null");
+    }
+
     private void round() {
+        AcidSeaLife life = seaLife;
+        if (life != null) {
+            life.forgetTheGone();
+        }
         for (Player player : Bukkit.getOnlinePlayers()) {
-            scheduler.onEntity(PlayerUuid.of(player.getUniqueId()), () -> check(player));
+            scheduler.onEntity(PlayerUuid.of(player.getUniqueId()), () -> {
+                check(player);
+                if (life != null) {
+                    life.around(player);
+                }
+            });
         }
     }
 

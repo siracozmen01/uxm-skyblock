@@ -15,6 +15,7 @@ import org.spongepowered.configurate.ConfigurationNode;
  *
  * @param waterProtection the effects, by name, that keep a player safe in the sea
  * @param waterEffects the effects the sea gives, each written {@code name:amplifier:seconds}
+ * @param seaLife what the sea does to items and creatures in it
  */
 public record AcidIslandConfiguration(
         boolean enabled,
@@ -22,7 +23,8 @@ public record AcidIslandConfiguration(
         AcidRules rules,
         List<String> waterProtection,
         List<String> waterEffects,
-        Purification purification) {
+        Purification purification,
+        SeaLife seaLife) {
 
     private static final Logger LOGGER = Logger.getLogger(AcidIslandConfiguration.class.getName());
 
@@ -78,6 +80,41 @@ public record AcidIslandConfiguration(
         }
     }
 
+    /**
+     * What the sea does to what lies and swims in it, around each player on an AcidIsland island at each check.
+     *
+     * @param reach how many blocks around a player are looked at, 0 for none
+     * @param itemsDissolve whether an item lying in the sea dissolves
+     * @param itemsAfter how long an item lies in the sea before it dissolves
+     * @param creaturesBurn whether a creature in the sea is hurt
+     * @param creatureDamage the health taken from a creature in the sea at each check
+     * @param spared the creatures, by type, the sea does not hurt
+     */
+    public record SeaLife(
+            int reach,
+            boolean itemsDissolve,
+            Duration itemsAfter,
+            boolean creaturesBurn,
+            double creatureDamage,
+            List<String> spared) {
+
+        public static final SeaLife SHIPPED = new SeaLife(
+                32, true, Duration.ofSeconds(10), true, 2.0, List.of("drowned", "guardian", "elder_guardian"));
+
+        public static final SeaLife NONE = new SeaLife(0, false, Duration.ofSeconds(10), false, 0, List.of());
+
+        public SeaLife {
+            Objects.requireNonNull(itemsAfter, "itemsAfter must not be null");
+            spared = List.copyOf(spared);
+            if (reach < 0 || reach > 64) {
+                throw new IllegalArgumentException("the reach around a player is between 0 and 64 blocks");
+            }
+            if (itemsAfter.isNegative() || creatureDamage < 0) {
+                throw new IllegalArgumentException("a wait and a damage are never below 0");
+            }
+        }
+    }
+
     /** How acid water is made clean. Rain a cauldron catches is clean already. */
     public record Purification(boolean furnace, boolean brewingWithCoal) {}
 
@@ -85,6 +122,7 @@ public record AcidIslandConfiguration(
         Objects.requireNonNull(sea, "sea must not be null");
         Objects.requireNonNull(rules, "rules must not be null");
         Objects.requireNonNull(purification, "purification must not be null");
+        Objects.requireNonNull(seaLife, "seaLife must not be null");
         waterProtection = List.copyOf(waterProtection);
         waterEffects = List.copyOf(waterEffects);
     }
@@ -96,7 +134,8 @@ public record AcidIslandConfiguration(
                 AcidRules.shipped(),
                 List.of("water_breathing"),
                 List.of("poison:0:3"),
-                new Purification(true, true));
+                new Purification(true, true),
+                SeaLife.SHIPPED);
     }
 
     public static AcidIslandConfiguration load(ConfigurationNode root) {
@@ -144,7 +183,27 @@ public record AcidIslandConfiguration(
                 strings(hazard.node("water-effects"), shipped.waterEffects()),
                 new Purification(
                         purification.node("furnace").getBoolean(true),
-                        purification.node("brewing-with-coal").getBoolean(true)));
+                        purification.node("brewing-with-coal").getBoolean(true)),
+                seaLife(root.node("sea-life")));
+    }
+
+    /** What the sea does to items and creatures, as {@code sea-life} writes it; what cannot be read is the shipped. */
+    private static SeaLife seaLife(ConfigurationNode node) {
+        SeaLife shipped = SeaLife.SHIPPED;
+        try {
+            ConfigurationNode items = node.node("items");
+            ConfigurationNode creatures = node.node("creatures");
+            return new SeaLife(
+                    node.node("reach").getInt(shipped.reach()),
+                    items.node("dissolve").getBoolean(shipped.itemsDissolve()),
+                    durationOf(items.node("after").getString(""), shipped.itemsAfter()),
+                    creatures.node("burn").getBoolean(shipped.creaturesBurn()),
+                    creatures.node("damage").getDouble(shipped.creatureDamage()),
+                    strings(creatures.node("spared"), shipped.spared()));
+        } catch (IllegalArgumentException e) {
+            LOGGER.warning(() -> "modules/acidisland.conf sea-life: " + e.getMessage() + ". The shipped one is used.");
+            return shipped;
+        }
     }
 
     /** The strings of a list, or the fallback when the list is not written at all. */

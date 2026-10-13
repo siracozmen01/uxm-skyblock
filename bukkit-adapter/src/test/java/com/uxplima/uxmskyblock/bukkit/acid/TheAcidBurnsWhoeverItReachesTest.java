@@ -96,7 +96,8 @@ class TheAcidBurnsWhoeverItReachesTest extends MockBukkitHarness {
                 new AcidRules(2.0, 1.0, true, Duration.ofSeconds(1)),
                 List.of("water_breathing", "no_such_effect"),
                 List.of("poison:1:4", "nausea", "no_such_effect:0:3"),
-                new AcidIslandConfiguration.Purification(true, true));
+                new AcidIslandConfiguration.Purification(true, true),
+                AcidIslandConfiguration.SeaLife.NONE);
         hazard = new AcidHazard(
                 service,
                 islands,

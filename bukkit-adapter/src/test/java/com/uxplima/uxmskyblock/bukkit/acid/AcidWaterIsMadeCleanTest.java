@@ -106,7 +106,8 @@ class AcidWaterIsMadeCleanTest extends MockBukkitHarness {
                 new AcidRules(3.0, 1.0, true, Duration.ofSeconds(1)),
                 List.of("water_breathing"),
                 List.of("poison:0:3"),
-                new AcidIslandConfiguration.Purification(true, true));
+                new AcidIslandConfiguration.Purification(true, true),
+                AcidIslandConfiguration.SeaLife.NONE);
         AcidHazard hazard = new AcidHazard(
                 service,
                 islands,
