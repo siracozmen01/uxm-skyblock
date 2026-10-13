@@ -18,6 +18,7 @@ import org.spongepowered.configurate.ConfigurationNode;
  * @param seaLife what the sea does to items and creatures in it
  * @param armour the full sets of armour that keep the acid off
  * @param cleanWater what a bottle of clean water does for whoever drinks it
+ * @param look the biome laid over the sea and the colours of the plugin's own
  */
 public record AcidIslandConfiguration(
         boolean enabled,
@@ -28,7 +29,8 @@ public record AcidIslandConfiguration(
         Purification purification,
         SeaLife seaLife,
         Armour armour,
-        CleanWater cleanWater) {
+        CleanWater cleanWater,
+        Look look) {
 
     private static final Logger LOGGER = Logger.getLogger(AcidIslandConfiguration.class.getName());
 
@@ -165,6 +167,48 @@ public record AcidIslandConfiguration(
         }
     }
 
+    /**
+     * How the sea looks: the biome painted over it, from its floor to the sky, and the colours of the plugin's own
+     * sulfur sea biome, which a data pack the plugin writes at start carries.
+     *
+     * @param biome the biome painted over the sea, as a key; blank leaves the biome the world made
+     * @param water the colour of the water, written {@code #rrggbb}
+     * @param waterFog the colour seen under the water
+     * @param fog the colour of the fog above it
+     * @param sky the colour of the sky above it
+     */
+    public record Look(String biome, String water, String waterFog, String fog, String sky) {
+
+        /** The key of the plugin's own sulfur sea biome. */
+        public static final String SULFUR_SEA = "uxmskyblock:sulfur_sea";
+
+        public static final Look SHIPPED = new Look(SULFUR_SEA, "#ffe66d", "#565f6b", "#fff3a8", "#e8ecf5");
+
+        public Look {
+            biome = biome.strip().toLowerCase(java.util.Locale.ROOT);
+            water = colour("water", water);
+            waterFog = colour("water-fog", waterFog);
+            fog = colour("fog", fog);
+            sky = colour("sky", sky);
+            if (!biome.isEmpty() && org.bukkit.NamespacedKey.fromString(biome) == null) {
+                throw new IllegalArgumentException("the biome \"" + biome + "\" is no key");
+            }
+        }
+
+        private static String colour(String name, String written) {
+            String colour = written.strip().toLowerCase(java.util.Locale.ROOT);
+            if (!colour.matches("#[0-9a-f]{6}")) {
+                throw new IllegalArgumentException(name + " is written #rrggbb, not \"" + written + "\"");
+            }
+            return colour;
+        }
+
+        /** Whether the sea is painted at all. */
+        public boolean paints() {
+            return !biome.isEmpty();
+        }
+    }
+
     /** How acid water is made clean. Rain a cauldron catches is clean already. */
     public record Purification(boolean furnace, boolean brewingWithCoal) {}
 
@@ -175,6 +219,7 @@ public record AcidIslandConfiguration(
         Objects.requireNonNull(seaLife, "seaLife must not be null");
         Objects.requireNonNull(armour, "armour must not be null");
         Objects.requireNonNull(cleanWater, "cleanWater must not be null");
+        Objects.requireNonNull(look, "look must not be null");
         waterProtection = List.copyOf(waterProtection);
         waterEffects = List.copyOf(waterEffects);
     }
@@ -189,7 +234,8 @@ public record AcidIslandConfiguration(
                 new Purification(true, true),
                 SeaLife.SHIPPED,
                 Armour.SHIPPED,
-                CleanWater.SHIPPED);
+                CleanWater.SHIPPED,
+                Look.SHIPPED);
     }
 
     public static AcidIslandConfiguration load(ConfigurationNode root) {
@@ -240,7 +286,24 @@ public record AcidIslandConfiguration(
                         purification.node("brewing-with-coal").getBoolean(true)),
                 seaLife(root.node("sea-life")),
                 armour(hazard.node("armour")),
-                cleanWater(root.node("clean-water")));
+                cleanWater(root.node("clean-water")),
+                look(seaNode.node("look")));
+    }
+
+    /** How the sea looks, as {@code sea look} writes it; what cannot be read is the shipped, said. */
+    public static Look look(ConfigurationNode node) {
+        Look shipped = Look.SHIPPED;
+        try {
+            return new Look(
+                    node.node("biome").getString(shipped.biome()),
+                    node.node("water").getString(shipped.water()),
+                    node.node("water-fog").getString(shipped.waterFog()),
+                    node.node("fog").getString(shipped.fog()),
+                    node.node("sky").getString(shipped.sky()));
+        } catch (IllegalArgumentException e) {
+            LOGGER.warning(() -> "modules/acidisland.conf sea look: " + e.getMessage() + ". The shipped look is used.");
+            return shipped;
+        }
     }
 
     /** What clean water does, as {@code clean-water} writes it; what cannot be read is the shipped. */

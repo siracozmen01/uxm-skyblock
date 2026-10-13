@@ -6,6 +6,7 @@ import java.util.logging.Logger;
 
 import org.bukkit.Material;
 import org.bukkit.World;
+import org.bukkit.block.Biome;
 import org.bukkit.block.Block;
 import org.bukkit.block.data.type.BubbleColumn;
 
@@ -18,6 +19,9 @@ import com.uxplima.uxmskyblock.core.application.scheduler.SchedulerPort;
 /**
  * The creation action that makes an island an AcidIsland island: records it and fills the air around it
  * with the acid sea, on a floor.
+ *
+ * <p>Where the sea fills a column from its floor to its surface, the column is painted with the sea's biome from the
+ * floor to the sky, so the water, the fog and the sky above it take its colours; the island's own columns keep theirs.
  *
  * <p>The sea spans many chunks, and on Folia each chunk belongs to the region that owns it, so each
  * chunk's column of sea is laid on that region's thread. A block the island already has is kept.
@@ -35,14 +39,38 @@ public final class AcidSeaStart implements CreationActionProvider<IslandStart> {
 
     private static final Logger LOGGER = Logger.getLogger(AcidSeaStart.class.getName());
 
+    /** How the players who see a chunk are sent it again once its biome changed. */
+    @FunctionalInterface
+    public interface Resend {
+        void chunk(World world, int chunkX, int chunkZ);
+    }
+
+    /** A biome is kept per cell of four blocks each way, so one block in four is enough to paint it. */
+    private static final int CELL = 4;
+
     private final AcidIslandService service;
     private final SchedulerPort scheduler;
     private final AcidIslandConfiguration.Sea sea;
+    private final @org.jspecify.annotations.Nullable Biome biome;
+    private final Resend resend;
 
+    /** A sea that keeps the biome its world made. */
     public AcidSeaStart(AcidIslandService service, SchedulerPort scheduler, AcidIslandConfiguration.Sea sea) {
+        this(service, scheduler, sea, null, (world, chunkX, chunkZ) -> {});
+    }
+
+    /** @param biome the biome painted over the sea, or none to keep the one its world made */
+    public AcidSeaStart(
+            AcidIslandService service,
+            SchedulerPort scheduler,
+            AcidIslandConfiguration.Sea sea,
+            @org.jspecify.annotations.Nullable Biome biome,
+            Resend resend) {
         this.service = Objects.requireNonNull(service, "service must not be null");
         this.scheduler = Objects.requireNonNull(scheduler, "scheduler must not be null");
         this.sea = Objects.requireNonNull(sea, "sea must not be null");
+        this.biome = biome;
+        this.resend = Objects.requireNonNull(resend, "resend must not be null");
     }
 
     @Override
@@ -82,8 +110,15 @@ public final class AcidSeaStart implements CreationActionProvider<IslandStart> {
                 int toZ = Math.min(maxZ, (chunkZ << 4) + 15);
                 long seed = start.islandId().value().getMostSignificantBits()
                         ^ start.islandId().value().getLeastSignificantBits();
-                scheduler.onRegion(
-                        world.getName(), chunkX, chunkZ, () -> fill(world, fromX, toX, fromZ, toZ, surface, bed, seed));
+                int cx = chunkX;
+                int cz = chunkZ;
+                scheduler.onRegion(world.getName(), chunkX, chunkZ, () -> {
+                    fill(world, fromX, toX, fromZ, toZ, surface, bed, seed);
+                    if (biome != null) {
+                        paint(world, fromX, toX, fromZ, toZ, surface, biome);
+                        resend.chunk(world, cx, cz);
+                    }
+                });
             }
         }
     }
@@ -103,6 +138,28 @@ public final class AcidSeaStart implements CreationActionProvider<IslandStart> {
                 }
             }
         }
+    }
+
+    /**
+     * Paints each cell of the area whose corner column the sea filled, from the floor to the top of the world. A cell
+     * the island stands in keeps its biome.
+     */
+    private void paint(World world, int fromX, int toX, int fromZ, int toZ, int surface, Biome painted) {
+        int floor = surface - sea.depth();
+        for (int x = Math.floorDiv(fromX + CELL - 1, CELL) * CELL; x <= toX; x += CELL) {
+            for (int z = Math.floorDiv(fromZ + CELL - 1, CELL) * CELL; z <= toZ; z += CELL) {
+                if (!isSea(world.getBlockAt(x, surface, z).getType())) {
+                    continue;
+                }
+                for (int y = Math.floorDiv(floor, CELL) * CELL; y < world.getMaxHeight(); y += CELL) {
+                    world.setBiome(x, y, z, painted);
+                }
+            }
+        }
+    }
+
+    private static boolean isSea(Material type) {
+        return type == Material.WATER || type == Material.BUBBLE_COLUMN;
     }
 
     /**

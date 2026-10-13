@@ -162,6 +162,93 @@ class ANewAcidIslandStandsInItsSeaTest extends MockBukkitHarness {
     }
 
     @Test
+    @DisplayName(
+            "The sea is painted with its biome from the floor to the sky where it fills a column, and each chunk sent again")
+    void theSeaIsPainted() throws Exception {
+        StarterPreset preset = shipped().catalogue().findById("acid_island").orElseThrow();
+        int surface = Y - SEA.belowIsland();
+        int floor = surface - SEA.depth();
+        org.bukkit.block.Biome before = cell(CENTER + 8, surface, CENTER);
+        for (int y = floor; y <= Y + 20; y++) {
+            world.getBlockAt(CENTER, y, CENTER).setType(Material.STONE);
+        }
+        List<String> sent = new java.util.ArrayList<>();
+
+        new AcidSeaStart(
+                        service,
+                        scheduler,
+                        new AcidIslandConfiguration.Sea(2, 3, 20, "SANDSTONE"),
+                        org.bukkit.block.Biome.WARM_OCEAN,
+                        (painted, chunkX, chunkZ) -> sent.add(chunkX + "," + chunkZ))
+                .apply(new IslandStart(world, IslandId.of(UUID.randomUUID()), CENTER, Y, CENTER, preset));
+
+        assertThat(before).isNotEqualTo(org.bukkit.block.Biome.WARM_OCEAN);
+        assertThat(cell(CENTER + 8, surface, CENTER)).isEqualTo(org.bukkit.block.Biome.WARM_OCEAN);
+        assertThat(cell(CENTER + 8, floor, CENTER))
+                .describedAs("the floor")
+                .isEqualTo(org.bukkit.block.Biome.WARM_OCEAN);
+        assertThat(cell(CENTER + 8, world.getMaxHeight() - 1, CENTER))
+                .describedAs("up to the sky")
+                .isEqualTo(org.bukkit.block.Biome.WARM_OCEAN);
+        assertThat(cell(CENTER + 8, floor - 8, CENTER))
+                .describedAs("below the floor")
+                .isEqualTo(before);
+        assertThat(cell(CENTER - 20, surface, CENTER - 20))
+                .describedAs("the sea's corner")
+                .isEqualTo(org.bukkit.block.Biome.WARM_OCEAN);
+        assertThat(cell(CENTER, surface, CENTER))
+                .describedAs("the island's column")
+                .isEqualTo(before);
+        assertThat(cell(CENTER + 24, surface, CENTER))
+                .describedAs("past the sea")
+                .isEqualTo(before);
+        int across = ((CENTER + 20) >> 4) - ((CENTER - 20) >> 4) + 1;
+        int chunks = across * across;
+        assertThat(sent).hasSize(chunks).doesNotHaveDuplicates();
+
+        new AcidSeaStart(service, scheduler, new AcidIslandConfiguration.Sea(2, 3, 6, "SANDSTONE"))
+                .apply(new IslandStart(world, IslandId.of(UUID.randomUUID()), CENTER + 80, Y, CENTER, preset));
+        assertThat(cell(CENTER + 84, surface, CENTER))
+                .describedAs("no biome asked for")
+                .isEqualTo(before);
+    }
+
+    /** The biome of the cell a block stands in, read at the cell's corner, where the server keeps it. */
+    private org.bukkit.block.Biome cell(int x, int y, int z) {
+        return world.getBiome(Math.floorDiv(x, 4) * 4, Math.floorDiv(y, 4) * 4, Math.floorDiv(z, 4) * 4);
+    }
+
+    @Test
+    @DisplayName("The look is read with its colours, and one that cannot be is the shipped")
+    void theLook() throws Exception {
+        assertThat(AcidIslandConfiguration.look(HoconConfigurationLoader.builder()
+                        .buildAndLoadString("biome = \" Minecraft:Warm_Ocean \", water = \"#AABBCC\"")))
+                .isEqualTo(new AcidIslandConfiguration.Look(
+                        "minecraft:warm_ocean", "#aabbcc", "#565f6b", "#fff3a8", "#e8ecf5"));
+        assertThat(AcidIslandConfiguration.look(
+                        HoconConfigurationLoader.builder().buildAndLoadString("biome = \"\"")))
+                .extracting(AcidIslandConfiguration.Look::paints)
+                .isEqualTo(false);
+        assertThat(AcidIslandConfiguration.Look.SHIPPED.paints()).isTrue();
+        for (String wrong : List.of(
+                "water = \"green\"",
+                "fog = \"#12345\"",
+                "sky = \"#1234567\"",
+                "water-fog = \"#gggggg\"",
+                "biome = \"no key here\"")) {
+            assertThat(AcidIslandConfiguration.look(
+                            HoconConfigurationLoader.builder().buildAndLoadString(wrong)))
+                    .describedAs(wrong)
+                    .isEqualTo(AcidIslandConfiguration.Look.SHIPPED);
+        }
+        assertThat(AcidIslandConfiguration.load(HoconConfigurationLoader.builder()
+                                .buildAndLoadString("sea { look { sky = \"#010203\" } }"))
+                        .look()
+                        .sky())
+                .isEqualTo("#010203");
+    }
+
+    @Test
     @DisplayName("The preset plays AcidIsland and lays the platform before the sea")
     void thePresetIsAcidIsland() throws Exception {
         StarterPreset preset = shipped().catalogue().findById("acid_island").orElseThrow();

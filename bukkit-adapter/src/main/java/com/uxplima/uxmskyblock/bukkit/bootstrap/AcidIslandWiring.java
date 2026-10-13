@@ -114,7 +114,35 @@ public final class AcidIslandWiring implements AutoCloseable {
 
     /** The action that lays the acid sea, while AcidIsland is enabled, and none otherwise. */
     public List<CreationActionProvider<IslandStart>> startActions() {
-        return config.enabled() ? List.of(new AcidSeaStart(service, scheduler, config.sea())) : List.of();
+        return config.enabled()
+                ? List.of(new AcidSeaStart(service, scheduler, config.sea(), seaBiome(), AcidIslandWiring::refresh))
+                : List.of();
+    }
+
+    /** The biome the sea is painted with, or none: none asked for, or one the server does not know, said. */
+    private org.bukkit.block.@Nullable Biome seaBiome() {
+        if (!config.look().paints()) {
+            return null;
+        }
+        org.bukkit.NamespacedKey key =
+                org.bukkit.NamespacedKey.fromString(config.look().biome());
+        org.bukkit.block.Biome biome = key == null
+                ? null
+                : io.papermc.paper.registry.RegistryAccess.registryAccess()
+                        .getRegistry(io.papermc.paper.registry.RegistryKey.BIOME)
+                        .get(key);
+        if (biome == null) {
+            LOGGER.warning(() -> "modules/acidisland.conf sea look names the biome "
+                    + config.look().biome()
+                    + ", which the server does not know. The sea keeps the biome its world made.");
+        }
+        return biome;
+    }
+
+    // The only way the server offers to send a chunk again, so a biome shows without the player leaving it.
+    @SuppressWarnings("deprecation")
+    private static void refresh(org.bukkit.World world, int chunkX, int chunkZ) {
+        world.refreshChunk(chunkX, chunkZ);
     }
 
     /** Stops the sea and the rain burning, before the server stops. */
