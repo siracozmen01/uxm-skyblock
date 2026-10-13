@@ -465,6 +465,37 @@ class ABoxedIslandIsPlayedInItsBoxTest extends MockBukkitHarness {
     }
 
     @Test
+    @DisplayName(
+            "An advancement a data pack adds grows the box as the game's own does, and its namespace can be left out")
+    void aDataPackAdvancementCounts() throws Exception {
+        service.start(islandId);
+        PlayerMock player = createPlayer("Packer");
+        Advancement root = mock(Advancement.class);
+        Advancement quest = mock(Advancement.class);
+        when(root.getKey()).thenReturn(new NamespacedKey("mypack", "quests/root"));
+        when(quest.getKey()).thenReturn(new NamespacedKey("mypack", "quests/dragon"));
+        when(quest.getParent()).thenReturn(root);
+        when(quest.getDisplay()).thenReturn(mock(io.papermc.paper.advancement.AdvancementDisplay.class));
+
+        listener.onAdvancement(new PlayerAdvancementDoneEvent(player, quest, Component.empty()));
+
+        assertThat(service.radius(islandId)).hasValue(7);
+        assertThat(earned).contains(islandId + "mypack:quests/dragon");
+        listener.onAdvancement(new PlayerAdvancementDoneEvent(player, quest, Component.empty()));
+        assertThat(service.radius(islandId)).describedAs("once for the island").hasValue(7);
+
+        BoxRules written = BoxedConfiguration.load(HoconConfigurationLoader.builder()
+                        .buildAndLoadString("ignore = [\"mypack:\"]\nadvancements { \"other:a/b\" = 9 }"))
+                .rules();
+        assertThat(written.blocksFor(BoxedListener.facts(quest)))
+                .describedAs("a pack left out")
+                .isZero();
+        assertThat(written.blocksFor(
+                        new com.uxplima.uxmskyblock.core.domain.boxed.AdvancementFacts("other:a/b", 3, true)))
+                .isEqualTo(9);
+    }
+
+    @Test
     @DisplayName("An advancement is read with how deep in its tab it lies and whether the screen shows it")
     void theFactsOfAnAdvancement() {
         Advancement root = mock(Advancement.class);
