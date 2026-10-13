@@ -95,8 +95,8 @@ public record OneBlockConfiguration(
                 at = -1;
             }
             if (at < 0 || at >= length) {
-                LOGGER.warning(() -> "OneBlock phase '" + phase + "' has a moment at '" + written
-                        + "', which is no break" + " from 0 to " + (length - 1) + ". It is left out.");
+                warn(() -> "OneBlock phase '" + phase + "' has a moment at '" + written + "', which is no break"
+                        + " from 0 to " + (length - 1) + ". It is left out.");
                 continue;
             }
             String block = value.node("block").getString();
@@ -108,7 +108,7 @@ public record OneBlockConfiguration(
                     ? null
                     : creatures.containsKey(phase + "/" + creature) ? phase + "/" + creature : creatureName(creature);
             if ((block != null && drawnBlock == null) || (creature != null && drawnCreature == null)) {
-                LOGGER.warning(() -> "OneBlock phase '" + phase + "', moment " + written + ": "
+                warn(() -> "OneBlock phase '" + phase + "', moment " + written + ": "
                         + (block != null && drawnBlock == null
                                 ? "the block '" + block + "'"
                                 : "the creature '" + creature + "'")
@@ -121,8 +121,8 @@ public record OneBlockConfiguration(
                 try {
                     textTime = com.uxplima.uxmlib.common.Durations.parse(writtenTime.strip());
                 } catch (RuntimeException unreadable) {
-                    LOGGER.warning(() -> "OneBlock phase '" + phase + "', moment " + written + ": text-time '"
-                            + writtenTime + "' is no time, so " + OneBlockMoment.TEXT_TIME.toSeconds() + "s is used.");
+                    warn(() -> "OneBlock phase '" + phase + "', moment " + written + ": text-time '" + writtenTime
+                            + "' is no time, so " + OneBlockMoment.TEXT_TIME.toSeconds() + "s is used.");
                 }
             }
             try {
@@ -137,8 +137,8 @@ public record OneBlockConfiguration(
                                 value.node("text").getString(),
                                 textTime));
             } catch (org.spongepowered.configurate.serialize.SerializationException | IllegalArgumentException wrong) {
-                LOGGER.warning(() -> "OneBlock phase '" + phase + "', moment " + written + " cannot be: "
-                        + wrong.getMessage() + ". It is left out.");
+                warn(() -> "OneBlock phase '" + phase + "', moment " + written + " cannot be: " + wrong.getMessage()
+                        + ". It is left out.");
             }
         }
         return moments;
@@ -164,8 +164,8 @@ public record OneBlockConfiguration(
                                         written.node("members").getList(String.class, List.of())),
                                 event.equals(OneBlockLists.LUCKY) ? chance(phase, written.node("chance")) : 1));
             } catch (org.spongepowered.configurate.serialize.SerializationException wrong) {
-                LOGGER.warning(() -> "OneBlock phase '" + phase + "', " + event + " cannot be read: "
-                        + wrong.getMessage() + ". The shipped list in modules/effects.conf runs instead.");
+                warn(() -> "OneBlock phase '" + phase + "', " + event + " cannot be read: " + wrong.getMessage()
+                        + ". The shipped list in modules/effects.conf runs instead.");
             }
         }
         return byEvent;
@@ -180,7 +180,7 @@ public record OneBlockConfiguration(
         if (chance >= 0 && chance <= 1) {
             return chance;
         }
-        LOGGER.warning(() -> "OneBlock phase '" + phase + "' has a lucky break with chance '" + node.raw()
+        warn(() -> "OneBlock phase '" + phase + "' has a lucky break with chance '" + node.raw()
                 + "', which is no chance from 0 to 1, so no break of it is lucky.");
         return 0;
     }
@@ -212,6 +212,46 @@ public record OneBlockConfiguration(
     public static final java.time.Duration DEFAULT_SAVE_INTERVAL = java.time.Duration.ofSeconds(30);
 
     private static final Logger LOGGER = Logger.getLogger(OneBlockConfiguration.class.getName());
+
+    /** What a load on this thread was told, while {@link #loadReporting} runs it; nothing otherwise. */
+    private static final ThreadLocal<List<String>> HEARD = new ThreadLocal<>();
+
+    /** A line of the files that cannot be read as written, kept for the report, or said in the console. */
+    private static void warn(java.util.function.Supplier<String> said) {
+        @org.jspecify.annotations.Nullable List<String> heard = HEARD.get();
+        if (heard == null) {
+            LOGGER.warning(said);
+        } else {
+            heard.add(said.get());
+        }
+    }
+
+    private static void warn(String said) {
+        warn(() -> said);
+    }
+
+    /** The files as read, and every line of them that could not be read as written, in the order met. */
+    public record Loaded(OneBlockConfiguration config, List<String> problems) {
+        public Loaded {
+            Objects.requireNonNull(config, "config must not be null");
+            problems = List.copyOf(problems);
+        }
+    }
+
+    /**
+     * The same as {@link #load(ConfigurationNode, java.nio.file.Path)}, with every line it could not read as written
+     * kept for the caller to report rather than said in the console.
+     */
+    public static Loaded loadReporting(
+            ConfigurationNode root, java.nio.file.@org.jspecify.annotations.Nullable Path phasesFolder) {
+        List<String> heard = new ArrayList<>();
+        HEARD.set(heard);
+        try {
+            return new Loaded(load(root, phasesFolder), heard);
+        } finally {
+            HEARD.remove();
+        }
+    }
 
     public OneBlockConfiguration {
         Objects.requireNonNull(phases, "phases");
@@ -346,7 +386,7 @@ public record OneBlockConfiguration(
             }
             Map<String, Double> blocks = blocks(key, phase.node("blocks"), blockEntries);
             if (blocks.isEmpty()) {
-                LOGGER.warning(() -> "OneBlock phase '" + key + "' has no block the server knows and is left out.");
+                warn(() -> "OneBlock phase '" + key + "' has no block the server knows and is left out.");
                 continue;
             }
             try {
@@ -381,11 +421,11 @@ public record OneBlockConfiguration(
                                 blockEntries,
                                 creatureEntries));
             } catch (IllegalArgumentException unusable) {
-                LOGGER.warning(() -> "OneBlock phase '" + key + "' is left out: " + unusable.getMessage());
+                warn(() -> "OneBlock phase '" + key + "' is left out: " + unusable.getMessage());
             }
         }
         if (phases.isEmpty()) {
-            LOGGER.warning("modules/oneblock.conf holds no usable phase, so the built in one is used.");
+            warn("modules/oneblock.conf holds no usable phase, so the built in one is used.");
             return new OneBlockConfiguration(enabled, defaultConfiguration().phases(), saveInterval);
         }
         java.util.Set<String> kept = new java.util.HashSet<>();
@@ -397,7 +437,7 @@ public record OneBlockConfiguration(
                 if (kept.contains(to)) {
                     known.add(to);
                 } else {
-                    LOGGER.warning(() -> "OneBlock phase '" + from + "' is followed by '" + to
+                    warn(() -> "OneBlock phase '" + from + "' is followed by '" + to
                             + "', which is no phase in modules/oneblock.conf, and the way is left out.");
                 }
             }
@@ -409,14 +449,14 @@ public record OneBlockConfiguration(
         Duration chooseWithin = within.isEmpty()
                 ? DEFAULT_CHOOSE_WITHIN
                 : RequirementLines.duration(within).orElseGet(() -> {
-                    LOGGER.warning(() -> "choose-within is '" + within + "', which is no time, so "
+                    warn(() -> "choose-within is '" + within + "', which is no time, so "
                             + DEFAULT_CHOOSE_WITHIN.toSeconds() + " seconds is used.");
                     return DEFAULT_CHOOSE_WITHIN;
                 });
         int warning = root.node("creature-warning").getInt(DEFAULT_CREATURE_WARNING);
         if (warning < 0) {
-            LOGGER.warning(() -> "creature-warning is " + warning + ", which is below nothing, so "
-                    + DEFAULT_CREATURE_WARNING + " is used.");
+            warn(() -> "creature-warning is '" + warning + "', which is below nothing, so " + DEFAULT_CREATURE_WARNING
+                    + " is used.");
         }
         int creatureWarning = warning < 0 ? DEFAULT_CREATURE_WARNING : warning;
         return new OneBlockConfiguration(
@@ -443,7 +483,7 @@ public record OneBlockConfiguration(
         OneBlockDisplay shipped = OneBlockDisplay.SHIPPED;
         String bar = node.node("bar").getString(shipped.bar().key());
         OneBlockDisplay.Bar shown = OneBlockDisplay.Bar.named(bar).orElseGet(() -> {
-            LOGGER.warning(() -> "progress.bar is '" + bar + "', which is none of bossbar, actionbar and none, so "
+            warn(() -> "progress.bar is '" + bar + "', which is none of bossbar, actionbar and none, so "
                     + shipped.bar().key() + " is used.");
             return shipped.bar();
         });
@@ -453,7 +493,7 @@ public record OneBlockConfiguration(
                 : RequirementLines.duration(linger)
                         .filter(time -> !time.isZero())
                         .orElseGet(() -> {
-                            LOGGER.warning(() -> "progress.linger is '" + linger + "', which is no time, so "
+                            warn(() -> "progress.linger is '" + linger + "', which is no time, so "
                                     + shipped.linger().toSeconds() + " seconds is used.");
                             return shipped.linger();
                         });
@@ -473,7 +513,7 @@ public record OneBlockConfiguration(
             if (read.isPresent()) {
                 wait = read.get();
             } else {
-                LOGGER.warning(() -> "OneBlock phase '" + phase + "' waits '" + written
+                warn(() -> "OneBlock phase '" + phase + "' waits '" + written
                         + "', which is no time such as 5m or 1h30m, so it waits for nothing.");
             }
         }
@@ -485,7 +525,7 @@ public record OneBlockConfiguration(
                     || read.get() instanceof Requirement.Wait
                     || read.get() instanceof Requirement.Points
                     || (read.get() instanceof Requirement.Level level && level.level() == Requirement.Level.LADDER)) {
-                LOGGER.warning(() -> "OneBlock phase '" + phase + "' requires '" + text
+                warn(() -> "OneBlock phase '" + phase + "' requires '" + text
                         + "', which it cannot ask, and the line is left out. A wait is written as wait = \"5m\".");
                 continue;
             }
@@ -498,13 +538,13 @@ public record OneBlockConfiguration(
     private static @org.jspecify.annotations.Nullable ConfigurationNode phaseFile(
             String name, java.nio.file.@org.jspecify.annotations.Nullable Path folder) {
         if (!NAME.matcher(name).matches()) {
-            LOGGER.warning(() -> "modules/oneblock.conf lists the phase '" + name
+            warn(() -> "modules/oneblock.conf lists the phase '" + name
                     + "', which is no name a file can have: 1 to 64 of a-z, 0-9, _ and -. It is left out.");
             return null;
         }
         java.nio.file.Path file = folder == null ? null : folder.resolve(name + ".conf");
         if (file == null || !java.nio.file.Files.isRegularFile(file)) {
-            LOGGER.warning(() -> "modules/oneblock.conf lists the phase '" + name + "', and oneblock/phases/" + name
+            warn(() -> "modules/oneblock.conf lists the phase '" + name + "', and oneblock/phases/" + name
                     + ".conf is not there. It is left out.");
             return null;
         }
@@ -514,7 +554,7 @@ public record OneBlockConfiguration(
                     .build()
                     .load();
         } catch (org.spongepowered.configurate.ConfigurateException unreadable) {
-            LOGGER.warning(() -> "oneblock/phases/" + name + ".conf cannot be read (" + unreadable.getMessage()
+            warn(() -> "oneblock/phases/" + name + ".conf cannot be read (" + unreadable.getMessage()
                     + "). The phase is left out.");
             return null;
         }
@@ -524,7 +564,7 @@ public record OneBlockConfiguration(
     private static String icon(String phase, String written) {
         Material material = Material.matchMaterial(written);
         if (material == null || material.isAir()) {
-            LOGGER.warning(() -> "OneBlock phase '" + phase + "' has the icon '" + written
+            warn(() -> "OneBlock phase '" + phase + "' has the icon '" + written
                     + "', which the server does not know, so " + DEFAULT_ICON + " is used.");
             return DEFAULT_ICON;
         }
@@ -543,8 +583,8 @@ public record OneBlockConfiguration(
         } catch (RuntimeException unreadable) {
             // Said below, with the interval used instead.
         }
-        LOGGER.warning(() -> "save-interval '" + written + "' is not a positive duration, so "
-                + DEFAULT_SAVE_INTERVAL.toSeconds() + "s is used.");
+        warn(() -> "save-interval '" + written + "' is not a positive duration, so " + DEFAULT_SAVE_INTERVAL.toSeconds()
+                + "s is used.");
         return DEFAULT_SAVE_INTERVAL;
     }
 
@@ -552,8 +592,7 @@ public record OneBlockConfiguration(
         try {
             return OneBlockPhases.AfterTheLast.valueOf(written.trim().toUpperCase(Locale.ROOT));
         } catch (IllegalArgumentException unknown) {
-            LOGGER.warning(
-                    () -> "after-last-phase '" + written + "' is neither 'stay' nor 'repeat', so 'stay' is used.");
+            warn(() -> "after-last-phase '" + written + "' is neither 'stay' nor 'repeat', so 'stay' is used.");
             return OneBlockPhases.AfterTheLast.STAY;
         }
     }
@@ -575,7 +614,7 @@ public record OneBlockConfiguration(
                 String spawns = value.node("spawns").getString();
                 String known = blockData(data);
                 if (known == null || (spawns != null && creatureName(spawns) == null)) {
-                    LOGGER.warning(() -> "OneBlock phase '" + phase + "' has the entry '" + written + "', whose block '"
+                    warn(() -> "OneBlock phase '" + phase + "' has the entry '" + written + "', whose block '"
                             + data + "'" + (spawns == null ? "" : " or creature '" + spawns + "'")
                             + " the server does not know, and it is left out.");
                     continue;
@@ -593,7 +632,7 @@ public record OneBlockConfiguration(
             }
             String known = blockData(written);
             if (known == null) {
-                LOGGER.warning(() -> "OneBlock phase '" + phase + "' names '" + written
+                warn(() -> "OneBlock phase '" + phase + "' names '" + written
                         + "', which is not a block, and it is left out.");
                 continue;
             }
@@ -625,7 +664,7 @@ public record OneBlockConfiguration(
             }
             String known = creatureName(written);
             if (known == null) {
-                LOGGER.warning(() -> "OneBlock phase '" + phase + "' names '" + written
+                warn(() -> "OneBlock phase '" + phase + "' names '" + written
                         + "', which is not a creature that can be spawned, and it is left out.");
                 continue;
             }
@@ -639,7 +678,7 @@ public record OneBlockConfiguration(
             String phase, String written, ConfigurationNode value) {
         String type = creatureName(value.node("type").getString(written));
         if (type == null) {
-            LOGGER.warning(() -> "OneBlock phase '" + phase + "' has the creature '" + written + "', whose type '"
+            warn(() -> "OneBlock phase '" + phase + "' has the creature '" + written + "', whose type '"
                     + value.node("type").getString(written) + "' cannot be spawned, and it is left out.");
             return null;
         }
@@ -649,7 +688,7 @@ public record OneBlockConfiguration(
             String slot = String.valueOf(worn.getKey()).toLowerCase(Locale.ROOT);
             Material item = Material.matchMaterial(worn.getValue().getString(""));
             if (!SLOTS.contains(slot) || item == null || item.isAir()) {
-                LOGGER.warning(() -> "OneBlock phase '" + phase + "', creature '" + written + "': '" + worn.getKey()
+                warn(() -> "OneBlock phase '" + phase + "', creature '" + written + "': '" + worn.getKey()
                         + " = " + worn.getValue().getString("") + "' is no slot of " + SLOTS
                         + " with an item the server knows, and it is left out.");
                 continue;
@@ -660,7 +699,7 @@ public record OneBlockConfiguration(
             return new OneBlockEntries.Creature(
                     type, value.node("name").getString(), value.node("scale").getDouble(1), equipment);
         } catch (IllegalArgumentException wrong) {
-            LOGGER.warning(() -> "OneBlock phase '" + phase + "', creature '" + written + "': " + wrong.getMessage()
+            warn(() -> "OneBlock phase '" + phase + "', creature '" + written + "': " + wrong.getMessage()
                     + ". It is left out.");
             return null;
         }
@@ -705,7 +744,7 @@ public record OneBlockConfiguration(
                         .getRegistry(io.papermc.paper.registry.RegistryKey.BIOME)
                         .get(key);
         if (biome == null) {
-            LOGGER.warning(() -> "OneBlock phase '" + phase + "' names the biome '" + written
+            warn(() -> "OneBlock phase '" + phase + "' names the biome '" + written
                     + "', which the server does not know, so the phase leaves the biome as it is.");
             return null;
         }
@@ -721,7 +760,7 @@ public record OneBlockConfiguration(
         } catch (NumberFormatException notANumber) {
             // Said below with the value that is no area.
         }
-        LOGGER.warning(() -> "OneBlock phase '" + phase + "' has biome-area '" + area
+        warn(() -> "OneBlock phase '" + phase + "' has biome-area '" + area
                 + "', which is neither island nor a number of blocks, so the whole island takes the biome.");
         return new OneBlockBiome(biome, OneBlockBiome.ISLAND);
     }

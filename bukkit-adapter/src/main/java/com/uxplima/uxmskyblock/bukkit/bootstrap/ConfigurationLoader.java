@@ -325,7 +325,13 @@ public final class ConfigurationLoader {
                 plugin,
                 dataDir,
                 "oneblock.conf",
-                node -> com.uxplima.uxmskyblock.bukkit.config.OneBlockConfiguration.load(node, phasesFolder),
+                node -> {
+                    // Each line that cannot be read as written is said with its file and line.
+                    var loaded = com.uxplima.uxmskyblock.bukkit.config.OneBlockConfiguration.loadReporting(
+                            node, phasesFolder);
+                    var unused = com.uxplima.uxmskyblock.bukkit.config.OneBlockLoadReport.say(dataDir, loaded);
+                    return loaded.config();
+                },
                 com.uxplima.uxmskyblock.bukkit.config.OneBlockConfiguration.defaultConfiguration());
         com.uxplima.uxmskyblock.bukkit.config.LifecycleConfiguration lifecycleConfig = loadConfig(
                 plugin,

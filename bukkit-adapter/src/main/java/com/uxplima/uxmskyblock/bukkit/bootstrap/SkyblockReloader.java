@@ -16,8 +16,9 @@ import org.jspecify.annotations.Nullable;
 /**
  * Reads the files an operator may change while the server is running.
  *
- * <p>The specification draws the line and this holds it: a reload touches the message catalogues
- * and the menu specifications, and nothing else. Core service registrations, Bukkit listeners,
+ * <p>The specification draws the line and this holds it: a reload touches the message catalogues,
+ * the menu specifications and the files a game mode reads as it plays, such as the OneBlock phases,
+ * which the mode swaps whole for the new ones, and nothing else. Core service registrations, Bukkit listeners,
  * connection pools and database tables are never torn down or re-bound. Hot swapping a subsystem is
  * how a plugin leaks classloaders, leaves listeners behind and desynchronises schedulers, and the
  * answer to changing a module is a restart.
@@ -43,11 +44,27 @@ public final class SkyblockReloader {
     private final MessageProvider messageProvider;
     private final Path dataDir;
     private final @Nullable SkyblockMenuEngine menuEngine;
+    private final List<Rereads> modes;
+
+    /** A game mode's own files, read again; it answers each line it could not read as written. */
+    @FunctionalInterface
+    public interface Rereads {
+        List<String> reread(Path dataDir);
+    }
 
     public SkyblockReloader(MessageProvider messageProvider, Path dataDir, @Nullable SkyblockMenuEngine menuEngine) {
+        this(messageProvider, dataDir, menuEngine, List.of());
+    }
+
+    public SkyblockReloader(
+            MessageProvider messageProvider,
+            Path dataDir,
+            @Nullable SkyblockMenuEngine menuEngine,
+            List<Rereads> modes) {
         this.messageProvider = Objects.requireNonNull(messageProvider, "messageProvider must not be null");
         this.dataDir = Objects.requireNonNull(dataDir, "dataDir must not be null");
         this.menuEngine = menuEngine;
+        this.modes = List.copyOf(modes);
     }
 
     /**
@@ -60,6 +77,13 @@ public final class SkyblockReloader {
         List<String> failures = new ArrayList<>();
         int catalogues = reloadCatalogues(failures);
         int menus = reloadMenus();
+        for (Rereads mode : modes) {
+            try {
+                failures.addAll(mode.reread(dataDir));
+            } catch (RuntimeException e) {
+                failures.add(e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage());
+            }
+        }
         return new ReloadReport(catalogues, menus, failures);
     }
 

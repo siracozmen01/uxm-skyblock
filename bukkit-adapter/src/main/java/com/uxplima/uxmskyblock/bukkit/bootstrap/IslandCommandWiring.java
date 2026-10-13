@@ -374,11 +374,15 @@ final class IslandCommandWiring {
         tree.setDatabaseBackupService(gameplay.databaseBackupService());
         tree.setMembershipService(gameplay.membershipService());
         tree.setSeasonService(gameplay.seasonService());
-        // A reload reads the catalogues and the menus and nothing else: no service is re-bound and
-        // no table is touched, because hot swapping a subsystem is how a plugin leaks classloaders
-        // and leaves listeners behind.
-        tree.setReloader(
-                new SkyblockReloader(integration.messages().provider(), config.dataDir(), integration.menuEngine()));
+        // A reload reads the catalogues, the menus and the OneBlock files and nothing else: no service is
+        // re-bound and no table is touched, because hot swapping a subsystem is how a plugin leaks
+        // classloaders and leaves listeners behind.
+        java.util.List<SkyblockReloader.Rereads> modes =
+                gameplay.oneBlockWiring().enabled()
+                        ? java.util.List.of(gameplay.oneBlockWiring()::reload)
+                        : java.util.List.of();
+        tree.setReloader(new SkyblockReloader(
+                integration.messages().provider(), config.dataDir(), integration.menuEngine(), modes));
         String islandWorld = config.nodeConfig().worldName();
         java.util.List<com.uxplima.uxmlib.health.HealthCheck> checks = java.util.List.of(
                 SkyblockHealth.storage(persistence::databaseAnswers),

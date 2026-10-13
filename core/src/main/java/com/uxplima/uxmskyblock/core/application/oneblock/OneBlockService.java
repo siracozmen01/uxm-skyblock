@@ -91,7 +91,7 @@ public final class OneBlockService {
     /** How many breaks ahead each island's draws are made. */
     private volatile int lookAhead;
 
-    private final OneBlockPhases phases;
+    private volatile OneBlockPhases phases;
     private final RandomGenerator random;
     private final Map<IslandId, Counted> counted = new ConcurrentHashMap<>();
 
@@ -139,6 +139,20 @@ public final class OneBlockService {
         this.waits = Objects.requireNonNull(waits, "waits must not be null");
         this.phases = Objects.requireNonNull(phases, "phases must not be null");
         this.random = Objects.requireNonNull(random, "random must not be null");
+    }
+
+    /**
+     * Goes on with {@code phases}, as an operator's reload rereads them. Each island keeps its count and its picks;
+     * its way through the phases and the draws made ahead are worked out again at its next break.
+     */
+    public void usePhases(OneBlockPhases phases) {
+        this.phases = Objects.requireNonNull(phases, "phases must not be null");
+        for (Counted held : counted.values()) {
+            held.route = null;
+            synchronized (held.ahead) {
+                held.ahead.clear();
+            }
+        }
     }
 
     /** The island as a OneBlock island, read once and then kept, or nothing if it is not one. */

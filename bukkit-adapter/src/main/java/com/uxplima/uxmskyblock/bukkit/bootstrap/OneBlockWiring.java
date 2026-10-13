@@ -18,7 +18,12 @@ public final class OneBlockWiring implements AutoCloseable {
 
     private static final Logger LOGGER = Logger.getLogger(OneBlockWiring.class.getName());
 
-    private final OneBlockConfiguration config;
+    /** The files as last read, at the start or by an operator's reload. */
+    private volatile OneBlockConfiguration config;
+
+    /** Whether the mode ran from the start; a reload does not turn it on or off, a restart does. */
+    private final boolean enabledAtStart;
+
     private final OneBlockService service;
     private final AutoCloseable saving;
     private final com.uxplima.uxmskyblock.bukkit.oneblock.OneBlockListener listener;
@@ -38,6 +43,7 @@ public final class OneBlockWiring implements AutoCloseable {
                             java.util.UUID, java.util.Optional<com.uxplima.uxmskyblock.core.domain.identity.ProfileId>>
                     activeProfile) {
         this.config = Objects.requireNonNull(configuration.oneBlockConfig(), "oneBlockConfig must not be null");
+        this.enabledAtStart = config.enabled();
         this.service = new OneBlockService(
                 persistence.oneBlockProgressPort(),
                 persistence.oneBlockRewardPort(),
@@ -63,7 +69,7 @@ public final class OneBlockWiring implements AutoCloseable {
                 configuration.effectsConfig(),
                 new com.uxplima.uxmskyblock.bukkit.effect.InteractionEffectPlayer(scheduler, configuration.messages()));
         this.draws = new com.uxplima.uxmskyblock.bukkit.oneblock.OneBlockDraws(
-                config::entries, configuration.messages(), configuration::lootTables);
+                () -> config.entries(), configuration.messages(), configuration::lootTables);
         listener.useDraws(draws);
         com.uxplima.uxmskyblock.bukkit.oneblock.OneBlockPauses pauses =
                 new com.uxplima.uxmskyblock.bukkit.oneblock.OneBlockPauses(
@@ -137,7 +143,35 @@ public final class OneBlockWiring implements AutoCloseable {
 
     /** Whether the operator lets islands be OneBlock islands, which is when the listener is registered. */
     public boolean enabled() {
-        return config.enabled();
+        return enabledAtStart;
+    }
+
+    /**
+     * Reads the OneBlock files again, for an operator's reload, and goes on with them: the phases, their blocks,
+     * moments, lists, gates, biomes and previews. Each island keeps its count and its picks. What only a restart
+     * changes is said, and so is every line that could not be read as written, with its file and line. A module
+     * file that will not parse leaves the files in use as they were.
+     *
+     * @return what the operator should read, empty when everything was read as written
+     */
+    public java.util.List<String> reload(java.nio.file.Path dataDir) {
+        var read = com.uxplima.uxmskyblock.bukkit.config.OneBlockLoadReport.read(dataDir);
+        java.util.List<String> said = new java.util.ArrayList<>(read.problems());
+        if (read.config().isEmpty()) {
+            return said;
+        }
+        OneBlockConfiguration now = read.config().get();
+        OneBlockConfiguration was = config;
+        if (now.enabled() != enabledAtStart) {
+            said.add("modules/oneblock.conf: enabled changes at the next restart.");
+        }
+        if (!now.saveInterval().equals(was.saveInterval())) {
+            said.add("modules/oneblock.conf: save-interval changes at the next restart.");
+        }
+        this.config = now;
+        service.usePhases(now.phases());
+        service.lookAhead(now.creatureWarning());
+        return said;
     }
 
     /**
@@ -148,7 +182,7 @@ public final class OneBlockWiring implements AutoCloseable {
                     com.uxplima.uxmskyblock.core.application.gamemode.CreationActionProvider<
                             com.uxplima.uxmskyblock.bukkit.schematic.IslandStart>>
             startActions() {
-        if (!config.enabled()) {
+        if (!enabledAtStart) {
             return java.util.List.of();
         }
         return java.util.List.of(
@@ -161,7 +195,7 @@ public final class OneBlockWiring implements AutoCloseable {
      */
     public com.uxplima.uxmskyblock.bukkit.oneblock.@org.jspecify.annotations.Nullable OneBlockPanel panel(
             com.uxplima.uxmskyblock.bukkit.menu.@org.jspecify.annotations.Nullable SkyblockMenuEngine engine) {
-        if (!config.enabled()) {
+        if (!enabledAtStart) {
             return null;
         }
         panel.useMenuEngine(engine);
