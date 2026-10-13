@@ -337,6 +337,13 @@ public final class IslandCommandTree {
     private com.uxplima.uxmskyblock.bukkit.poseidon.@Nullable PoseidonLore poseidonLore;
     private com.uxplima.uxmskyblock.bukkit.parkour.@Nullable ParkourBoard parkourBoard;
 
+    private com.uxplima.uxmskyblock.bukkit.parkour.@Nullable ParkourTagging parkourTagging;
+
+    /** What {@code /is coursetag} and {@code /is courserate} do, while islands can be Parkour courses. */
+    public void useParkourTagging(com.uxplima.uxmskyblock.bukkit.parkour.@Nullable ParkourTagging tagging) {
+        this.parkourTagging = tagging;
+    }
+
     /** What {@code /is course} shows, while the operator lets islands be Parkour courses. */
     public void useParkourBoard(com.uxplima.uxmskyblock.bukkit.parkour.@Nullable ParkourBoard board) {
         this.parkourBoard = board;
@@ -774,6 +781,19 @@ public final class IslandCommandTree {
                                         shop -> player ->
                                                 shop.side(player, StringArgumentType.getString(ctx, "side"))))))
                 .then(Cmd.literal("course").executes(this::executeCourse))
+                .then(Cmd.literal("coursetag")
+                        .then(courseTag(
+                                "difficulty", com.uxplima.uxmskyblock.bukkit.parkour.ParkourTagging.Kind.DIFFICULTY))
+                        .then(courseTag(
+                                "category", com.uxplima.uxmskyblock.bukkit.parkour.ParkourTagging.Kind.CATEGORY)))
+                .then(Cmd.literal("courserate")
+                        .then(Cmd.argument("stars", com.mojang.brigadier.arguments.IntegerArgumentType.integer())
+                                .executes(ctx -> tagging(
+                                        ctx,
+                                        (tagging, player) -> tagging.rate(
+                                                player,
+                                                com.mojang.brigadier.arguments.IntegerArgumentType.getInteger(
+                                                        ctx, "stars"))))))
                 .then(Cmd.literal("chunks")
                         .executes(ctx -> executeChunks(ctx, false))
                         .then(Cmd.literal("unlock").executes(ctx -> executeChunks(ctx, true))))
@@ -907,6 +927,41 @@ public final class IslandCommandTree {
             return Cmd.OK;
         }
         panel.open(player);
+        return Cmd.OK;
+    }
+
+    /** {@code coursetag <kind>} takes the tag off; {@code coursetag <kind> <name>} gives it. */
+    private com.mojang.brigadier.builder.LiteralArgumentBuilder<CommandSourceStack> courseTag(
+            String word, com.uxplima.uxmskyblock.bukkit.parkour.ParkourTagging.Kind kind) {
+        return Cmd.literal(word)
+                .executes(ctx -> tagging(ctx, (tagging, player) -> tagging.tag(player, kind, null)))
+                .then(Cmd.argument("name", StringArgumentType.word())
+                        .suggests((ctx, builder) -> {
+                            com.uxplima.uxmskyblock.bukkit.parkour.ParkourTagging tagging = this.parkourTagging;
+                            if (tagging != null) {
+                                tagging.names(kind).forEach(builder::suggest);
+                            }
+                            return builder.buildFuture();
+                        })
+                        .executes(ctx -> tagging(
+                                ctx,
+                                (tagging, player) ->
+                                        tagging.tag(player, kind, StringArgumentType.getString(ctx, "name")))));
+    }
+
+    private int tagging(
+            CommandContext<CommandSourceStack> ctx,
+            java.util.function.BiConsumer<com.uxplima.uxmskyblock.bukkit.parkour.ParkourTagging, Player> done) {
+        if (!(ctx.getSource().getSender() instanceof Player player)) {
+            send(ctx.getSource().getSender(), "error.players_only");
+            return Cmd.OK;
+        }
+        com.uxplima.uxmskyblock.bukkit.parkour.ParkourTagging tagging = this.parkourTagging;
+        if (tagging == null) {
+            send(player, "parkour.not_course");
+            return Cmd.OK;
+        }
+        done.accept(tagging, player);
         return Cmd.OK;
     }
 

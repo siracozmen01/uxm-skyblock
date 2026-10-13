@@ -91,6 +91,26 @@ class TheCourseBranchShowsTheBoardTest {
         verify(board, never()).show(any());
     }
 
+    @Test
+    @DisplayName("The tag and rate branches hand the player to the tagging, and say so when the server has none")
+    void theTagAndRateBranches() throws Exception {
+        com.uxplima.uxmskyblock.bukkit.parkour.ParkourTagging tagging =
+                mock(com.uxplima.uxmskyblock.bukkit.parkour.ParkourTagging.class);
+        tree.useParkourTagging(tagging);
+
+        dispatcher().execute("island coursetag difficulty hard", source());
+        dispatcher().execute("island coursetag category", source());
+        dispatcher().execute("island courserate 4", source());
+
+        verify(tagging).tag(player, com.uxplima.uxmskyblock.bukkit.parkour.ParkourTagging.Kind.DIFFICULTY, "hard");
+        verify(tagging).tag(player, com.uxplima.uxmskyblock.bukkit.parkour.ParkourTagging.Kind.CATEGORY, null);
+        verify(tagging).rate(player, 4);
+
+        tree.useParkourTagging(null);
+        dispatcher().execute("island courserate 4", source());
+        verify(player).sendMessage(any(Component.class));
+    }
+
     private CommandDispatcher<CommandSourceStack> dispatcher() {
         CommandDispatcher<CommandSourceStack> dispatcher = new CommandDispatcher<>();
         dispatcher.register(tree.buildRoot());

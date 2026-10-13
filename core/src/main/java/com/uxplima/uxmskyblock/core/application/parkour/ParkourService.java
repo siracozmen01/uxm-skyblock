@@ -83,6 +83,11 @@ public final class ParkourService {
         return time.compareTo(was) < 0 ? new Finish.Beaten(time, was) : new Finish.Slower(time, was);
     }
 
+    /** The runner's best time on the course, empty before their first finish. Off the main thread. */
+    public OptionalLong best(IslandId course, PlayerUuid runner) {
+        return port.best(course, runner);
+    }
+
     /** The runner who has run the course fastest, and their time. Off the main thread. */
     public java.util.Optional<ParkourPort.Best> leader(IslandId course) {
         List<ParkourPort.Best> top = port.top(course, 1);

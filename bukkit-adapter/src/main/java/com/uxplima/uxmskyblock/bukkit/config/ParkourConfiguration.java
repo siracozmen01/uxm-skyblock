@@ -15,7 +15,14 @@ import org.spongepowered.configurate.ConfigurationNode;
  * start, checkpoints and finish, and how a run is kept.
  */
 public record ParkourConfiguration(
-        boolean enabled, Markers markers, Runs runs, Modes modes, Ghost ghost, Rewards rewards) {
+        boolean enabled,
+        Markers markers,
+        Runs runs,
+        Modes modes,
+        Ghost ghost,
+        Rewards rewards,
+        Tagging tagging,
+        Ratings ratings) {
 
     private static final Logger LOGGER = Logger.getLogger(ParkourConfiguration.class.getName());
 
@@ -168,7 +175,42 @@ public record ParkourConfiguration(
         }
     }
 
+    /**
+     * The tags a course's team can give it, each by a name the operator chooses and the language files may word.
+     *
+     * @param difficulties the difficulties, easiest first
+     * @param categories the categories
+     */
+    public record Tagging(List<String> difficulties, List<String> categories) {
+
+        public static final Tagging SHIPPED = new Tagging(
+                List.of("easy", "medium", "hard", "expert"), List.of("classic", "speed", "maze", "dropper", "puzzle"));
+
+        public Tagging {
+            difficulties = List.copyOf(difficulties);
+            categories = List.copyOf(categories);
+        }
+    }
+
+    /**
+     * How runners rate a course.
+     *
+     * @param stars the most stars a runner gives, from 2 to 10
+     */
+    public record Ratings(boolean enabled, int stars) {
+
+        public static final Ratings SHIPPED = new Ratings(true, 5);
+
+        public Ratings {
+            if (stars < 2 || stars > 10) {
+                throw new IllegalArgumentException("a rating is out of 2 to 10 stars");
+            }
+        }
+    }
+
     public ParkourConfiguration {
+        Objects.requireNonNull(tagging, "tagging must not be null");
+        Objects.requireNonNull(ratings, "ratings must not be null");
         Objects.requireNonNull(rewards, "rewards must not be null");
         Objects.requireNonNull(ghost, "ghost must not be null");
         Objects.requireNonNull(markers, "markers must not be null");
@@ -178,7 +220,14 @@ public record ParkourConfiguration(
 
     public static ParkourConfiguration defaultConfiguration() {
         return new ParkourConfiguration(
-                true, Markers.SHIPPED, Runs.SHIPPED, Modes.SHIPPED, Ghost.SHIPPED, Rewards.SHIPPED);
+                true,
+                Markers.SHIPPED,
+                Runs.SHIPPED,
+                Modes.SHIPPED,
+                Ghost.SHIPPED,
+                Rewards.SHIPPED,
+                Tagging.SHIPPED,
+                Ratings.SHIPPED);
     }
 
     public static ParkourConfiguration load(ConfigurationNode root) {
@@ -234,8 +283,30 @@ public record ParkourConfiguration(
             LOGGER.warning(() -> "modules/parkour.conf rewards: " + e.getMessage() + ". The shipped rewards are used.");
             rewards = Rewards.SHIPPED;
         }
+        Tagging tagging = new Tagging(
+                lowered(AcidIslandConfiguration.strings(
+                        root.node("tags", "difficulties"), Tagging.SHIPPED.difficulties())),
+                lowered(AcidIslandConfiguration.strings(
+                        root.node("tags", "categories"), Tagging.SHIPPED.categories())));
+        Ratings ratings;
+        try {
+            ratings = new Ratings(
+                    root.node("ratings", "enabled").getBoolean(Ratings.SHIPPED.enabled()),
+                    root.node("ratings", "stars").getInt(Ratings.SHIPPED.stars()));
+        } catch (IllegalArgumentException e) {
+            LOGGER.warning(() -> "modules/parkour.conf ratings: " + e.getMessage() + ". The shipped ratings are used.");
+            ratings = Ratings.SHIPPED;
+        }
         return new ParkourConfiguration(
-                root.node("enabled").getBoolean(true), markers, runs, modes, ghost(root), rewards);
+                root.node("enabled").getBoolean(true), markers, runs, modes, ghost(root), rewards, tagging, ratings);
+    }
+
+    /** Names as a command takes them, in lower case, each once. The shared reader trims them and drops blanks. */
+    private static List<String> lowered(List<String> written) {
+        return written.stream()
+                .map(name -> name.toLowerCase(Locale.ROOT))
+                .distinct()
+                .toList();
     }
 
     private static Ghost ghost(ConfigurationNode root) {

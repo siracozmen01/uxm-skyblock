@@ -29,6 +29,7 @@ public final class ParkourWiring implements AutoCloseable {
     private final ParkourRuns runs;
     private final com.uxplima.uxmskyblock.bukkit.parkour.ParkourModes modes;
     private final com.uxplima.uxmskyblock.bukkit.parkour.ParkourBoard board;
+    private final com.uxplima.uxmskyblock.bukkit.parkour.ParkourTagging tagging;
     private @org.jspecify.annotations.Nullable AutoCloseable beat;
 
     public ParkourWiring(
@@ -97,6 +98,15 @@ public final class ParkourWiring implements AutoCloseable {
                 configuration.messages(),
                 config.runs().boardSize(),
                 uuid -> org.bukkit.Bukkit.getOfflinePlayer(uuid).getName());
+        this.tagging = new com.uxplima.uxmskyblock.bukkit.parkour.ParkourTagging(
+                service,
+                persistence.parkourTagsPort(),
+                islands,
+                scheduler,
+                configuration.messages(),
+                config.tagging(),
+                config.ratings());
+        board.about(tagging);
         if (config.enabled()) {
             this.beat = modes.start();
         }
@@ -120,6 +130,11 @@ public final class ParkourWiring implements AutoCloseable {
 
     public com.uxplima.uxmskyblock.bukkit.parkour.ParkourModes modes() {
         return modes;
+    }
+
+    /** The tags and ratings of the courses. */
+    public com.uxplima.uxmskyblock.bukkit.parkour.ParkourTagging tagging() {
+        return tagging;
     }
 
     /** What the course command shows. */

@@ -35,6 +35,7 @@ public final class ParkourBoard {
     private final Messages messages;
     private final int size;
     private final Function<UUID, @Nullable String> nameOf;
+    private volatile @Nullable ParkourTagging tagging;
 
     /**
      * @param size how many runners the board shows
@@ -55,6 +56,11 @@ public final class ParkourBoard {
         this.nameOf = Objects.requireNonNull(nameOf, "nameOf must not be null");
     }
 
+    /** Heads the board with the course's tags and rating. */
+    public void about(ParkourTagging telling) {
+        this.tagging = Objects.requireNonNull(telling, "telling must not be null");
+    }
+
     /** Shows the board of the course the player stands on, or says they are on none. */
     public void show(Player player) {
         Location at = player.getLocation();
@@ -65,10 +71,13 @@ public final class ParkourBoard {
         }
         IslandId course = island.get().id();
         PlayerUuid who = PlayerUuid.of(player.getUniqueId());
+        ParkourTagging telling = tagging;
         scheduler.async(() -> {
             List<ParkourPort.Best> top;
+            ParkourTagging.About about;
             try {
                 top = service.top(course, size);
+                about = telling == null ? null : telling.about(course);
             } catch (RuntimeException e) {
                 LOGGER.log(Level.WARNING, e, () -> "The best times on course " + course + " could not be read.");
                 return;
@@ -79,7 +88,12 @@ public final class ParkourBoard {
                         return name == null ? best.runner().value().toString().substring(0, 8) : name;
                     })
                     .toList();
-            scheduler.onEntity(who, () -> tell(player, top, names));
+            scheduler.onEntity(who, () -> {
+                if (telling != null && about != null) {
+                    telling.tell(player, about);
+                }
+                tell(player, top, names);
+            });
         });
     }
 
