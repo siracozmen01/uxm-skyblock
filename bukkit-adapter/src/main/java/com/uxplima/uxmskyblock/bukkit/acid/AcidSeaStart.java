@@ -53,10 +53,11 @@ public final class AcidSeaStart implements CreationActionProvider<IslandStart> {
     private final AcidIslandConfiguration.Sea sea;
     private final @org.jspecify.annotations.Nullable Biome biome;
     private final Resend resend;
+    private final java.util.List<CreationActionProvider<IslandStart>> buried;
 
     /** A sea that keeps the biome its world made. */
     public AcidSeaStart(AcidIslandService service, SchedulerPort scheduler, AcidIslandConfiguration.Sea sea) {
-        this(service, scheduler, sea, null, (world, chunkX, chunkZ) -> {});
+        this(service, scheduler, sea, null, (world, chunkX, chunkZ) -> {}, java.util.List.of());
     }
 
     /** @param biome the biome painted over the sea, or none to keep the one its world made */
@@ -65,7 +66,9 @@ public final class AcidSeaStart implements CreationActionProvider<IslandStart> {
             SchedulerPort scheduler,
             AcidIslandConfiguration.Sea sea,
             @org.jspecify.annotations.Nullable Biome biome,
-            Resend resend) {
+            Resend resend,
+            java.util.List<CreationActionProvider<IslandStart>> buried) {
+        this.buried = java.util.List.copyOf(buried);
         this.service = Objects.requireNonNull(service, "service must not be null");
         this.scheduler = Objects.requireNonNull(scheduler, "scheduler must not be null");
         this.sea = Objects.requireNonNull(sea, "sea must not be null");
@@ -78,11 +81,44 @@ public final class AcidSeaStart implements CreationActionProvider<IslandStart> {
         return ACTION;
     }
 
-    /** The sea reaches as far as acidisland.conf says. */
+    /** The sea reaches as far as acidisland.conf says, and the structures buried in its floor as far as theirs. */
     @Override
     public java.util.List<com.uxplima.uxmskyblock.core.application.gamemode.CreationReach> reach(IslandStart start) {
-        return java.util.List.of(new com.uxplima.uxmskyblock.core.application.gamemode.CreationReach(
+        java.util.List<com.uxplima.uxmskyblock.core.application.gamemode.CreationReach> reach =
+                new java.util.ArrayList<>();
+        reach.add(new com.uxplima.uxmskyblock.core.application.gamemode.CreationReach(
                 start.world().getName(), sea.radius()));
+        buried.forEach(structure -> reach.addAll(structure.reach(start)));
+        return reach;
+    }
+
+    /**
+     * The structures buried in the floor, each a group of templates laid as Poseidon lays its wrecks, sunk into the
+     * floor and allowed to fill its blocks. The groups are laid in the order of their names, so an island comes out
+     * the same at every start.
+     */
+    public static java.util.List<CreationActionProvider<IslandStart>> buried(
+            AcidIslandConfiguration.Sea sea,
+            AcidIslandConfiguration.Buried written,
+            com.uxplima.uxmskyblock.bukkit.poseidon.WreckTemplates templates,
+            com.uxplima.uxmskyblock.bukkit.poseidon.ChestLoot loot,
+            SchedulerPort scheduler) {
+        java.util.Set<Material> floor = new java.util.HashSet<>();
+        SeaBed.read(sea.bed(), floorOf(sea)).forEach(weighted -> floor.add(weighted.block()));
+        floor.add(floorOf(sea));
+        var seabed = new com.uxplima.uxmskyblock.bukkit.poseidon.WreckStart.Seabed(
+                sea.belowIsland() + sea.depth() - 1, written.sink(), sea.bed().thickness(), floor);
+        java.util.List<CreationActionProvider<IslandStart>> laid = new java.util.ArrayList<>();
+        new java.util.TreeMap<>(written.groups())
+                .forEach((name, group) -> laid.add(new com.uxplima.uxmskyblock.bukkit.poseidon.WreckStart(
+                        ACTION + "/" + name, group, seabed, templates, loot, scheduler)));
+        return laid;
+    }
+
+    /** The sea's own floor block, or sandstone when it names none that stands. */
+    private static Material floorOf(AcidIslandConfiguration.Sea sea) {
+        Material floor = Material.matchMaterial(sea.floor());
+        return floor == null || !floor.isBlock() || floor.hasGravity() ? Material.SANDSTONE : floor;
     }
 
     @Override
@@ -101,15 +137,16 @@ public final class AcidSeaStart implements CreationActionProvider<IslandStart> {
         int maxX = start.centerX() + sea.radius();
         int minZ = start.centerZ() - sea.radius();
         int maxZ = start.centerZ() + sea.radius();
-        Material bed = floor;
+        long seed = start.islandId().value().getMostSignificantBits()
+                ^ start.islandId().value().getLeastSignificantBits();
+        SeaBed bed =
+                new SeaBed(SeaBed.read(sea.bed(), floor), Math.min(sea.bed().mounds(), sea.depth() - 1), seed);
         for (int chunkX = minX >> 4; chunkX <= maxX >> 4; chunkX++) {
             for (int chunkZ = minZ >> 4; chunkZ <= maxZ >> 4; chunkZ++) {
                 int fromX = Math.max(minX, chunkX << 4);
                 int toX = Math.min(maxX, (chunkX << 4) + 15);
                 int fromZ = Math.max(minZ, chunkZ << 4);
                 int toZ = Math.min(maxZ, (chunkZ << 4) + 15);
-                long seed = start.islandId().value().getMostSignificantBits()
-                        ^ start.islandId().value().getLeastSignificantBits();
                 int cx = chunkX;
                 int cz = chunkZ;
                 scheduler.onRegion(world.getName(), chunkX, chunkZ, () -> {
@@ -121,17 +158,27 @@ public final class AcidSeaStart implements CreationActionProvider<IslandStart> {
                 });
             }
         }
+        // After the sea, on the same threads, so each structure is laid into the water and the floor already there.
+        buried.forEach(structure -> structure.apply(start));
     }
 
-    private void fill(World world, int fromX, int toX, int fromZ, int toZ, int surface, Material floor, long seed) {
+    private void fill(World world, int fromX, int toX, int fromZ, int toZ, int surface, SeaBed bed, long seed) {
         int bottom = surface - sea.depth() + 1;
         for (int x = fromX; x <= toX; x++) {
             for (int z = fromZ; z <= toZ; z++) {
-                boolean open = setIfAir(world.getBlockAt(x, bottom - 1, z), floor);
-                for (int y = bottom; y <= surface; y++) {
+                Material block = bed.blockAt(x, z);
+                int rise = bed.riseAt(x, z);
+                boolean open = true;
+                for (int layer = 1; layer <= sea.bed().thickness(); layer++) {
+                    open &= setIfAir(world.getBlockAt(x, bottom - layer, z), block);
+                }
+                for (int y = bottom; y < bottom + rise; y++) {
+                    open &= setIfAir(world.getBlockAt(x, y, z), block);
+                }
+                for (int y = bottom + rise; y <= surface; y++) {
                     open &= setIfAir(world.getBlockAt(x, y, z), Material.WATER);
                 }
-                if (open) {
+                if (open && rise == 0) {
                     // Only a column the sea filled from the floor to the surface can hold a vent or a
                     // geyser, so neither is ever laid under the island.
                     feature(world, x, z, bottom, surface, seed);

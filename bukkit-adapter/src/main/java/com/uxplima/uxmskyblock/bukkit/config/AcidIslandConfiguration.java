@@ -3,6 +3,7 @@ package com.uxplima.uxmskyblock.bukkit.config;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.logging.Logger;
 
@@ -19,6 +20,7 @@ import org.spongepowered.configurate.ConfigurationNode;
  * @param armour the full sets of armour that keep the acid off
  * @param cleanWater what a bottle of clean water does for whoever drinks it
  * @param look the biome laid over the sea and the colours of the plugin's own
+ * @param buried the structures buried in the sea's floor
  */
 public record AcidIslandConfiguration(
         boolean enabled,
@@ -30,7 +32,8 @@ public record AcidIslandConfiguration(
         SeaLife seaLife,
         Armour armour,
         CleanWater cleanWater,
-        Look look) {
+        Look look,
+        Buried buried) {
 
     private static final Logger LOGGER = Logger.getLogger(AcidIslandConfiguration.class.getName());
 
@@ -44,13 +47,14 @@ public record AcidIslandConfiguration(
      * @param vents the sulfur vents on the floor
      * @param geyserChance the chance that one column of the floor is a geyser, which throws a swimmer up
      */
-    public record Sea(int belowIsland, int depth, int radius, String floor, Vents vents, double geyserChance) {
+    public record Sea(int belowIsland, int depth, int radius, String floor, Vents vents, double geyserChance, Bed bed) {
 
-        public static final Sea SHIPPED = new Sea(2, 4, 64, "SANDSTONE", Vents.SHIPPED, 0.004);
+        public static final Sea SHIPPED = new Sea(2, 4, 64, "SANDSTONE", Vents.SHIPPED, 0.004, Bed.SHIPPED);
 
         public Sea {
             Objects.requireNonNull(floor, "floor must not be null");
             Objects.requireNonNull(vents, "vents must not be null");
+            Objects.requireNonNull(bed, "bed must not be null");
             if (depth < 1 || radius < 1 || belowIsland < 0) {
                 throw new IllegalArgumentException("the sea needs a depth and a radius of at least 1");
             }
@@ -59,9 +63,84 @@ public record AcidIslandConfiguration(
             }
         }
 
-        /** A sea with no vents and no geysers. */
+        /** A sea on a flat floor of one block. */
+        public Sea(int belowIsland, int depth, int radius, String floor, Vents vents, double geyserChance) {
+            this(belowIsland, depth, radius, floor, vents, geyserChance, Bed.FLAT);
+        }
+
+        /** A sea with no vents and no geysers, on a flat floor of one block. */
         public Sea(int belowIsland, int depth, int radius, String floor) {
             this(belowIsland, depth, radius, floor, Vents.NONE, 0);
+        }
+    }
+
+    /**
+     * The sea's floor: what it is made of, how thick it is, and how far it rises in mounds.
+     *
+     * @param blocks the blocks of the floor, each written {@code BLOCK weight}; each column takes one by its weight,
+     *     and none takes the sea's {@code floor}
+     * @param thickness how many blocks thick the floor is
+     * @param mounds how many blocks the floor rises at most, in gentle mounds; always a block of water stays above
+     */
+    public record Bed(List<String> blocks, int thickness, int mounds) {
+
+        public static final Bed SHIPPED =
+                new Bed(List.of("SANDSTONE 6", "SMOOTH_SANDSTONE 2", "TUFF 2", "CLAY 1", "YELLOW_TERRACOTTA 1"), 3, 2);
+
+        /** One block of the sea's floor, flat. */
+        public static final Bed FLAT = new Bed(List.of(), 1, 0);
+
+        public Bed {
+            blocks = List.copyOf(blocks);
+            if (thickness < 1 || thickness > 16 || mounds < 0 || mounds > 15) {
+                throw new IllegalArgumentException("a floor is 1 to 16 thick and rises 0 to 15");
+            }
+        }
+    }
+
+    /**
+     * Structures buried in the sea's floor around the island, laid as Poseidon lays its wrecks.
+     *
+     * @param sink how many blocks deep each sits in the floor
+     * @param groups the groups of templates, by name
+     */
+    public record Buried(int sink, Map<String, PoseidonConfiguration.Wreck> groups) {
+
+        public static final Buried SHIPPED = new Buried(
+                2,
+                Map.of(
+                        "ruins",
+                        new PoseidonConfiguration.Wreck(
+                                List.of(
+                                        "minecraft:underwater_ruin/cracked_1",
+                                        "minecraft:underwater_ruin/cracked_2",
+                                        "minecraft:underwater_ruin/cracked_3",
+                                        "minecraft:underwater_ruin/cracked_4",
+                                        "minecraft:underwater_ruin/cracked_5",
+                                        "minecraft:underwater_ruin/cracked_6",
+                                        "minecraft:underwater_ruin/cracked_7",
+                                        "minecraft:underwater_ruin/cracked_8"),
+                                4,
+                                34,
+                                List.of("minecraft:chests/underwater_ruin_small")),
+                        "temple",
+                        new PoseidonConfiguration.Wreck(
+                                List.of(
+                                        "minecraft:underwater_ruin/big_cracked_1",
+                                        "minecraft:underwater_ruin/big_cracked_2",
+                                        "minecraft:underwater_ruin/big_cracked_3",
+                                        "minecraft:underwater_ruin/big_cracked_8"),
+                                1,
+                                48,
+                                List.of("minecraft:chests/underwater_ruin_big"))));
+
+        public static final Buried NONE = new Buried(0, Map.of());
+
+        public Buried {
+            groups = java.util.Collections.unmodifiableMap(new java.util.LinkedHashMap<>(groups));
+            if (sink < 0 || sink > 16) {
+                throw new IllegalArgumentException("a structure sinks 0 to 16 blocks: " + sink);
+            }
         }
     }
 
@@ -220,6 +299,7 @@ public record AcidIslandConfiguration(
         Objects.requireNonNull(armour, "armour must not be null");
         Objects.requireNonNull(cleanWater, "cleanWater must not be null");
         Objects.requireNonNull(look, "look must not be null");
+        Objects.requireNonNull(buried, "buried must not be null");
         waterProtection = List.copyOf(waterProtection);
         waterEffects = List.copyOf(waterEffects);
     }
@@ -235,7 +315,8 @@ public record AcidIslandConfiguration(
                 SeaLife.SHIPPED,
                 Armour.SHIPPED,
                 CleanWater.SHIPPED,
-                Look.SHIPPED);
+                Look.SHIPPED,
+                Buried.SHIPPED);
     }
 
     public static AcidIslandConfiguration load(ConfigurationNode root) {
@@ -254,7 +335,11 @@ public record AcidIslandConfiguration(
                     seaNode.node("radius").getInt(Sea.SHIPPED.radius()),
                     seaNode.node("floor").getString(Sea.SHIPPED.floor()).trim(),
                     vents,
-                    seaNode.node("geysers", "chance").getDouble(Sea.SHIPPED.geyserChance()));
+                    seaNode.node("geysers", "chance").getDouble(Sea.SHIPPED.geyserChance()),
+                    new Bed(
+                            strings(seaNode.node("bed", "blocks"), Bed.SHIPPED.blocks()),
+                            seaNode.node("bed", "thickness").getInt(Bed.SHIPPED.thickness()),
+                            seaNode.node("bed", "mounds").getInt(Bed.SHIPPED.mounds())));
         } catch (IllegalArgumentException e) {
             LOGGER.warning(() -> "modules/acidisland.conf sea: " + e.getMessage() + ". The shipped sea is used.");
             sea = Sea.SHIPPED;
@@ -287,7 +372,28 @@ public record AcidIslandConfiguration(
                 seaLife(root.node("sea-life")),
                 armour(hazard.node("armour")),
                 cleanWater(root.node("clean-water")),
-                look(seaNode.node("look")));
+                look(seaNode.node("look")),
+                buried(seaNode.node("buried")));
+    }
+
+    /** The structures buried in the floor, as {@code sea buried} writes them; what cannot be read is the shipped. */
+    private static Buried buried(ConfigurationNode node) {
+        if (node.virtual()) {
+            return Buried.SHIPPED;
+        }
+        ConfigurationNode groups = node.node("groups");
+        try {
+            return new Buried(
+                    node.node("sink").getInt(Buried.SHIPPED.sink()),
+                    groups.virtual()
+                            ? Buried.SHIPPED.groups()
+                            : PoseidonConfiguration.wrecks(
+                                    groups, Buried.SHIPPED.groups(), "modules/acidisland.conf sea buried groups"));
+        } catch (IllegalArgumentException e) {
+            LOGGER.warning(
+                    () -> "modules/acidisland.conf sea buried: " + e.getMessage() + ". The shipped ones are used.");
+            return Buried.SHIPPED;
+        }
     }
 
     /** How the sea looks, as {@code sea look} writes it; what cannot be read is the shipped, said. */

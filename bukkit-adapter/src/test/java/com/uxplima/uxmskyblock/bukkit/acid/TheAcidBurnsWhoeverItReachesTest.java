@@ -106,7 +106,8 @@ class TheAcidBurnsWhoeverItReachesTest extends MockBukkitHarness {
                         AcidIslandConfiguration.SeaLife.NONE,
                         armour,
                         AcidIslandConfiguration.CleanWater.NONE,
-                        AcidIslandConfiguration.Look.SHIPPED),
+                        AcidIslandConfiguration.Look.SHIPPED,
+                        AcidIslandConfiguration.Buried.NONE),
                 InteractionEffects.none(),
                 new InteractionEffectPlayer());
         AcidIslandConfiguration config = new AcidIslandConfiguration(
@@ -120,7 +121,8 @@ class TheAcidBurnsWhoeverItReachesTest extends MockBukkitHarness {
                 AcidIslandConfiguration.SeaLife.NONE,
                 AcidIslandConfiguration.Armour.NONE,
                 AcidIslandConfiguration.CleanWater.NONE,
-                AcidIslandConfiguration.Look.SHIPPED);
+                AcidIslandConfiguration.Look.SHIPPED,
+                AcidIslandConfiguration.Buried.NONE);
         hazard = new AcidHazard(
                 service,
                 islands,

@@ -115,7 +115,8 @@ class AcidWaterIsMadeCleanTest extends MockBukkitHarness {
                 AcidIslandConfiguration.SeaLife.NONE,
                 AcidIslandConfiguration.Armour.NONE,
                 AcidIslandConfiguration.CleanWater.NONE,
-                AcidIslandConfiguration.Look.SHIPPED);
+                AcidIslandConfiguration.Look.SHIPPED,
+                AcidIslandConfiguration.Buried.NONE);
         AcidHazard hazard = new AcidHazard(
                 service,
                 islands,
@@ -139,7 +140,8 @@ class AcidWaterIsMadeCleanTest extends MockBukkitHarness {
                                 AcidIslandConfiguration.SeaLife.NONE,
                                 AcidIslandConfiguration.Armour.NONE,
                                 clean,
-                                AcidIslandConfiguration.Look.SHIPPED),
+                                AcidIslandConfiguration.Look.SHIPPED,
+                                AcidIslandConfiguration.Buried.NONE),
                         new InteractionEffects(java.util.Map.of(
                                 "acid-clean-water-drunk",
                                 com.uxplima.uxmlib.condition.action.ActionList.parse(

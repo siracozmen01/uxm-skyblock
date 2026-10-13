@@ -115,7 +115,18 @@ public final class AcidIslandWiring implements AutoCloseable {
     /** The action that lays the acid sea, while AcidIsland is enabled, and none otherwise. */
     public List<CreationActionProvider<IslandStart>> startActions() {
         return config.enabled()
-                ? List.of(new AcidSeaStart(service, scheduler, config.sea(), seaBiome(), AcidIslandWiring::refresh))
+                ? List.of(new AcidSeaStart(
+                        service,
+                        scheduler,
+                        config.sea(),
+                        seaBiome(),
+                        AcidIslandWiring::refresh,
+                        AcidSeaStart.buried(
+                                config.sea(),
+                                config.buried(),
+                                new com.uxplima.uxmskyblock.bukkit.poseidon.ServerWreckTemplates(),
+                                new com.uxplima.uxmskyblock.bukkit.poseidon.ServerChestLoot(),
+                                scheduler)))
                 : List.of();
     }
 

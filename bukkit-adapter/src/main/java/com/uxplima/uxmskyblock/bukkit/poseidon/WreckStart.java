@@ -30,6 +30,9 @@ import org.jspecify.annotations.Nullable;
  * operator's list, in turn, and a data marker that asks for a chest gets one. Which templates are laid,
  * and where around the island, come from the island's id, so the same island is always laid the same.
  *
+ * <p>A sea with a thicker floor may have its templates sunk into it: they then fill the floor's own blocks as well,
+ * down to the floor's bottom and no further, so a ruin lies half buried and nothing hangs below the sea.
+ *
  * <p>Every chunk a template reaches is laid on the thread of the region that owns it, and the centre
  * chunk at once, on the thread running the creation.
  */
@@ -39,10 +42,34 @@ public final class WreckStart implements CreationActionProvider<IslandStart> {
 
     private final String actionId;
     private final PoseidonConfiguration.Wreck wreck;
-    private final PoseidonConfiguration.Ocean ocean;
     private final WreckTemplates templates;
     private final ChestLoot loot;
     private final SchedulerPort scheduler;
+    private final Seabed seabed;
+
+    /**
+     * Where a template is laid in the sea.
+     *
+     * @param waterBelowStart how far below the island's start the sea's lowest water lies, where a template's
+     *     lowest layer stands
+     * @param sink how many blocks a template is laid lower than that, into the floor
+     * @param thickness how many blocks thick the floor is; nothing is laid below it
+     * @param floor the blocks of the floor a sunk template may fill
+     */
+    public record Seabed(int waterBelowStart, int sink, int thickness, java.util.Set<Material> floor) {
+
+        public Seabed {
+            floor = java.util.Set.copyOf(floor);
+            if (sink < 0 || thickness < 1) {
+                throw new IllegalArgumentException("a sink of at least 0 into a floor of at least 1");
+            }
+        }
+
+        /** A floor of one block that nothing is sunk into, as Poseidon's ocean has. */
+        public static Seabed over(int waterBelowStart) {
+            return new Seabed(waterBelowStart, 0, 1, java.util.Set.of());
+        }
+    }
 
     public WreckStart(
             String actionId,
@@ -51,9 +78,19 @@ public final class WreckStart implements CreationActionProvider<IslandStart> {
             WreckTemplates templates,
             ChestLoot loot,
             SchedulerPort scheduler) {
+        this(actionId, wreck, Seabed.over(ocean.depth()), templates, loot, scheduler);
+    }
+
+    public WreckStart(
+            String actionId,
+            PoseidonConfiguration.Wreck wreck,
+            Seabed seabed,
+            WreckTemplates templates,
+            ChestLoot loot,
+            SchedulerPort scheduler) {
+        this.seabed = Objects.requireNonNull(seabed, "seabed must not be null");
         this.actionId = Objects.requireNonNull(actionId, "actionId must not be null");
         this.wreck = Objects.requireNonNull(wreck, "wreck must not be null");
-        this.ocean = Objects.requireNonNull(ocean, "ocean must not be null");
         this.templates = Objects.requireNonNull(templates, "templates must not be null");
         this.loot = Objects.requireNonNull(loot, "loot must not be null");
         this.scheduler = Objects.requireNonNull(scheduler, "scheduler must not be null");
@@ -87,7 +124,7 @@ public final class WreckStart implements CreationActionProvider<IslandStart> {
         }
         Random random = new Random(start.islandId().value().getLeastSignificantBits() ^ actionId.hashCode());
         double turn = random.nextDouble() * Math.PI * 2;
-        int floorY = start.y() - ocean.depth();
+        int floorY = start.y() - seabed.waterBelowStart() - seabed.sink();
         for (int laid = 0; laid < wreck.count(); laid++) {
             String key = wreck.templates().get(random.nextInt(wreck.templates().size()));
             long seed = random.nextLong();
@@ -114,7 +151,12 @@ public final class WreckStart implements CreationActionProvider<IslandStart> {
                 .thenComparingInt(WreckTemplate.Piece::z));
         Map<Long, List<Runnable>> byChunk = new HashMap<>();
         int chests = 0;
+        // The floor's bottom layer: a template sunk into it reaches no lower, so nothing hangs below the sea.
+        int lowest = start.y() - seabed.waterBelowStart() - seabed.thickness();
         for (WreckTemplate.Piece piece : pieces) {
+            if (originY + piece.y() < lowest) {
+                continue;
+            }
             BlockData data = blockOf(piece);
             if (data == null) {
                 continue;
@@ -164,7 +206,7 @@ public final class WreckStart implements CreationActionProvider<IslandStart> {
     private void place(Block block, BlockData data, @Nullable String lootKey, long seed) {
         Material there = block.getType();
         boolean water = there == Material.WATER;
-        if (!there.isAir() && !water) {
+        if (!there.isAir() && !water && !seabed.floor().contains(there)) {
             return;
         }
         BlockData laid = data.clone();

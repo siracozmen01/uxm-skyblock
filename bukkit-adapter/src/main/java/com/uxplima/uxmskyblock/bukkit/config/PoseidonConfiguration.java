@@ -167,15 +167,25 @@ public record PoseidonConfiguration(
     }
 
     private static Map<String, Wreck> wrecks(ConfigurationNode node) {
+        return wrecks(node, SHIPPED_WRECKS, "modules/poseidon.conf wrecks");
+    }
+
+    /**
+     * The groups of templates {@code node} writes, each by name: templates, count, distance and loot. A group the
+     * shipped ones name takes what it leaves out from there; one that cannot be read is left out, said.
+     *
+     * @param where the file and the place in it, for what is said
+     */
+    public static Map<String, Wreck> wrecks(ConfigurationNode node, Map<String, Wreck> shippedWrecks, String where) {
         if (node.virtual() || !node.isMap()) {
-            return SHIPPED_WRECKS;
+            return shippedWrecks;
         }
         Map<String, Wreck> wrecks = new LinkedHashMap<>();
         for (Map.Entry<Object, ? extends ConfigurationNode> entry :
                 node.childrenMap().entrySet()) {
             String name = String.valueOf(entry.getKey()).trim();
             ConfigurationNode written = entry.getValue();
-            Wreck shipped = SHIPPED_WRECKS.getOrDefault(name, new Wreck(List.of(), 1, 24, List.of()));
+            Wreck shipped = shippedWrecks.getOrDefault(name, new Wreck(List.of(), 1, 24, List.of()));
             try {
                 wrecks.put(
                         name,
@@ -185,8 +195,7 @@ public record PoseidonConfiguration(
                                 written.node("distance").getInt(shipped.distance()),
                                 AcidIslandConfiguration.strings(written.node("loot"), shipped.loot())));
             } catch (IllegalArgumentException e) {
-                LOGGER.warning(
-                        () -> "modules/poseidon.conf wrecks " + name + ": " + e.getMessage() + ". It is left out.");
+                LOGGER.warning(() -> where + " " + name + ": " + e.getMessage() + ". It is left out.");
             }
         }
         return wrecks;
