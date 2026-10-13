@@ -16,6 +16,7 @@ import org.spongepowered.configurate.ConfigurationNode;
  * @param waterProtection the effects, by name, that keep a player safe in the sea
  * @param waterEffects the effects the sea gives, each written {@code name:amplifier:seconds}
  * @param seaLife what the sea does to items and creatures in it
+ * @param armour the full sets of armour that keep the acid off
  */
 public record AcidIslandConfiguration(
         boolean enabled,
@@ -24,7 +25,8 @@ public record AcidIslandConfiguration(
         List<String> waterProtection,
         List<String> waterEffects,
         Purification purification,
-        SeaLife seaLife) {
+        SeaLife seaLife,
+        Armour armour) {
 
     private static final Logger LOGGER = Logger.getLogger(AcidIslandConfiguration.class.getName());
 
@@ -115,6 +117,32 @@ public record AcidIslandConfiguration(
         }
     }
 
+    /**
+     * Full sets of armour that keep the acid off a player wearing all four pieces.
+     *
+     * @param sets the materials of the sets, as the start of each piece's name: {@code netherite} for
+     *     {@code netherite_helmet} and the rest; none keeps nothing off
+     * @param sea whether such a set keeps the sea off
+     * @param rain whether such a set keeps the rain off
+     * @param wear how much durability each piece loses at each check it keeps acid off, 0 for none
+     */
+    public record Armour(List<String> sets, boolean sea, boolean rain, int wear) {
+
+        public static final Armour SHIPPED = new Armour(List.of("netherite"), true, true, 1);
+
+        public static final Armour NONE = new Armour(List.of(), false, false, 0);
+
+        public Armour {
+            sets = sets.stream()
+                    .map(set -> set.trim().toLowerCase(java.util.Locale.ROOT).replace("minecraft:", ""))
+                    .filter(set -> !set.isEmpty())
+                    .toList();
+            if (wear < 0) {
+                throw new IllegalArgumentException("wear is never below 0: " + wear);
+            }
+        }
+    }
+
     /** How acid water is made clean. Rain a cauldron catches is clean already. */
     public record Purification(boolean furnace, boolean brewingWithCoal) {}
 
@@ -123,6 +151,7 @@ public record AcidIslandConfiguration(
         Objects.requireNonNull(rules, "rules must not be null");
         Objects.requireNonNull(purification, "purification must not be null");
         Objects.requireNonNull(seaLife, "seaLife must not be null");
+        Objects.requireNonNull(armour, "armour must not be null");
         waterProtection = List.copyOf(waterProtection);
         waterEffects = List.copyOf(waterEffects);
     }
@@ -135,7 +164,8 @@ public record AcidIslandConfiguration(
                 List.of("water_breathing"),
                 List.of("poison:0:3"),
                 new Purification(true, true),
-                SeaLife.SHIPPED);
+                SeaLife.SHIPPED,
+                Armour.SHIPPED);
     }
 
     public static AcidIslandConfiguration load(ConfigurationNode root) {
@@ -184,7 +214,24 @@ public record AcidIslandConfiguration(
                 new Purification(
                         purification.node("furnace").getBoolean(true),
                         purification.node("brewing-with-coal").getBoolean(true)),
-                seaLife(root.node("sea-life")));
+                seaLife(root.node("sea-life")),
+                armour(hazard.node("armour")));
+    }
+
+    /** The armour that keeps the acid off, as {@code hazard armour} writes it; what cannot be read is the shipped. */
+    private static Armour armour(ConfigurationNode node) {
+        Armour shipped = Armour.SHIPPED;
+        try {
+            return new Armour(
+                    strings(node.node("sets"), shipped.sets()),
+                    node.node("sea").getBoolean(shipped.sea()),
+                    node.node("rain").getBoolean(shipped.rain()),
+                    node.node("wear").getInt(shipped.wear()));
+        } catch (IllegalArgumentException e) {
+            LOGGER.warning(
+                    () -> "modules/acidisland.conf hazard armour: " + e.getMessage() + ". The shipped armour is used.");
+            return shipped;
+        }
     }
 
     /** What the sea does to items and creatures, as {@code sea-life} writes it; what cannot be read is the shipped. */

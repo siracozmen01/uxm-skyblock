@@ -61,6 +61,9 @@ class TheAcidBurnsWhoeverItReachesTest extends MockBukkitHarness {
 
     private final Map<IslandId, Integer> stored = new HashMap<>();
 
+    @SuppressWarnings("NullAway.Init")
+    private java.util.function.Function<AcidIslandConfiguration.Armour, AcidHazard> armoured;
+
     @BeforeEach
     void setUpIslands() {
         world = server.addSimpleWorld("skyblock");
@@ -89,6 +92,21 @@ class TheAcidBurnsWhoeverItReachesTest extends MockBukkitHarness {
             }
         });
         service.add(acid.id(), Y);
+        armoured = armour -> new AcidHazard(
+                service,
+                islands,
+                mock(SchedulerPort.class),
+                new AcidIslandConfiguration(
+                        true,
+                        AcidIslandConfiguration.Sea.SHIPPED,
+                        new AcidRules(2.0, 1.0, false, Duration.ofSeconds(1)),
+                        List.of(),
+                        List.of("poison:1:4"),
+                        new AcidIslandConfiguration.Purification(true, true),
+                        AcidIslandConfiguration.SeaLife.NONE,
+                        armour),
+                InteractionEffects.none(),
+                new InteractionEffectPlayer());
         AcidIslandConfiguration config = new AcidIslandConfiguration(
                 true,
                 new AcidIslandConfiguration.Sea(
@@ -97,7 +115,8 @@ class TheAcidBurnsWhoeverItReachesTest extends MockBukkitHarness {
                 List.of("water_breathing", "no_such_effect"),
                 List.of("poison:1:4", "nausea", "no_such_effect:0:3"),
                 new AcidIslandConfiguration.Purification(true, true),
-                AcidIslandConfiguration.SeaLife.NONE);
+                AcidIslandConfiguration.SeaLife.NONE,
+                AcidIslandConfiguration.Armour.NONE);
         hazard = new AcidHazard(
                 service,
                 islands,
@@ -186,6 +205,117 @@ class TheAcidBurnsWhoeverItReachesTest extends MockBukkitHarness {
         assertThat(player.getPotionEffect(PotionEffectType.NAUSEA))
                 .describedAs("high above the sea the fumes are gone")
                 .isNull();
+    }
+
+    @Test
+    @DisplayName("A full set of a named armour keeps the sea and the rain off, each on its switch, and wears for it")
+    void aFullSetKeepsTheAcidOff() {
+        standIn(8, Material.WATER);
+        world.setStorm(true);
+        wear("netherite");
+        AcidHazard both =
+                armoured.apply(new AcidIslandConfiguration.Armour(List.of(" Minecraft:Netherite"), true, true, 5));
+
+        assertThat(both.check(player)).isZero();
+        assertThat(player.getPotionEffect(PotionEffectType.POISON)).isNull();
+        assertThat(damageOf(player.getInventory().getHelmet())).isEqualTo(5);
+        assertThat(damageOf(player.getInventory().getBoots())).isEqualTo(5);
+
+        AcidHazard seaOnly = armoured.apply(new AcidIslandConfiguration.Armour(List.of("netherite"), true, false, 0));
+        AcidHazard rainOnly = armoured.apply(new AcidIslandConfiguration.Armour(List.of("netherite"), false, true, 0));
+        assertThat(seaOnly.check(player)).isZero();
+        assertThat(rainOnly.check(player)).describedAs("the sea not kept off").isEqualTo(2.0);
+        assertThat(player.getPotionEffect(PotionEffectType.POISON)).isNotNull();
+        standIn(8, Material.AIR);
+        assertThat(seaOnly.check(player)).describedAs("the rain not kept off").isEqualTo(1.0);
+        assertThat(rainOnly.check(player)).isZero();
+        assertThat(both.check(player)).isZero();
+        assertThat(damageOf(player.getInventory().getHelmet()))
+                .describedAs("worn under the rain too")
+                .isEqualTo(10);
+        assertThat(damageOf(player.getInventory().getChestplate()))
+                .describedAs("no wear where nothing was kept off")
+                .isEqualTo(10);
+
+        standIn(8, Material.WATER);
+        assertThat(armoured.apply(new AcidIslandConfiguration.Armour(List.of("diamond"), true, true, 1))
+                        .check(player))
+                .describedAs("a set not named")
+                .isEqualTo(2.0);
+        player.getInventory().setLeggings(new ItemStack(Material.DIAMOND_LEGGINGS));
+        assertThat(both.check(player)).describedAs("a piece of another set").isEqualTo(2.0);
+        player.getInventory().setLeggings(null);
+        assertThat(both.check(player)).describedAs("a piece missing").isEqualTo(2.0);
+        assertThat(damageOf(player.getInventory().getHelmet())).isEqualTo(10);
+    }
+
+    @Test
+    @DisplayName("A piece worn through breaks, an unbreakable one does not wear, and nothing wears out of the acid")
+    void armourWears() {
+        standIn(8, Material.WATER);
+        wear("netherite");
+        ItemStack helmet = player.getInventory().getHelmet();
+        org.bukkit.inventory.meta.Damageable meta = (org.bukkit.inventory.meta.Damageable) helmet.getItemMeta();
+        meta.setDamage(Material.NETHERITE_HELMET.getMaxDurability() - 2);
+        helmet.setItemMeta(meta);
+        player.getInventory().setHelmet(helmet);
+        ItemStack boots = player.getInventory().getBoots();
+        var unbreakable = boots.getItemMeta();
+        unbreakable.setUnbreakable(true);
+        boots.setItemMeta(unbreakable);
+        player.getInventory().setBoots(boots);
+        AcidHazard hazard = armoured.apply(new AcidIslandConfiguration.Armour(List.of("netherite"), true, true, 1));
+
+        assertThat(hazard.check(player)).isZero();
+        assertThat(damageOf(player.getInventory().getHelmet()))
+                .isEqualTo(Material.NETHERITE_HELMET.getMaxDurability() - 1);
+        assertThat(damageOf(player.getInventory().getBoots())).isZero();
+        hazard.check(player);
+        assertThat(player.getInventory().getHelmet())
+                .describedAs("worn through")
+                .satisfiesAnyOf(
+                        piece -> assertThat(piece).isNull(),
+                        piece -> assertThat(piece.isEmpty()).isTrue());
+
+        wear("netherite");
+        standIn(8, Material.AIR);
+        hazard.check(player);
+        assertThat(damageOf(player.getInventory().getChestplate()))
+                .describedAs("dry and under a clear sky")
+                .isZero();
+    }
+
+    @Test
+    @DisplayName("The armour is read from the file, and armour that cannot be is the shipped")
+    void armourIsRead() throws Exception {
+        assertThat(armourOf("hazard { armour { sets = [\"Diamond\", \"iron\"], sea = false, rain = true, wear = 0 } }"))
+                .isEqualTo(new AcidIslandConfiguration.Armour(List.of("diamond", "iron"), false, true, 0));
+        assertThat(armourOf("enabled = true")).isEqualTo(AcidIslandConfiguration.Armour.SHIPPED);
+        assertThat(armourOf("hazard { armour { wear = -1 } }")).isEqualTo(AcidIslandConfiguration.Armour.SHIPPED);
+        assertThat(armourOf(new String(
+                        TheAcidBurnsWhoeverItReachesTest.class
+                                .getResourceAsStream("/modules/acidisland.conf")
+                                .readAllBytes(),
+                        java.nio.charset.StandardCharsets.UTF_8)))
+                .isEqualTo(AcidIslandConfiguration.Armour.SHIPPED);
+    }
+
+    private static AcidIslandConfiguration.Armour armourOf(String written) throws Exception {
+        return AcidIslandConfiguration.load(org.spongepowered.configurate.hocon.HoconConfigurationLoader.builder()
+                        .buildAndLoadString(written))
+                .armour();
+    }
+
+    private void wear(String set) {
+        var worn = player.getInventory();
+        worn.setHelmet(new ItemStack(Material.matchMaterial(set + "_helmet")));
+        worn.setChestplate(new ItemStack(Material.matchMaterial(set + "_chestplate")));
+        worn.setLeggings(new ItemStack(Material.matchMaterial(set + "_leggings")));
+        worn.setBoots(new ItemStack(Material.matchMaterial(set + "_boots")));
+    }
+
+    private static int damageOf(ItemStack piece) {
+        return ((org.bukkit.inventory.meta.Damageable) piece.getItemMeta()).getDamage();
     }
 
     @Test

@@ -16,6 +16,7 @@ import org.bukkit.block.Block;
 import org.bukkit.block.data.Waterlogged;
 import org.bukkit.entity.Player;
 import org.bukkit.inventory.ItemStack;
+import org.bukkit.inventory.PlayerInventory;
 import org.bukkit.potion.PotionEffect;
 import org.bukkit.potion.PotionEffectType;
 
@@ -52,6 +53,7 @@ public final class AcidHazard {
     private final List<PotionEffect> seaEffects;
     private final List<PotionEffect> ventFumes;
     private final AcidIslandConfiguration.Sea sea;
+    private final AcidIslandConfiguration.Armour armour;
     private final InteractionEffects effects;
     private final InteractionEffectPlayer effectPlayer;
     private @Nullable AcidSeaLife seaLife;
@@ -82,6 +84,7 @@ public final class AcidHazard {
         this.ventFumes =
                 effectsWritten("sea vents effects", config.sea().vents().effects());
         this.sea = config.sea();
+        this.armour = config.armour();
     }
 
     /** Starts the beat. Closing what it returns stops it. */
@@ -127,7 +130,11 @@ public final class AcidHazard {
             return 0;
         }
         breatheVents(player, feet, island.get());
-        AcidExposure exposure = exposureOf(player, feet);
+        AcidExposure bare = exposureOf(player, feet);
+        AcidExposure exposure = armoured(player, bare);
+        if (exposure != bare && rules.damage(exposure) < rules.damage(bare)) {
+            wear(player);
+        }
         double taken = rules.damage(exposure);
         if (taken <= 0) {
             return 0;
@@ -202,6 +209,66 @@ public final class AcidHazard {
     /** A player filled a clean bottle from a cauldron, which the plugin did in the server's place. */
     public void filledClean(Player player) {
         effectPlayer.fire(effects, "acid-clean-water-filled", player);
+    }
+
+    /** What reaches the player once a full set of the armour named keeps off what it may. */
+    private AcidExposure armoured(Player player, AcidExposure bare) {
+        if (!wearsAFullSet(player)) {
+            return bare;
+        }
+        return new AcidExposure(
+                bare.inWater(),
+                bare.rainedOn() && !armour.rain(),
+                bare.helmet(),
+                bare.waterProtected() || armour.sea());
+    }
+
+    private boolean wearsAFullSet(Player player) {
+        PlayerInventory worn = player.getInventory();
+        String set = setOf(worn.getHelmet(), "_helmet");
+        return set != null
+                && armour.sets().contains(set)
+                && set.equals(setOf(worn.getChestplate(), "_chestplate"))
+                && set.equals(setOf(worn.getLeggings(), "_leggings"))
+                && set.equals(setOf(worn.getBoots(), "_boots"));
+    }
+
+    /** {@code netherite} for a netherite helmet, or nothing for an empty slot or another piece. */
+    private static @Nullable String setOf(@Nullable ItemStack piece, String suffix) {
+        if (piece == null || piece.isEmpty()) {
+            return null;
+        }
+        String name = piece.getType().getKey().getKey();
+        return name.endsWith(suffix) ? name.substring(0, name.length() - suffix.length()) : null;
+    }
+
+    /** Takes the wear off each piece of the set that kept the acid off; a piece worn through breaks. */
+    private void wear(Player player) {
+        if (armour.wear() <= 0) {
+            // Nothing to take, and no reason to write the player's armour back each check.
+            return;
+        }
+        PlayerInventory worn = player.getInventory();
+        worn.setHelmet(worn(worn.getHelmet()));
+        worn.setChestplate(worn(worn.getChestplate()));
+        worn.setLeggings(worn(worn.getLeggings()));
+        worn.setBoots(worn(worn.getBoots()));
+    }
+
+    private @Nullable ItemStack worn(@Nullable ItemStack piece) {
+        if (piece == null
+                || piece.getType().getMaxDurability() <= 0
+                || !(piece.getItemMeta() instanceof org.bukkit.inventory.meta.Damageable meta)
+                || meta.isUnbreakable()) {
+            return piece;
+        }
+        int damage = meta.getDamage() + armour.wear();
+        if (damage >= piece.getType().getMaxDurability()) {
+            return null;
+        }
+        meta.setDamage(damage);
+        piece.setItemMeta(meta);
+        return piece;
     }
 
     private AcidExposure exposureOf(Player player, Location feet) {
