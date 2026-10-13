@@ -135,7 +135,11 @@ class ShippedMenuFilesAreReadTest {
         }
         assertThat(fours)
                 .containsExactlyInAnyOrder(
-                        "island-homes.conf", "island-missions.conf", "island-top.conf", "island-warps.conf");
+                        "island-homes.conf",
+                        "island-missions.conf",
+                        "island-oneblock.conf",
+                        "island-top.conf",
+                        "island-warps.conf");
     }
 
     @Test

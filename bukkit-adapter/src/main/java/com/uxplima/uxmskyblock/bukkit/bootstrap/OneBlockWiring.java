@@ -68,6 +68,10 @@ public final class OneBlockWiring implements AutoCloseable {
         this.panel = new com.uxplima.uxmskyblock.bukkit.oneblock.OneBlockPanel(
                 service, persistence.islandStoragePort(), scheduler, configuration.messages(), activeProfile);
         panel.useConfiguration(() -> config);
+        var bars = new com.uxplima.uxmskyblock.bukkit.oneblock.OneBlockProgressBars(
+                () -> config, scheduler, configuration.messages());
+        panel.useBars(bars);
+        listener.useBars(bars);
         // Every OneBlock island into memory before players break anything, so no break is a query on
         // the region's thread. A break before it finishes reads its island once.
         scheduler.async(() -> {

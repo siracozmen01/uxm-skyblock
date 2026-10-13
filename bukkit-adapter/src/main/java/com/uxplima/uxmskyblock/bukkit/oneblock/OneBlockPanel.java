@@ -47,6 +47,10 @@ public final class OneBlockPanel {
     private @Nullable SkyblockMenuEngine engine;
     private volatile java.util.function.@Nullable Supplier<com.uxplima.uxmskyblock.bukkit.config.OneBlockConfiguration>
             config;
+    private volatile @Nullable OneBlockProgressBars bars;
+
+    /** The verb the panel's bar button runs to switch where the player's progress shows. */
+    static final String SWITCH_BAR = "skyblock:oneblock-bar";
 
     public OneBlockPanel(
             OneBlockService service,
@@ -67,9 +71,23 @@ public final class OneBlockPanel {
         this.config = Objects.requireNonNull(config, "config must not be null");
     }
 
+    /** Where each player's progress shows, which the panel's bar button switches. */
+    public void useBars(OneBlockProgressBars bars) {
+        this.bars = Objects.requireNonNull(bars, "bars must not be null");
+    }
+
     /** The engine that draws the operator's menu file. Without one the standing is said in chat. */
     public void useMenuEngine(@Nullable SkyblockMenuEngine engine) {
         this.engine = engine;
+        if (engine != null) {
+            engine.action(SWITCH_BAR, ctx -> {
+                OneBlockProgressBars shown = bars;
+                if (shown != null) {
+                    ctx.player().closeInventory();
+                    shown.switchFor(ctx.player());
+                }
+            });
+        }
     }
 
     /** Shows the player where their island stands, or says why there is nothing to show. */
@@ -128,6 +146,7 @@ public final class OneBlockPanel {
      *       and its name; empty after the last phase of an island that stays in it
      *   <li>{@code next_moment}: how many breaks until the next moment the phase file writes, empty when none is left
      *   <li>{@code cycle}: which pass through the phases the island is on, from 1
+     *   <li>{@code bar}: where the viewer's progress shows, in their language, empty for a viewer who is no player
      * </ul>
      */
     public Map<String, String> values(@Nullable Audience viewer, long broken) {
@@ -157,6 +176,10 @@ public final class OneBlockPanel {
         values.put("next_phase_id", next);
         values.put("next_moment", nextMoment(key, into));
         values.put("cycle", Long.toString(phases.cycleOf(broken) + 1));
+        OneBlockProgressBars shown = bars;
+        values.put(
+                "bar",
+                shown != null && viewer instanceof Player player ? shown.named(player, shown.shownTo(player)) : "");
         return values;
     }
 

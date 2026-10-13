@@ -55,6 +55,7 @@ public final class OneBlockListener implements Listener {
     private volatile @org.jspecify.annotations.Nullable OneBlockPauses pauses;
     private volatile @org.jspecify.annotations.Nullable OneBlockGates gates;
     private volatile @org.jspecify.annotations.Nullable OneBlockBranches branches;
+    private volatile @org.jspecify.annotations.Nullable OneBlockProgressBars bars;
 
     public OneBlockListener(
             OneBlockService service,
@@ -77,6 +78,20 @@ public final class OneBlockListener implements Listener {
         OneBlockPauses waits = pauses;
         if (waits != null) {
             waits.worldLoaded(event.getWorld());
+        }
+    }
+
+    /** Tells it how a breaker sees their island's progress. */
+    public void useBars(OneBlockProgressBars bars) {
+        this.bars = Objects.requireNonNull(bars, "bars must not be null");
+    }
+
+    /** Lets go of a leaving player's bar. */
+    @EventHandler
+    public void onQuit(org.bukkit.event.player.PlayerQuitEvent event) {
+        OneBlockProgressBars shown = bars;
+        if (shown != null) {
+            shown.forget(event.getPlayer().getUniqueId());
         }
     }
 
@@ -197,6 +212,10 @@ public final class OneBlockListener implements Listener {
     private void counted(Island owner, Player player, World world, int x, int y, int z, OneBlockService.Broken next) {
         OneBlockPauses waits = pauses;
         OneBlockDraws ahead = draws;
+        OneBlockProgressBars shown = bars;
+        if (shown != null) {
+            scheduler.onEntity(player.getUniqueId(), () -> shown.show(player, next.position()));
+        }
         // A hostile creature drawn ahead is told now, so the breaker is ready when it comes.
         for (OneBlockService.Coming coming : next.coming()) {
             if (!ahead.hostile(coming.creature())) {

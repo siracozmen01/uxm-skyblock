@@ -43,6 +43,7 @@ import org.spongepowered.configurate.ConfigurationNode;
  * @param chooseWithin how long an island at the end of a phase that branches has to pick the way on, before the
  *     first is taken
  * @param creatureWarning how many breaks before a hostile creature comes its island is told, nothing for never
+ * @param display how a player sees the island's progress: a bar they may switch, and a line over the block
  */
 public record OneBlockConfiguration(
         boolean enabled,
@@ -54,7 +55,8 @@ public record OneBlockConfiguration(
         Map<String, Map<String, OneBlockLists>> lists,
         Map<String, OneBlockGate> gates,
         Duration chooseWithin,
-        int creatureWarning) {
+        int creatureWarning,
+        OneBlockDisplay display) {
 
     /** How many breaks ahead a hostile creature is told, when the file names no number. */
     public static final int DEFAULT_CREATURE_WARNING = 5;
@@ -180,7 +182,8 @@ public record OneBlockConfiguration(
                 Map.of(),
                 Map.of(),
                 DEFAULT_CHOOSE_WITHIN,
-                0);
+                0,
+                OneBlockDisplay.SHIPPED);
     }
 
     /** How often counted breaks are written, when the file names no interval. */
@@ -204,6 +207,7 @@ public record OneBlockConfiguration(
         lists = java.util.Collections.unmodifiableMap(listed);
         gates = Map.copyOf(gates);
         Objects.requireNonNull(chooseWithin, "chooseWithin");
+        Objects.requireNonNull(display, "display");
         if (creatureWarning < 0) {
             throw new IllegalArgumentException("A creature is not told after it came: " + creatureWarning);
         }
@@ -367,7 +371,33 @@ public record OneBlockConfiguration(
                 lists,
                 gates,
                 chooseWithin,
-                creatureWarning);
+                creatureWarning,
+                display(root.node("progress")));
+    }
+
+    /**
+     * Reads {@code progress}: {@code bar}, {@code linger} and {@code line}. A value that cannot be read is said in
+     * the console, and the shipped one is used for it.
+     */
+    private static OneBlockDisplay display(ConfigurationNode node) {
+        OneBlockDisplay shipped = OneBlockDisplay.SHIPPED;
+        String bar = node.node("bar").getString(shipped.bar().key());
+        OneBlockDisplay.Bar shown = OneBlockDisplay.Bar.named(bar).orElseGet(() -> {
+            LOGGER.warning(() -> "progress.bar is '" + bar + "', which is none of bossbar, actionbar and none, so "
+                    + shipped.bar().key() + " is used.");
+            return shipped.bar();
+        });
+        String linger = node.node("linger").getString("").strip();
+        Duration stays = linger.isEmpty()
+                ? shipped.linger()
+                : RequirementLines.duration(linger)
+                        .filter(time -> !time.isZero())
+                        .orElseGet(() -> {
+                            LOGGER.warning(() -> "progress.linger is '" + linger + "', which is no time, so "
+                                    + shipped.linger().toSeconds() + " seconds is used.");
+                            return shipped.linger();
+                        });
+        return new OneBlockDisplay(shown, stays, node.node("line").getBoolean(shipped.line()));
     }
 
     /**
