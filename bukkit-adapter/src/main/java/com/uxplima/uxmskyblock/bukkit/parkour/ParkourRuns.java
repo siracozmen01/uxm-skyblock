@@ -65,6 +65,7 @@ public final class ParkourRuns implements Listener {
     private final Clock clock;
     private final Map<UUID, Run> runs = new ConcurrentHashMap<>();
     private volatile java.util.function.Consumer<Player> whenStarted = runner -> {};
+    private volatile @org.jspecify.annotations.Nullable ParkourGhosts ghosts;
 
     public ParkourRuns(
             ParkourService service,
@@ -88,6 +89,11 @@ public final class ParkourRuns implements Listener {
     /** Tells {@code listener} each time a run starts, on the runner's thread. */
     public void whenStarted(java.util.function.Consumer<Player> listener) {
         this.whenStarted = Objects.requireNonNull(listener, "listener must not be null");
+    }
+
+    /** Records each run and shows the ghost it races. */
+    public void ghosts(ParkourGhosts racing) {
+        this.ghosts = Objects.requireNonNull(racing, "racing must not be null");
     }
 
     /** The run the player has under way, for the commands and the tests. */
@@ -120,7 +126,7 @@ public final class ParkourRuns implements Listener {
         } else if (under == markers.startUnder()) {
             start(runner, course, standing);
         } else if (under == markers.finishUnder()) {
-            finish(runner, course);
+            finish(runner, course, standing);
         }
     }
 
@@ -133,6 +139,10 @@ public final class ParkourRuns implements Listener {
         // Standing on the start plate starts the run again, so the clock runs from the moment the
         // runner steps off it.
         runs.put(runner.getUniqueId(), new Run(course, now, plate, tell || was == null ? now : was.told()));
+        ParkourGhosts racing = ghosts;
+        if (racing != null) {
+            racing.started(runner, course, plate, now);
+        }
         whenStarted.accept(runner);
         if (tell) {
             messages.send(runner, "parkour.started");
@@ -150,7 +160,7 @@ public final class ParkourRuns implements Listener {
         effectPlayer.fire(effects, "parkour-checkpoint", runner);
     }
 
-    private void finish(Player runner, IslandId course) {
+    private void finish(Player runner, IslandId course, Location plate) {
         Run run = runs.get(runner.getUniqueId());
         if (run == null || !run.course().equals(course)) {
             return;
@@ -158,6 +168,9 @@ public final class ParkourRuns implements Listener {
         runs.remove(runner.getUniqueId());
         Duration time = Duration.between(run.started(), clock.instant());
         PlayerUuid who = PlayerUuid.of(runner.getUniqueId());
+        ParkourGhosts racing = ghosts;
+        com.uxplima.uxmskyblock.core.application.parkour.GhostPath path =
+                racing == null ? null : racing.finished(runner, time, plate);
         effectPlayer.fire(effects, "parkour-finished", runner, said(time));
         scheduler.async(() -> {
             ParkourService.Finish finish;
@@ -167,6 +180,12 @@ public final class ParkourRuns implements Listener {
                 LOGGER.log(Level.WARNING, e, () -> "A run on course " + course + " could not be counted.");
                 scheduler.onEntity(who, () -> messages.send(runner, "parkour.finished", timed("time", time)));
                 return;
+            }
+            if (racing != null
+                    && path != null
+                    && (finish instanceof ParkourService.Finish.First
+                            || finish instanceof ParkourService.Finish.Beaten)) {
+                racing.keep(course, who, time, path);
             }
             scheduler.onEntity(who, () -> told(runner, finish));
         });
@@ -205,6 +224,7 @@ public final class ParkourRuns implements Listener {
                         .compareTo(config.runs().timeLimit())
                 > 0) {
             runs.remove(runner.getUniqueId());
+            ended(runner.getUniqueId());
             messages.send(runner, "parkour.timed_out");
             return;
         }
@@ -212,8 +232,13 @@ public final class ParkourRuns implements Listener {
         Optional<Island> island = islands.findIslandAt(to);
         if (island.isEmpty() || !island.get().id().equals(run.course())) {
             runs.remove(runner.getUniqueId());
+            ended(runner.getUniqueId());
             messages.send(runner, "parkour.left");
             return;
+        }
+        ParkourGhosts racing = ghosts;
+        if (racing != null) {
+            racing.moved(runner, to);
         }
         if (to.getY() < run.checkpoint().getY() - config.runs().fallDepth()) {
             Location back = run.checkpoint().clone();
@@ -228,6 +253,15 @@ public final class ParkourRuns implements Listener {
     @EventHandler
     public void onQuit(PlayerQuitEvent event) {
         runs.remove(event.getPlayer().getUniqueId());
+        ended(event.getPlayer().getUniqueId());
+    }
+
+    /** A run ended without a finish: its ghost goes. */
+    private void ended(UUID runner) {
+        ParkourGhosts racing = ghosts;
+        if (racing != null) {
+            racing.ended(runner);
+        }
     }
 
     /** A time the way a runner reads it: minutes, seconds and milliseconds. */

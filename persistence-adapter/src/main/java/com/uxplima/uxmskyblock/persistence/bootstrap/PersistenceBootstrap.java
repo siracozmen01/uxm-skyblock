@@ -156,6 +156,7 @@ public final class PersistenceBootstrap implements AutoCloseable {
     private final com.uxplima.uxmskyblock.persistence.poseidon.SqlPoseidonIslandsAdapter poseidonIslandsAdapter;
     private final com.uxplima.uxmskyblock.persistence.stranger.SqlStrangerRealmsAdapter strangerRealmsAdapter;
     private final com.uxplima.uxmskyblock.persistence.session.SqlNetworkPresenceAdapter networkPresenceAdapter;
+    private final com.uxplima.uxmskyblock.persistence.parkour.SqlParkourGhostsAdapter parkourGhostsAdapter;
     private final com.uxplima.uxmskyblock.persistence.parkour.SqlParkourAdapter parkourAdapter;
     private final com.uxplima.uxmskyblock.persistence.leaderboard.SqlModeStandingsAdapter modeStandingsAdapter;
     private final com.uxplima.uxmskyblock.persistence.brix.SqlBrixPlotsAdapter brixPlotsAdapter;
@@ -263,6 +264,8 @@ public final class PersistenceBootstrap implements AutoCloseable {
         this.networkPresenceAdapter =
                 new com.uxplima.uxmskyblock.persistence.session.SqlNetworkPresenceAdapter(database.dataSource());
         this.parkourAdapter = new com.uxplima.uxmskyblock.persistence.parkour.SqlParkourAdapter(database.dataSource());
+        this.parkourGhostsAdapter =
+                new com.uxplima.uxmskyblock.persistence.parkour.SqlParkourGhostsAdapter(database.dataSource());
         this.modeStandingsAdapter =
                 new com.uxplima.uxmskyblock.persistence.leaderboard.SqlModeStandingsAdapter(database.dataSource());
         this.brixPlotsAdapter = new com.uxplima.uxmskyblock.persistence.brix.SqlBrixPlotsAdapter(database.dataSource());
@@ -532,6 +535,11 @@ public final class PersistenceBootstrap implements AutoCloseable {
 
     public com.uxplima.uxmskyblock.core.application.parkour.ParkourPort parkourPort() {
         return parkourAdapter;
+    }
+
+    /** Each runner's best run on each course, as its ghost replays it. */
+    public com.uxplima.uxmskyblock.core.application.parkour.ParkourGhostsPort parkourGhostsPort() {
+        return parkourGhostsAdapter;
     }
 
     /** Where the islands of each mode stand, for the boards. */

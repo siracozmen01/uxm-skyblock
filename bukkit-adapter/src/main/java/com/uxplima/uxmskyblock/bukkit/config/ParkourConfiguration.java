@@ -13,7 +13,7 @@ import org.spongepowered.configurate.ConfigurationNode;
  * {@code modules/parkour.conf}: whether islands can be Parkour courses, which blocks mark a course's
  * start, checkpoints and finish, and how a run is kept.
  */
-public record ParkourConfiguration(boolean enabled, Markers markers, Runs runs, Modes modes) {
+public record ParkourConfiguration(boolean enabled, Markers markers, Runs runs, Modes modes, Ghost ghost) {
 
     private static final Logger LOGGER = Logger.getLogger(ParkourConfiguration.class.getName());
 
@@ -87,14 +87,60 @@ public record ParkourConfiguration(boolean enabled, Markers markers, Runs runs, 
         }
     }
 
+    /**
+     * The ghost a runner races: a runner's best run is recorded as it goes, and replayed beside the next runner as an
+     * item only they see.
+     *
+     * @param against whose ghost is raced: the course's fastest, or the runner's own best and the fastest before they
+     *     have one
+     * @param sampleEvery how often a run is sampled; the ghost moves on a straight line between two samples
+     * @param item the item the ghost is drawn as; a player head wears the face of whoever ran it
+     * @param height how far above the ground the item floats
+     * @param scale how large the item is drawn
+     * @param glow whether the item glows, so it shows through the course
+     */
+    public record Ghost(
+            boolean enabled,
+            Against against,
+            Duration sampleEvery,
+            Material item,
+            double height,
+            float scale,
+            boolean glow) {
+
+        /** Whose ghost a runner races. */
+        public enum Against {
+            /** The course's fastest run, whoever ran it. */
+            RECORD,
+            /** The runner's own best, and the course's fastest before they have one. */
+            OWN
+        }
+
+        public static final Ghost SHIPPED =
+                new Ghost(true, Against.RECORD, Duration.ofMillis(100), Material.PLAYER_HEAD, 1.4, 0.6f, true);
+
+        public Ghost {
+            Objects.requireNonNull(against, "against must not be null");
+            Objects.requireNonNull(sampleEvery, "sampleEvery must not be null");
+            Objects.requireNonNull(item, "item must not be null");
+            // Whether the item is one is asked of the server's registry, which the configuration is read without, so
+            // the stage asks it when the ghost is drawn.
+            if (sampleEvery.toMillis() < 50 || scale <= 0 || scale > 4) {
+                throw new IllegalArgumentException(
+                        "a run is sampled at most every 50ms, and scaled above 0 and up to 4");
+            }
+        }
+    }
+
     public ParkourConfiguration {
+        Objects.requireNonNull(ghost, "ghost must not be null");
         Objects.requireNonNull(markers, "markers must not be null");
         Objects.requireNonNull(runs, "runs must not be null");
         Objects.requireNonNull(modes, "modes must not be null");
     }
 
     public static ParkourConfiguration defaultConfiguration() {
-        return new ParkourConfiguration(true, Markers.SHIPPED, Runs.SHIPPED, Modes.SHIPPED);
+        return new ParkourConfiguration(true, Markers.SHIPPED, Runs.SHIPPED, Modes.SHIPPED, Ghost.SHIPPED);
     }
 
     public static ParkourConfiguration load(ConfigurationNode root) {
@@ -134,7 +180,32 @@ public record ParkourConfiguration(boolean enabled, Markers markers, Runs runs, 
             LOGGER.warning(() -> "modules/parkour.conf modes: " + e.getMessage() + ". The shipped modes are used.");
             modes = Modes.SHIPPED;
         }
-        return new ParkourConfiguration(root.node("enabled").getBoolean(true), markers, runs, modes);
+        return new ParkourConfiguration(root.node("enabled").getBoolean(true), markers, runs, modes, ghost(root));
+    }
+
+    private static Ghost ghost(ConfigurationNode root) {
+        ConfigurationNode written = root.node("ghost");
+        Ghost shipped = Ghost.SHIPPED;
+        try {
+            String against = written.node("against").getString(shipped.against().name());
+            String item = written.node("item").getString(shipped.item().name());
+            Material drawn = Material.matchMaterial(item.trim().toUpperCase(Locale.ROOT));
+            if (drawn == null || drawn == Material.AIR || drawn == Material.CAVE_AIR || drawn == Material.VOID_AIR) {
+                throw new IllegalArgumentException(item + " is no item");
+            }
+            return new Ghost(
+                    written.node("enabled").getBoolean(shipped.enabled()),
+                    Ghost.Against.valueOf(against.trim().toUpperCase(Locale.ROOT)),
+                    AcidIslandConfiguration.durationOf(
+                            written.node("sample-every").getString(""), shipped.sampleEvery()),
+                    drawn,
+                    written.node("height").getDouble(shipped.height()),
+                    (float) written.node("scale").getDouble(shipped.scale()),
+                    written.node("glow").getBoolean(shipped.glow()));
+        } catch (IllegalArgumentException e) {
+            LOGGER.warning(() -> "modules/parkour.conf ghost: " + e.getMessage() + ". The shipped ghost is used.");
+            return shipped;
+        }
     }
 
     private static org.bukkit.GameMode gameMode(String written, org.bukkit.GameMode shipped) {

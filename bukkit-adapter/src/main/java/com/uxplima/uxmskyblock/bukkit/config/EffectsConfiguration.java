@@ -122,6 +122,9 @@ public final class EffectsConfiguration {
                 "parkour-run-started",
                 parseAll("parkour-run-started", List.of("[sound] block.note_block.pling 0.8 1.2")));
         defaults.put(
+                "parkour-ghost",
+                parseAll("parkour-ghost", List.of("[sound] entity.allay.ambient_without_item 0.6 0.8")));
+        defaults.put(
                 "parkour-checkpoint", parseAll("parkour-checkpoint", List.of("[sound] block.note_block.bell 0.8 1.5")));
         defaults.put(
                 "parkour-finished", parseAll("parkour-finished", List.of("[sound] entity.player.levelup 0.8 1.2")));

@@ -9,6 +9,7 @@ import static org.mockito.Mockito.when;
 import java.time.Instant;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Optional;
 import java.util.OptionalLong;
 import java.util.Set;
 import java.util.UUID;
@@ -70,6 +71,8 @@ class AWiredRunStartsEmptyHandedTest extends MockBukkitHarness {
         when(config.effectsConfig()).thenReturn(InteractionEffects.none());
         PersistenceBootstrap persistence = mock(PersistenceBootstrap.class);
         when(persistence.parkourPort()).thenReturn(port());
+        when(persistence.parkourGhostsPort())
+                .thenReturn(mock(com.uxplima.uxmskyblock.core.application.parkour.ParkourGhostsPort.class));
         SchedulerPort scheduler = mock(SchedulerPort.class);
         doAnswer(call -> {
                     call.getArgument(0, Runnable.class).run();
@@ -77,7 +80,13 @@ class AWiredRunStartsEmptyHandedTest extends MockBukkitHarness {
                 })
                 .when(scheduler)
                 .async(any(Runnable.class));
-        ParkourWiring wiring = new ParkourWiring(config, persistence, scheduler, islands, player -> true);
+        ParkourWiring wiring = new ParkourWiring(
+                config,
+                persistence,
+                scheduler,
+                islands,
+                player -> true,
+                (running, at, whose, tick) -> Optional.empty());
         wiring.service().start(course.id());
         world.getBlockAt(8, Y, 8).setType(Material.EMERALD_BLOCK);
         world.getBlockAt(8, Y + 1, 8).setType(Material.LIGHT_WEIGHTED_PRESSURE_PLATE);
