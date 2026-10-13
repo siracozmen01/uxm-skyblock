@@ -115,6 +115,7 @@ class EveryMilestoneFiresWhatWasWrittenTest {
                         "parkour-course-left",
                         "parkour-run-started",
                         "parkour-ghost",
+                        "parkour-run-voided",
                         "parkour-checkpoint",
                         "parkour-finished",
                         "parkour-record",

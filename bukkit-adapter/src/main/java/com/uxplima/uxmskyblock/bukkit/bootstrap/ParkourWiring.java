@@ -27,6 +27,7 @@ public final class ParkourWiring implements AutoCloseable {
     private final ParkourService service;
     private final SchedulerPort scheduler;
     private final ParkourRuns runs;
+    private final com.uxplima.uxmskyblock.bukkit.parkour.ParkourChecks checks;
     private final com.uxplima.uxmskyblock.bukkit.parkour.ParkourModes modes;
     private final com.uxplima.uxmskyblock.bukkit.parkour.ParkourBoard board;
     private final com.uxplima.uxmskyblock.bukkit.parkour.ParkourTagging tagging;
@@ -64,6 +65,9 @@ public final class ParkourWiring implements AutoCloseable {
                 configuration.effectsConfig(),
                 new InteractionEffectPlayer(scheduler, configuration.messages()));
         runs.whenStarted(modes::startRun);
+        this.checks =
+                new com.uxplima.uxmskyblock.bukkit.parkour.ParkourChecks(runs, config.checks(), Clock.systemUTC());
+        runs.checks(checks);
         runs.rewards(
                 new com.uxplima.uxmskyblock.bukkit.effect.InteractionEffects(Map.of(
                         ParkourRuns.FIRST_FINISH,
@@ -134,6 +138,11 @@ public final class ParkourWiring implements AutoCloseable {
 
     public ParkourRuns runs() {
         return runs;
+    }
+
+    /** What ends a run that is not run on foot: teleports, flight and gliding. */
+    public com.uxplima.uxmskyblock.bukkit.parkour.ParkourChecks checks() {
+        return checks;
     }
 
     public com.uxplima.uxmskyblock.bukkit.parkour.ParkourModes modes() {

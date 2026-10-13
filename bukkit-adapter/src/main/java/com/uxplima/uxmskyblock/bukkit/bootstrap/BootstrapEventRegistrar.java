@@ -129,6 +129,9 @@ public final class BootstrapEventRegistrar {
         }
         if (gameplayWiring.parkourWiring().enabled()) {
             pm.registerEvents(gameplayWiring.parkourWiring().runs(), plugin);
+            pm.registerEvents(gameplayWiring.parkourWiring().checks(), plugin);
+            gameplayWiring.parkourWiring().checks().declare(pm);
+            gameplayWiring.arrivalWatch().observe(gameplayWiring.parkourWiring().checks());
             pm.registerEvents(gameplayWiring.parkourWiring().modes(), plugin);
         }
         if (gameplayWiring.strangerRealmsWiring().enabled()) {

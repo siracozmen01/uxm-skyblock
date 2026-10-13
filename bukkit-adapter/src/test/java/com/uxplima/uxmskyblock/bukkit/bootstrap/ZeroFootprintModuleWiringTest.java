@@ -181,7 +181,8 @@ class ZeroFootprintModuleWiringTest {
                         com.uxplima.uxmskyblock.bukkit.config.ParkourConfiguration.Ghost.SHIPPED,
                         com.uxplima.uxmskyblock.bukkit.config.ParkourConfiguration.Rewards.SHIPPED,
                         com.uxplima.uxmskyblock.bukkit.config.ParkourConfiguration.Tagging.SHIPPED,
-                        com.uxplima.uxmskyblock.bukkit.config.ParkourConfiguration.Ratings.SHIPPED));
+                        com.uxplima.uxmskyblock.bukkit.config.ParkourConfiguration.Ratings.SHIPPED,
+                        com.uxplima.uxmskyblock.bukkit.config.ParkourConfiguration.Checks.SHIPPED));
         com.uxplima.uxmskyblock.bukkit.config.TradeWindsConfiguration shipped =
                 com.uxplima.uxmskyblock.bukkit.config.TradeWindsConfiguration.defaultConfiguration();
         when(config.tradeWindsConfig())

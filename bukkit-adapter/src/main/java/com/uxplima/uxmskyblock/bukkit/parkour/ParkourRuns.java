@@ -77,6 +77,7 @@ public final class ParkourRuns implements Listener {
     private volatile java.util.function.Consumer<Player> whenStarted = runner -> {};
     private volatile @org.jspecify.annotations.Nullable ParkourGhosts ghosts;
     private volatile @org.jspecify.annotations.Nullable ParkourSplits splits;
+    private volatile @org.jspecify.annotations.Nullable ParkourChecks checks;
     private volatile InteractionEffects rewards = InteractionEffects.none();
     private volatile com.uxplima.uxmskyblock.core.application.parkour.@org.jspecify.annotations.Nullable ParkourRewardsPort
             ledger;
@@ -122,6 +123,11 @@ public final class ParkourRuns implements Listener {
         this.rewards = Objects.requireNonNull(paid, "paid must not be null");
         this.ledger = Objects.requireNonNull(ledger, "ledger must not be null");
         this.terms = Objects.requireNonNull(written, "written must not be null");
+    }
+
+    /** Ends a run that is not run on foot. */
+    public void checks(ParkourChecks watching) {
+        this.checks = Objects.requireNonNull(watching, "watching must not be null");
     }
 
     /** Takes each run's split times at its checkpoints, against the runner's best. */
@@ -182,6 +188,10 @@ public final class ParkourRuns implements Listener {
         ParkourSplits taking = splits;
         if (taking != null) {
             taking.started(runner.getUniqueId(), course);
+        }
+        ParkourChecks watching = checks;
+        if (watching != null) {
+            watching.started(runner.getUniqueId());
         }
         whenStarted.accept(runner);
         if (tell) {
@@ -400,6 +410,12 @@ public final class ParkourRuns implements Listener {
             messages.send(runner, "parkour.left");
             return;
         }
+        ParkourChecks watching = checks;
+        Optional<String> broken = watching == null ? Optional.empty() : watching.moved(runner, to);
+        if (broken.isPresent()) {
+            voidRun(runner, broken.get());
+            return;
+        }
         ParkourGhosts racing = ghosts;
         if (racing != null) {
             racing.moved(runner, to);
@@ -409,6 +425,9 @@ public final class ParkourRuns implements Listener {
             back.setYaw(to.getYaw());
             back.setPitch(to.getPitch());
             runner.setFallDistance(0);
+            if (watching != null) {
+                watching.returning(runner.getUniqueId(), back);
+            }
             var unused = runner.teleportAsync(back);
             messages.send(runner, "parkour.returned");
         }
@@ -420,6 +439,16 @@ public final class ParkourRuns implements Listener {
         ended(event.getPlayer().getUniqueId());
     }
 
+    /** The run broke the check named {@code check}: it ends, and the runner is told why. On the runner's thread. */
+    void voidRun(Player runner, String check) {
+        if (runs.remove(runner.getUniqueId()) == null) {
+            return;
+        }
+        ended(runner.getUniqueId());
+        messages.send(runner, "parkour.check." + check);
+        effectPlayer.fire(effects, "parkour-run-voided", runner, Map.of("check", check));
+    }
+
     /** A run ended without a finish: its ghost and its splits go. */
     private void ended(UUID runner) {
         ParkourGhosts racing = ghosts;
@@ -429,6 +458,10 @@ public final class ParkourRuns implements Listener {
         ParkourSplits taking = splits;
         if (taking != null) {
             taking.ended(runner);
+        }
+        ParkourChecks watching = checks;
+        if (watching != null) {
+            watching.ended(runner);
         }
     }
 

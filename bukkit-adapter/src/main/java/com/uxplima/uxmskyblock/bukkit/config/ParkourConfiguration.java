@@ -22,7 +22,8 @@ public record ParkourConfiguration(
         Ghost ghost,
         Rewards rewards,
         Tagging tagging,
-        Ratings ratings) {
+        Ratings ratings,
+        Checks checks) {
 
     private static final Logger LOGGER = Logger.getLogger(ParkourConfiguration.class.getName());
 
@@ -208,7 +209,29 @@ public record ParkourConfiguration(
         }
     }
 
+    /**
+     * What ends a run that is not run on foot.
+     *
+     * @param flight whether flying or gliding ends a run
+     * @param teleports whether a teleport, but the course's own return to a checkpoint, ends a run
+     * @param speed whether moving faster than {@code fastest} ends a run
+     * @param fastest the most blocks a second a runner covers across the ground, measured over a quarter of a second
+     * @param bypassPermission a player with this permission is not checked; empty for nobody
+     */
+    public record Checks(boolean flight, boolean teleports, boolean speed, double fastest, String bypassPermission) {
+
+        public static final Checks SHIPPED = new Checks(true, true, true, 16, "uxmskyblock.parkour.checks.bypass");
+
+        public Checks {
+            Objects.requireNonNull(bypassPermission, "bypassPermission must not be null");
+            if (!(fastest > 0)) {
+                throw new IllegalArgumentException("the fastest a runner goes must be above 0");
+            }
+        }
+    }
+
     public ParkourConfiguration {
+        Objects.requireNonNull(checks, "checks must not be null");
         Objects.requireNonNull(tagging, "tagging must not be null");
         Objects.requireNonNull(ratings, "ratings must not be null");
         Objects.requireNonNull(rewards, "rewards must not be null");
@@ -227,7 +250,8 @@ public record ParkourConfiguration(
                 Ghost.SHIPPED,
                 Rewards.SHIPPED,
                 Tagging.SHIPPED,
-                Ratings.SHIPPED);
+                Ratings.SHIPPED,
+                Checks.SHIPPED);
     }
 
     public static ParkourConfiguration load(ConfigurationNode root) {
@@ -298,7 +322,32 @@ public record ParkourConfiguration(
             ratings = Ratings.SHIPPED;
         }
         return new ParkourConfiguration(
-                root.node("enabled").getBoolean(true), markers, runs, modes, ghost(root), rewards, tagging, ratings);
+                root.node("enabled").getBoolean(true),
+                markers,
+                runs,
+                modes,
+                ghost(root),
+                rewards,
+                tagging,
+                ratings,
+                checks(root.node("checks")));
+    }
+
+    private static Checks checks(ConfigurationNode written) {
+        Checks shipped = Checks.SHIPPED;
+        try {
+            return new Checks(
+                    written.node("flight").getBoolean(shipped.flight()),
+                    written.node("teleport").getBoolean(shipped.teleports()),
+                    written.node("speed", "enabled").getBoolean(shipped.speed()),
+                    written.node("speed", "fastest").getDouble(shipped.fastest()),
+                    written.node("bypass-permission")
+                            .getString(shipped.bypassPermission())
+                            .trim());
+        } catch (IllegalArgumentException e) {
+            LOGGER.warning(() -> "modules/parkour.conf checks: " + e.getMessage() + ". The shipped checks are used.");
+            return shipped;
+        }
     }
 
     /** Names as a command takes them, in lower case, each once. The shared reader trims them and drops blanks. */
