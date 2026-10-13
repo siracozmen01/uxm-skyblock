@@ -115,6 +115,23 @@ public final class AcidSeaStart implements CreationActionProvider<IslandStart> {
         return laid;
     }
 
+    /**
+     * Lays the sea between islands over a whole chunk the server has just made: its floor, its water, vents and
+     * geysers, as around an island but drawn from the world's seed, painted with the sea's biome. On the thread that
+     * owns the chunk, as it loads.
+     */
+    public void layOpen(World world, int chunkX, int chunkZ, int surface) {
+        long seed = world.getSeed();
+        SeaBed bed = new SeaBed(
+                SeaBed.read(sea.bed(), floorOf(sea)), Math.min(sea.bed().mounds(), sea.depth() - 1), seed);
+        int fromX = chunkX << 4;
+        int fromZ = chunkZ << 4;
+        fill(world, fromX, fromX + 15, fromZ, fromZ + 15, surface, bed, seed);
+        if (biome != null) {
+            paint(world, fromX, fromX + 15, fromZ, fromZ + 15, surface, biome);
+        }
+    }
+
     /** The sea's own floor block, or sandstone when it names none that stands. */
     private static Material floorOf(AcidIslandConfiguration.Sea sea) {
         Material floor = Material.matchMaterial(sea.floor());

@@ -35,6 +35,7 @@ public final class AcidIslandWiring implements AutoCloseable {
     private boolean recipesAdded;
     private @Nullable AutoCloseable beat;
     private @Nullable AutoCloseable tideBeat;
+    private @Nullable AcidSeaStart seaStart;
     private final com.uxplima.uxmskyblock.bukkit.acid.AcidTideRunner tide;
 
     public AcidIslandWiring(
@@ -136,20 +137,33 @@ public final class AcidIslandWiring implements AutoCloseable {
 
     /** The action that lays the acid sea, while AcidIsland is enabled, and none otherwise. */
     public List<CreationActionProvider<IslandStart>> startActions() {
-        return config.enabled()
-                ? List.of(new AcidSeaStart(
-                        service,
-                        scheduler,
-                        config.sea(),
-                        seaBiome(),
-                        AcidIslandWiring::refresh,
-                        AcidSeaStart.buried(
-                                config.sea(),
-                                config.buried(),
-                                new com.uxplima.uxmskyblock.bukkit.poseidon.ServerWreckTemplates(),
-                                new com.uxplima.uxmskyblock.bukkit.poseidon.ServerChestLoot(),
-                                scheduler)))
-                : List.of();
+        return config.enabled() ? List.of(seaStart()) : List.of();
+    }
+
+    /** The action that lays the acid sea, made once, which also lays the sea between islands. */
+    public synchronized AcidSeaStart seaStart() {
+        AcidSeaStart made = seaStart;
+        if (made == null) {
+            made = new AcidSeaStart(
+                    service,
+                    scheduler,
+                    config.sea(),
+                    seaBiome(),
+                    AcidIslandWiring::refresh,
+                    AcidSeaStart.buried(
+                            config.sea(),
+                            config.buried(),
+                            new com.uxplima.uxmskyblock.bukkit.poseidon.ServerWreckTemplates(),
+                            new com.uxplima.uxmskyblock.bukkit.poseidon.ServerChestLoot(),
+                            scheduler));
+            seaStart = made;
+        }
+        return made;
+    }
+
+    /** The sea between islands, laid as each chunk of its world is made, while it is on. */
+    public com.uxplima.uxmskyblock.bukkit.acid.AcidOpenSea openSea() {
+        return new com.uxplima.uxmskyblock.bukkit.acid.AcidOpenSea(seaStart(), config.between());
     }
 
     /** The biome the sea is painted with, or none: none asked for, or one the server does not know, said. */

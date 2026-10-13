@@ -57,6 +57,8 @@ public final class AcidTideRunner implements Listener {
     private final LongSupplier clock;
     private final Loaded loaded;
     private final Map<IslandId, Integer> brought = new ConcurrentHashMap<>();
+    private final Map<String, Integer> broughtOpen = new ConcurrentHashMap<>();
+    private final AcidWaters waters;
     private volatile int level = -1;
     private volatile int heading;
 
@@ -82,6 +84,7 @@ public final class AcidTideRunner implements Listener {
         this.messages = Objects.requireNonNull(messages, "messages must not be null");
         this.clock = Objects.requireNonNull(clock, "clock must not be null");
         this.loaded = Objects.requireNonNull(loaded, "loaded must not be null");
+        this.waters = new AcidWaters(service, islands, config.between());
     }
 
     /** Starts the beat, while the sea moves at all. Closing what it returns stops it. */
@@ -114,10 +117,13 @@ public final class AcidTideRunner implements Listener {
             return;
         }
         Optional<Island> island = islands.findIslandAt(at);
-        if (island.isEmpty() || !service.isAcid(island.get().id())) {
+        if (island.isPresent() && service.isAcid(island.get().id())) {
+            bring(island.get(), at.getWorld(), now);
+        } else if (waters.openSea(at.getWorld())) {
+            bringAround(at, now);
+        } else {
             return;
         }
-        bring(island.get(), at.getWorld(), now);
         if (moved == 0) {
             return;
         }
@@ -148,7 +154,32 @@ public final class AcidTideRunner implements Listener {
                 int cz = chunkZ;
                 scheduler.onRegion(world.getName(), cx, cz, () -> {
                     if (loaded.chunk(world, cx, cz)) {
-                        set(world, cx, cz, centreX, centreZ, surface.getAsInt(), now);
+                        setOnIsland(world, cx, cz, centreX, centreZ, surface.getAsInt(), now);
+                    }
+                });
+            }
+        }
+    }
+
+    /**
+     * Brings the open sea around a player to {@code now}, as far as an island's sea reaches, each chunk once for each
+     * level, on its own region.
+     */
+    private void bringAround(Location at, int now) {
+        World world = at.getWorld();
+        int surface = waters.between().surface();
+        int reach = (sea.radius() >> 4) + 1;
+        for (int chunkX = (at.getBlockX() >> 4) - reach; chunkX <= (at.getBlockX() >> 4) + reach; chunkX++) {
+            for (int chunkZ = (at.getBlockZ() >> 4) - reach; chunkZ <= (at.getBlockZ() >> 4) + reach; chunkZ++) {
+                Integer before = broughtOpen.put(world.getName() + ":" + chunkX + ":" + chunkZ, now);
+                if (before != null && before == now) {
+                    continue;
+                }
+                int cx = chunkX;
+                int cz = chunkZ;
+                scheduler.onRegion(world.getName(), cx, cz, () -> {
+                    if (loaded.chunk(world, cx, cz)) {
+                        set(world, cx << 4, (cx << 4) + 15, cz << 4, (cz << 4) + 15, surface, now);
                     }
                 });
             }
@@ -166,6 +197,20 @@ public final class AcidTideRunner implements Listener {
         int chunkX = event.getChunk().getX();
         int chunkZ = event.getChunk().getZ();
         Optional<Island> island = islands.findIslandAt(new Location(world, (chunkX << 4) + 8, 0, (chunkZ << 4) + 8));
+        if (waters.openSea(world)) {
+            // The whole world is one sea, at one surface.
+            int level = tide.tide().level(clock.getAsLong());
+            broughtOpen.put(world.getName() + ":" + chunkX + ":" + chunkZ, level);
+            set(
+                    world,
+                    chunkX << 4,
+                    (chunkX << 4) + 15,
+                    chunkZ << 4,
+                    (chunkZ << 4) + 15,
+                    waters.between().surface(),
+                    level);
+            return;
+        }
         if (island.isEmpty()) {
             return;
         }
@@ -174,7 +219,7 @@ public final class AcidTideRunner implements Listener {
         if (surface.isEmpty()) {
             return;
         }
-        set(
+        setOnIsland(
                 world,
                 chunkX,
                 chunkZ,
@@ -185,11 +230,19 @@ public final class AcidTideRunner implements Listener {
     }
 
     /** Sets the tide's water over each column of sea in the chunk, and takes away what stands above the tide. */
-    private void set(World world, int chunkX, int chunkZ, int centreX, int centreZ, int surface, int now) {
-        int fromX = Math.max(chunkX << 4, centreX - sea.radius());
-        int toX = Math.min((chunkX << 4) + 15, centreX + sea.radius());
-        int fromZ = Math.max(chunkZ << 4, centreZ - sea.radius());
-        int toZ = Math.min((chunkZ << 4) + 15, centreZ + sea.radius());
+    private void setOnIsland(World world, int chunkX, int chunkZ, int centreX, int centreZ, int surface, int now) {
+        set(
+                world,
+                Math.max(chunkX << 4, centreX - sea.radius()),
+                Math.min((chunkX << 4) + 15, centreX + sea.radius()),
+                Math.max(chunkZ << 4, centreZ - sea.radius()),
+                Math.min((chunkZ << 4) + 15, centreZ + sea.radius()),
+                surface,
+                now);
+    }
+
+    /** Sets the tide's water over each column of sea in the area, and takes away what stands above the tide. */
+    private void set(World world, int fromX, int toX, int fromZ, int toZ, int surface, int now) {
         for (int x = fromX; x <= toX; x++) {
             for (int z = fromZ; z <= toZ; z++) {
                 if (!isSea(world.getBlockAt(x, surface, z)) || !isSea(world.getBlockAt(x, surface - 1, z))) {

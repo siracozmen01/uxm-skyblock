@@ -330,7 +330,8 @@ class TheAcidTideMovesTheSeaTest extends MockBukkitHarness {
                 AcidIslandConfiguration.Look.SHIPPED,
                 AcidIslandConfiguration.Buried.NONE,
                 written,
-                AcidIslandConfiguration.Offerings.NONE);
+                AcidIslandConfiguration.Offerings.NONE,
+                AcidIslandConfiguration.Between.SHIPPED);
     }
 
     private static Island island(int centreX) {

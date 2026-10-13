@@ -4,7 +4,6 @@ import java.util.HashSet;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
-import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -27,7 +26,6 @@ import com.uxplima.uxmskyblock.bukkit.effect.InteractionEffects;
 import com.uxplima.uxmskyblock.bukkit.i18n.Messages;
 import com.uxplima.uxmskyblock.bukkit.listener.IslandProtectionListener;
 import com.uxplima.uxmskyblock.core.application.acid.AcidIslandService;
-import com.uxplima.uxmskyblock.core.domain.island.Island;
 
 /**
  * What lies and swims in the acid sea around a player: an item dissolves once it has lain in the sea a while, and a
@@ -51,8 +49,6 @@ public final class AcidSeaLife {
         @org.jspecify.annotations.Nullable UUID of(Item item);
     }
 
-    private final AcidIslandService service;
-    private final IslandProtectionListener islands;
     private final AcidIslandConfiguration.SeaLife life;
     private final long checkNanos;
     private final InteractionEffects effects;
@@ -67,6 +63,7 @@ public final class AcidSeaLife {
     private final Messages messages;
     private final VentLoot loot;
     private final Throwers throwers;
+    private final AcidWaters waters;
 
     /**
      * @param clock the time, in nanoseconds
@@ -87,8 +84,7 @@ public final class AcidSeaLife {
         this.messages = Objects.requireNonNull(messages, "messages must not be null");
         this.loot = Objects.requireNonNull(loot, "loot must not be null");
         this.throwers = Objects.requireNonNull(throwers, "throwers must not be null");
-        this.service = Objects.requireNonNull(service, "service must not be null");
-        this.islands = Objects.requireNonNull(islands, "islands must not be null");
+        this.waters = new AcidWaters(service, islands, config.between());
         this.life = config.seaLife();
         this.checkNanos = config.rules().checkEvery().toNanos();
         this.effects = Objects.requireNonNull(effects, "effects must not be null");
@@ -242,8 +238,7 @@ public final class AcidSeaLife {
         if (!isWater(at.getBlock())) {
             return false;
         }
-        Optional<Island> island = islands.findIslandAt(at);
-        return island.isPresent() && service.isAcid(island.get().id());
+        return waters.acid(at);
     }
 
     private static boolean isWater(Block block) {

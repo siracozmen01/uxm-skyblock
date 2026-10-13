@@ -3,7 +3,6 @@ package com.uxplima.uxmskyblock.bukkit.acid;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
-import java.util.Optional;
 import java.util.OptionalInt;
 import java.util.logging.Logger;
 
@@ -30,7 +29,6 @@ import com.uxplima.uxmskyblock.core.application.scheduler.SchedulerPort;
 import com.uxplima.uxmskyblock.core.domain.hazard.AcidExposure;
 import com.uxplima.uxmskyblock.core.domain.hazard.AcidRules;
 import com.uxplima.uxmskyblock.core.domain.identity.PlayerUuid;
-import com.uxplima.uxmskyblock.core.domain.island.Island;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -45,14 +43,13 @@ public final class AcidHazard {
 
     private static final Logger LOGGER = Logger.getLogger(AcidHazard.class.getName());
 
-    private final AcidIslandService service;
-    private final IslandProtectionListener islands;
     private final SchedulerPort scheduler;
     private final AcidRules rules;
     private final List<PotionEffectType> protection;
     private final List<PotionEffect> seaEffects;
     private final List<PotionEffect> ventFumes;
     private final AcidIslandConfiguration.Sea sea;
+    private final AcidWaters waters;
     private final AcidIslandConfiguration.Armour armour;
     private final InteractionEffects effects;
     private final InteractionEffectPlayer effectPlayer;
@@ -67,8 +64,6 @@ public final class AcidHazard {
             AcidIslandConfiguration config,
             InteractionEffects effects,
             InteractionEffectPlayer effectPlayer) {
-        this.service = Objects.requireNonNull(service, "service must not be null");
-        this.islands = Objects.requireNonNull(islands, "islands must not be null");
         this.scheduler = Objects.requireNonNull(scheduler, "scheduler must not be null");
         this.rules = config.rules();
         this.effects = Objects.requireNonNull(effects, "effects must not be null");
@@ -86,6 +81,7 @@ public final class AcidHazard {
         this.ventFumes =
                 effectsWritten("sea vents effects", config.sea().vents().effects());
         this.sea = config.sea();
+        this.waters = new AcidWaters(service, islands, config.between());
         this.armour = config.armour();
         this.cleanWater = config.cleanWater();
         this.cleanEffects = effectsWritten("clean-water effects", cleanWater.effects());
@@ -129,11 +125,11 @@ public final class AcidHazard {
         if (feet == null) {
             return 0;
         }
-        Optional<Island> island = islands.findIslandAt(feet);
-        if (island.isEmpty() || !service.isAcid(island.get().id())) {
+        OptionalInt surface = waters.surface(feet);
+        if (surface.isEmpty()) {
             return 0;
         }
-        breatheVents(player, feet, island.get());
+        breatheVents(player, feet, surface.getAsInt());
         AcidExposure bare = exposureOf(player, feet);
         AcidExposure exposure = armoured(player, bare);
         if (exposure != bare && rules.damage(exposure) < rules.damage(bare)) {
@@ -159,16 +155,15 @@ public final class AcidHazard {
      * Gives the fumes of a sulfur vent to a player near one: in the sea or just above it, within the
      * vent's reach sideways. The blocks read are the player's neighbours, which their region owns.
      */
-    private void breatheVents(Player player, Location feet, Island island) {
+    private void breatheVents(Player player, Location feet, int surface) {
         int reach = sea.vents().reach();
         if (ventFumes.isEmpty() || sea.vents().chance() <= 0) {
             return;
         }
-        OptionalInt surface = service.seaLevel(island.id());
-        if (surface.isEmpty() || feet.getBlockY() > surface.getAsInt() + 1) {
+        if (feet.getBlockY() > surface + 1) {
             return;
         }
-        int floor = surface.getAsInt() - sea.depth();
+        int floor = surface - sea.depth();
         World world = feet.getWorld();
         for (int dx = -reach; dx <= reach; dx++) {
             for (int dz = -reach; dz <= reach; dz++) {
@@ -190,8 +185,7 @@ public final class AcidHazard {
         if (at == null) {
             return false;
         }
-        Optional<Island> island = islands.findIslandAt(at);
-        return island.isPresent() && service.isAcid(island.get().id());
+        return waters.acid(at);
     }
 
     /**

@@ -23,6 +23,7 @@ import org.spongepowered.configurate.ConfigurationNode;
  * @param buried the structures buried in the sea's floor
  * @param tide how the sea rises and falls
  * @param offerings what a vent gives back for the items it takes
+ * @param between the sea that runs on between islands, in a world of their own
  */
 public record AcidIslandConfiguration(
         boolean enabled,
@@ -37,7 +38,8 @@ public record AcidIslandConfiguration(
         Look look,
         Buried buried,
         Tide tide,
-        Offerings offerings) {
+        Offerings offerings,
+        Between between) {
 
     private static final Logger LOGGER = Logger.getLogger(AcidIslandConfiguration.class.getName());
 
@@ -378,6 +380,32 @@ public record AcidIslandConfiguration(
         }
     }
 
+    /**
+     * A sea that runs on between islands: every chunk of {@code world} the server makes is laid with the acid sea at
+     * {@code surface}, so the islands of that world stand in one sea and a boat goes from island to island, and all of
+     * the world's water is acid, not just the water on an island.
+     *
+     * @param enabled whether the sea runs on between islands
+     * @param world the world it runs through, one that holds AcidIsland islands only
+     * @param surface the height of its surface, the same as each island's sea there
+     */
+    public record Between(boolean enabled, String world, int surface) {
+
+        public static final Between SHIPPED = new Between(false, "", 98);
+
+        public Between {
+            world = world.strip();
+            if (enabled && world.isEmpty()) {
+                throw new IllegalArgumentException("a sea between islands names its world");
+            }
+        }
+
+        /** Whether the sea runs on between islands in the world of that name. */
+        public boolean runsThrough(String name) {
+            return enabled && world.equals(name);
+        }
+    }
+
     /** How acid water is made clean. Rain a cauldron catches is clean already. */
     public record Purification(boolean furnace, boolean brewingWithCoal) {}
 
@@ -392,6 +420,7 @@ public record AcidIslandConfiguration(
         Objects.requireNonNull(buried, "buried must not be null");
         Objects.requireNonNull(tide, "tide must not be null");
         Objects.requireNonNull(offerings, "offerings must not be null");
+        Objects.requireNonNull(between, "between must not be null");
         waterProtection = List.copyOf(waterProtection);
         waterEffects = List.copyOf(waterEffects);
     }
@@ -410,7 +439,8 @@ public record AcidIslandConfiguration(
                 Look.SHIPPED,
                 Buried.SHIPPED,
                 Tide.SHIPPED,
-                Offerings.SHIPPED);
+                Offerings.SHIPPED,
+                Between.SHIPPED);
     }
 
     public static AcidIslandConfiguration load(ConfigurationNode root) {
@@ -469,7 +499,21 @@ public record AcidIslandConfiguration(
                 look(seaNode.node("look")),
                 buried(seaNode.node("buried")),
                 tide(seaNode.node("tide")),
-                offerings(seaNode.node("vents", "offerings")));
+                offerings(seaNode.node("vents", "offerings")),
+                between(seaNode.node("between")));
+    }
+
+    /** The sea between islands, as {@code sea between} writes it; one that cannot be is off, said. */
+    private static Between between(ConfigurationNode node) {
+        try {
+            return new Between(
+                    node.node("enabled").getBoolean(Between.SHIPPED.enabled()),
+                    node.node("world").getString(Between.SHIPPED.world()),
+                    node.node("surface").getInt(Between.SHIPPED.surface()));
+        } catch (IllegalArgumentException e) {
+            LOGGER.warning(() -> "modules/acidisland.conf sea between: " + e.getMessage() + ". It is off.");
+            return Between.SHIPPED;
+        }
     }
 
     /**

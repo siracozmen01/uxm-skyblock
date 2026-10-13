@@ -452,7 +452,8 @@ class TheSeaDissolvesItemsAndBurnsCreaturesTest extends MockBukkitHarness {
                 AcidIslandConfiguration.Look.SHIPPED,
                 AcidIslandConfiguration.Buried.NONE,
                 AcidIslandConfiguration.Tide.STILL,
-                offerings);
+                offerings,
+                AcidIslandConfiguration.Between.SHIPPED);
         return new AcidSeaLife(
                 service,
                 islands,
