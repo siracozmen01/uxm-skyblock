@@ -56,6 +56,7 @@ public final class OneBlockListener implements Listener {
     private volatile @org.jspecify.annotations.Nullable OneBlockGates gates;
     private volatile @org.jspecify.annotations.Nullable OneBlockBranches branches;
     private volatile @org.jspecify.annotations.Nullable OneBlockProgressBars bars;
+    private volatile @org.jspecify.annotations.Nullable OneBlockBlockLines blockLines;
 
     public OneBlockListener(
             OneBlockService service,
@@ -84,6 +85,11 @@ public final class OneBlockListener implements Listener {
     /** Tells it how a breaker sees their island's progress. */
     public void useBars(OneBlockProgressBars bars) {
         this.bars = Objects.requireNonNull(bars, "bars must not be null");
+    }
+
+    /** Tells it how the line over an island's block is drawn. */
+    public void useBlockLines(OneBlockBlockLines blockLines) {
+        this.blockLines = Objects.requireNonNull(blockLines, "blockLines must not be null");
     }
 
     /** Lets go of a leaving player's bar. */
@@ -252,10 +258,18 @@ public final class OneBlockListener implements Listener {
                         : happens.at(phase, next.position().intoPhase())
                                 .filter(m -> service.claim(islandId, phase, momentKey, next.nextCycle()));
         scheduler.onRegion(world.getName(), x >> 4, z >> 4, () -> {
+            OneBlockBlockLines over = blockLines;
             if (waits != null && !pause.isZero()) {
+                // The countdown is the line while the phase waits.
+                if (over != null) {
+                    over.take(islandId);
+                }
                 waits.begin(islandId, phase, pause, world, x, y, z);
                 putBackOnTop(world, x, y, z);
                 return;
+            }
+            if (over != null) {
+                over.show(islandId, world, x, y, z, next.position(), player);
             }
             String rarity = comeBack(
                     drawn,

@@ -43,11 +43,16 @@ public final class OneBlockPauses {
     /** How near the block a Bedrock player reads the countdown on the action bar, who is shown no line. */
     static final double HEARD_WITHIN = 16;
 
-    /** A countdown line over a block. */
+    /** A line over a block: a countdown, or a OneBlock island's progress. */
     public interface Shown {
         void say(Component line);
 
         void remove();
+
+        /** Whether the line is still in the world, which a chunk let go of or a restart takes it out of. */
+        default boolean showing() {
+            return true;
+        }
     }
 
     /** How a countdown line is put over a block. */
@@ -244,6 +249,11 @@ public final class OneBlockPauses {
             @Override
             public void remove() {
                 display.remove();
+            }
+
+            @Override
+            public boolean showing() {
+                return display.isValid();
             }
         };
     }
