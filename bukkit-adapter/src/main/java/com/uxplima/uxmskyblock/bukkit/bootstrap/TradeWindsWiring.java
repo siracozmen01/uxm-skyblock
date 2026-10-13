@@ -73,6 +73,7 @@ public final class TradeWindsWiring {
         // A price read is fresh for a few seconds, so a window of many goods asks storage once per good.
         market.usePrices(new com.uxplima.uxmskyblock.core.application.tradewinds.MarketPrices(
                 persistence.marketPricesPort(), config.drift(), clock, java.time.Duration.ofSeconds(5)));
+        market.useContraband(config.contraband().items(), config.contraband().takers());
         this.holds = new CargoHolds(
                 service,
                 persistence.vesselsPort(),
@@ -127,7 +128,10 @@ public final class TradeWindsWiring {
                                 .islandStoragePort()
                                 .findIslandById(vessel)
                                 .map(com.uxplima.uxmskyblock.core.domain.island.Island::ownerPlayerUuid),
-                        config.voyageEvents().chances()),
+                        config.voyageEvents().chances(),
+                        goods,
+                        persistence.marketOrdersPort(),
+                        config.contraband().atSea()),
                 config.voyageEvents(),
                 configuration::lootTables,
                 com.uxplima.uxmskyblock.bukkit.loot.LootFiller.SERVER,

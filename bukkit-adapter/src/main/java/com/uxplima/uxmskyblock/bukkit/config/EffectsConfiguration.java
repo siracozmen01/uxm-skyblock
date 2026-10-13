@@ -151,6 +151,12 @@ public final class EffectsConfiguration {
         defaults.put(
                 "vessel-find-lost", parseAll("vessel-find-lost", List.of("[sound] entity.generic.splash 1.0 1.0")));
         defaults.put(
+                "vessel-customs-seized",
+                parseAll("vessel-customs-seized", List.of("[sound] block.iron_door.close 1.0 0.7")));
+        defaults.put(
+                "vessel-customs-cleared",
+                parseAll("vessel-customs-cleared", List.of("[sound] block.note_block.chime 0.8 1.2")));
+        defaults.put(
                 "vessel-contract-failed",
                 parseAll("vessel-contract-failed", List.of("[sound] block.note_block.bass 1.0 0.6")));
         defaults.put(

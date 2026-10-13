@@ -156,6 +156,24 @@ class AnOrderMovesMoneyOnceTest {
     }
 
     @Test
+    @DisplayName("Contraband is bought only at the ports that take it, and every other good anywhere")
+    void contraband() {
+        docked();
+        hold.items.put("WHEAT", 10);
+        PortMarket market = market();
+        market.useContraband(Set.of("WHEAT"), Set.of("cove"));
+
+        assertThat(market.sell(vessel, ada, BAY, WHEAT).errorOrThrow()).isEqualTo("tradewinds.market.contraband");
+        assertThat(hold.items).containsEntry("WHEAT", 10);
+        assertThat(orders.orders).isEmpty();
+        assertThat(market.takes(COVE, "WHEAT")).isTrue();
+        assertThat(market.takes(BAY, "SILK")).isTrue();
+        assertThat(market().takes(BAY, "WHEAT"))
+                .describedAs("no contraband written")
+                .isTrue();
+    }
+
+    @Test
     @DisplayName("A bank that refuses a sale leaves it owed, and recovery pays it once under a new key")
     void aRefusedSaleIsPaidLater() {
         docked();

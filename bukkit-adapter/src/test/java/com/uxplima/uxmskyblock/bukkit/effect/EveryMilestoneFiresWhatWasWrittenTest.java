@@ -125,6 +125,8 @@ class EveryMilestoneFiresWhatWasWrittenTest {
                         "vessel-pirates-boarded",
                         "vessel-find",
                         "vessel-find-lost",
+                        "vessel-customs-seized",
+                        "vessel-customs-cleared",
                         "upside-down-mirrored"));
     }
 

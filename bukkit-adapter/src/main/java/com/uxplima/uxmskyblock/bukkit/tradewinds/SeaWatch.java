@@ -143,6 +143,7 @@ public final class SeaWatch {
                 board(vessel);
             }
             case Struck.Find find -> found(find, says);
+            case Struck.Inspected inspected -> inspected(inspected, says);
         }
     }
 
@@ -166,6 +167,32 @@ public final class SeaWatch {
                 // Still waiting: it comes again on the next watch.
             }
         }
+    }
+
+    /** Customs boarded: the crew is told what they seized and the standing it cost, or that the hold was clean. */
+    private void inspected(Struck.Inspected inspected, Map<String, String> says) {
+        IslandId vessel = inspected.event().vessel();
+        if (inspected.seized().isEmpty()) {
+            fire(vessel, "vessel-customs-cleared", "tradewinds.voyage.customs_cleared", says, SeaWatch::nothingMore);
+            return;
+        }
+        says.put(
+                "items",
+                Integer.toString(inspected.seized().values().stream()
+                        .mapToInt(Integer::intValue)
+                        .sum()));
+        says.put("standing", MoneyText.of(inspected.standingLost()));
+        fire(vessel, "vessel-customs-seized", "tradewinds.voyage.customs_seized", says, player -> {
+            // Each item in the reader's own language: a count and the game's name for it.
+            String goods = inspected.seized().entrySet().stream()
+                    .map(seized -> seized.getValue() + " "
+                            + com.uxplima.uxmskyblock.bukkit.i18n.ItemNames.word(seized.getKey()))
+                    .collect(java.util.stream.Collectors.joining(", "));
+            return new TagResolver[] {
+                Placeholder.parsed("goods", goods),
+                Placeholder.unparsed("standing", MoneyText.of(inspected.standingLost()))
+            };
+        });
     }
 
     /** What a find holds: the items of a roll of its loot table, none when the table is not there. */

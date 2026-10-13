@@ -30,6 +30,7 @@ import org.spongepowered.configurate.ConfigurationNode;
  * @param drift how a port's trade moves its prices, for every vessel alike
  * @param contracts the deliveries the ports offer
  * @param voyageEvents what may happen to a vessel at sea
+ * @param contraband the goods only some ports take, and the customs of the rest
  */
 public record TradeWindsConfiguration(
         boolean enabled,
@@ -40,7 +41,8 @@ public record TradeWindsConfiguration(
         Standing standing,
         PriceDrift drift,
         TradeWindsContracts contracts,
-        TradeWindsVoyageEvents voyageEvents) {
+        TradeWindsVoyageEvents voyageEvents,
+        TradeWindsContraband contraband) {
 
     /**
      * The drift a file that writes none has: a tenth of a percent for each item, from half to one and a half the
@@ -66,7 +68,8 @@ public record TradeWindsConfiguration(
                     List.of(
                             new Port.Good("WHEAT", 16, 400, 600),
                             new Port.Good("SUGAR_CANE", 32, 100, 180),
-                            new Port.Good("GLASS", 16, 500, 800))),
+                            new Port.Good("GLASS", 16, 500, 800),
+                            new Port.Good("GUNPOWDER", 16, 0, 300))),
             new Port(
                     "ironhaven",
                     120,
@@ -74,7 +77,19 @@ public record TradeWindsConfiguration(
                             new Port.Good("SUGAR_CANE", 32, 260, 350),
                             new Port.Good("PUMPKIN", 8, 900, 1_200),
                             new Port.Good("IRON_INGOT", 8, 1_800, 2_600),
-                            new Port.Good("EMERALD", 4, 14_000, 18_000))));
+                            new Port.Good("EMERALD", 4, 14_000, 18_000),
+                            new Port.Good("GUNPOWDER", 16, 700, 1_000))));
+
+    /**
+     * The contraband a file that writes no ports has: gunpowder, sold at Saltmarsh and bought at Ironhaven, the two
+     * ports that take it, while Emerald Bay sends customs aboard three arrivals in ten and a vessel caught there
+     * loses 500.00 of its standing.
+     */
+    public static final TradeWindsContraband SHIPPED_CONTRABAND = new TradeWindsContraband(
+            java.util.Set.of("GUNPOWDER"),
+            java.util.Set.of("saltmarsh", "ironhaven"),
+            Map.of("emerald-bay", 0.3),
+            50_000);
 
     /**
      * The deliveries a file that writes no ports offers: wheat from Emerald Bay to Saltmarsh, and pumpkins from
@@ -117,6 +132,7 @@ public record TradeWindsConfiguration(
         Objects.requireNonNull(drift, "drift must not be null");
         Objects.requireNonNull(contracts, "contracts must not be null");
         Objects.requireNonNull(voyageEvents, "voyageEvents must not be null");
+        Objects.requireNonNull(contraband, "contraband must not be null");
         Objects.requireNonNull(ranks, "ranks must not be null");
         ports = List.copyOf(ports);
         icons = Map.copyOf(icons);
@@ -170,7 +186,8 @@ public record TradeWindsConfiguration(
                 SHIPPED_STANDING,
                 SHIPPED_DRIFT,
                 SHIPPED_CONTRACTS,
-                TradeWindsVoyageEvents.SHIPPED);
+                TradeWindsVoyageEvents.SHIPPED,
+                SHIPPED_CONTRABAND);
     }
 
     public static TradeWindsConfiguration load(ConfigurationNode root) {
@@ -186,7 +203,11 @@ public record TradeWindsConfiguration(
             sea = Sea.SHIPPED;
         }
         Map<String, String> icons = new LinkedHashMap<>();
-        List<Port> ports = ports(root.node("ports"), icons);
+        List<Port> written = ports(root.node("ports"), icons);
+        TradeWindsContraband contraband = root.node("ports").virtual()
+                ? SHIPPED_CONTRABAND
+                : TradeWindsContraband.read(root, TradeWindsContraband.items(root.node("contraband")), written);
+        List<Port> ports = TradeWindsContraband.lawful(written, contraband);
         return new TradeWindsConfiguration(
                 root.node("enabled").getBoolean(true),
                 sea,
@@ -198,7 +219,8 @@ public record TradeWindsConfiguration(
                 root.node("ports").virtual()
                         ? SHIPPED_CONTRACTS
                         : TradeWindsContracts.read(root.node("ports"), root.node("contracts-at-once"), ports),
-                TradeWindsVoyageEvents.read(root.node("voyage-events")));
+                TradeWindsVoyageEvents.read(root.node("voyage-events")),
+                contraband);
     }
 
     /**

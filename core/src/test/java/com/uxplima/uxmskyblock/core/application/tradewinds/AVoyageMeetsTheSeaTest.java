@@ -52,6 +52,17 @@ class AVoyageMeetsTheSeaTest {
     private boolean leaseHeld = true;
     private Instant now = NOW;
     private java.util.random.RandomGenerator random = new SplittableRandom(7);
+    private SeaHazards.Customs customs = SeaHazards.Customs.NONE;
+    private final Map<String, Long> standing = new HashMap<>();
+    private final MarketOrdersPort orders = MarketOrdersPort.class.cast(java.lang.reflect.Proxy.newProxyInstance(
+            getClass().getClassLoader(),
+            new Class<?>[] {MarketOrdersPort.class},
+            (proxy, method, args) -> switch (method.getName()) {
+                case "tradeVolume" -> 0L;
+                case "standing" -> standing.getOrDefault((String) args[1], 0L);
+                case "setStanding" -> standing.put((String) args[1], (Long) args[2]);
+                default -> null;
+            }));
 
     @Test
     @DisplayName("Each event is rolled once by its chance as the vessel sets out, at a moment of the voyage")
@@ -204,6 +215,69 @@ class AVoyageMeetsTheSeaTest {
     }
 
     @Test
+    @DisplayName("Customs wait at a lawful port for the vessel to arrive, by the port's own chance")
+    void customsPlanned() {
+        customs = new SeaHazards.Customs(Set.of("GUNPOWDER"), Map.of("cove", 1.0), 200);
+
+        assertThat(hazards(Chances.NONE).plan(vessel, "cove", NOW, NOW.plusSeconds(60)))
+                .containsExactly(new Planned(vessel, Hazard.CUSTOMS, "cove", NOW.plusSeconds(60)));
+        assertThat(hazards(Chances.NONE).plan(vessel, "bay", NOW, NOW.plusSeconds(60)))
+                .describedAs("a port with no customs")
+                .isEmpty();
+        assertThat(hazards(ALWAYS).plan(vessel, "bay", NOW, NOW.plusSeconds(60)))
+                .extracting(Planned::hazard)
+                .doesNotContain(Hazard.CUSTOMS);
+    }
+
+    @Test
+    @DisplayName("Customs seize the contraband once the vessel arrived, and its standing in the port falls")
+    void customsSeize() {
+        customs = new SeaHazards.Customs(Set.of("GUNPOWDER", "TNT"), Map.of("cove", 1.0), 200);
+        standing.put("cove", 300L);
+        hold.items.put("GUNPOWDER", 10);
+        hold.items.put("WHEAT", 5);
+        Planned waiting = new Planned(vessel, Hazard.CUSTOMS, "cove", NOW.plusSeconds(60));
+        events.rows.put(Hazard.CUSTOMS, waiting);
+        sailFor("cove", NOW.plusSeconds(90));
+        now = NOW.plusSeconds(70);
+
+        assertThat(hazards(ALWAYS).strike())
+                .describedAs("still at sea after a storm")
+                .isEmpty();
+        assertThat(events.rows).containsValue(waiting);
+
+        now = NOW.plusSeconds(90);
+        assertThat(hazards(ALWAYS).strike())
+                .singleElement()
+                .isEqualTo(new Struck.Inspected(waiting, Map.of("GUNPOWDER", 10), 200));
+        assertThat(hold.items).doesNotContainKey("GUNPOWDER").containsEntry("WHEAT", 5);
+        assertThat(standing).containsEntry("cove", 100L);
+        assertThat(hazards(ALWAYS).strike()).describedAs("once").isEmpty();
+
+        events.rows.put(Hazard.CUSTOMS, waiting);
+        hold.items.put("TNT", 2);
+        assertThat(hazards(ALWAYS).strike())
+                .describedAs("standing does not fall below nothing")
+                .singleElement()
+                .isEqualTo(new Struck.Inspected(waiting, Map.of("TNT", 2), 100));
+        assertThat(standing).containsEntry("cove", 0L);
+
+        events.rows.put(Hazard.CUSTOMS, waiting);
+        assertThat(hazards(ALWAYS).strike())
+                .describedAs("a clean hold")
+                .singleElement()
+                .isEqualTo(new Struck.Inspected(waiting, Map.of(), 0));
+        assertThat(events.rows).isEmpty();
+
+        events.rows.put(Hazard.CUSTOMS, waiting);
+        sailFor("bay", NOW.plusSeconds(10));
+        hold.items.put("TNT", 2);
+        assertThat(hazards(ALWAYS).strike()).describedAs("bound elsewhere now").isEmpty();
+        assertThat(events.rows).isEmpty();
+        assertThat(hold.items).containsEntry("TNT", 2);
+    }
+
+    @Test
     @DisplayName("A chance is from 0 to 1, a storm costs at most a day, and a toll is not below 0")
     void chances() {
         assertThatThrownBy(() -> new Chances(1.1, Duration.ZERO, 0, 0, 0)).isInstanceOf(IllegalArgumentException.class);
@@ -216,6 +290,12 @@ class AVoyageMeetsTheSeaTest {
                 .isInstanceOf(IllegalArgumentException.class);
         assertThatThrownBy(() -> new Chances(0, Duration.ZERO, 0, -1, 0)).isInstanceOf(IllegalArgumentException.class);
         assertThat(new Chances(1, Duration.ofDays(1), 1, 0, 1).storm()).isEqualTo(1);
+        assertThatThrownBy(() -> new SeaHazards.Customs(Set.of(), Map.of("cove", 1.5), 0))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> new SeaHazards.Customs(Set.of(), Map.of("cove", -0.5), 0))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> new SeaHazards.Customs(Set.of(), Map.of(), -1))
+                .isInstanceOf(IllegalArgumentException.class);
     }
 
     private void sailFor(String port, Instant arrives) {
@@ -260,10 +340,7 @@ class AVoyageMeetsTheSeaTest {
         PortMarket market = new PortMarket(
                 hold,
                 ports,
-                MarketOrdersPort.class.cast(java.lang.reflect.Proxy.newProxyInstance(
-                        getClass().getClassLoader(),
-                        new Class<?>[] {MarketOrdersPort.class},
-                        (proxy, method, args) -> method.getName().equals("tradeVolume") ? 0L : null)),
+                orders,
                 lease,
                 bank,
                 hold,
@@ -272,7 +349,20 @@ class AVoyageMeetsTheSeaTest {
                 NODE,
                 clock);
         return new SeaHazards(
-                events, market, ports, hold, lease, bank, NODE, clock, random, island -> Optional.of(captain), chances);
+                events,
+                market,
+                ports,
+                hold,
+                lease,
+                bank,
+                NODE,
+                clock,
+                random,
+                island -> Optional.of(captain),
+                chances,
+                hold,
+                orders,
+                customs);
     }
 
     /** The events of the one vessel, by kind, as storage keeps them. */
@@ -347,7 +437,16 @@ class AVoyageMeetsTheSeaTest {
 
         @Override
         public Optional<byte[]> take(byte[] stored, String item, int count) {
-            return Optional.empty();
+            Map<String, Integer> now = read(stored);
+            int have = now.getOrDefault(item, 0);
+            if (have < count) {
+                return Optional.empty();
+            }
+            now.remove(item);
+            if (have > count) {
+                now.put(item, have - count);
+            }
+            return Optional.of(write(now));
         }
 
         @Override

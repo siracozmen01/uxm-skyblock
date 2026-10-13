@@ -19,7 +19,9 @@ public interface VoyageEventsPort {
         /** Pirates: the crew pays a toll, or they board. */
         PIRATES,
         /** A find: a loot table into the hold. */
-        FIND
+        FIND,
+        /** Customs: a lawful port looks through the hold as the vessel arrives. */
+        CUSTOMS
     }
 
     /**

@@ -6,6 +6,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.OptionalLong;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.locks.ReentrantLock;
@@ -106,6 +107,8 @@ public final class PortMarket {
     private final Clock clock;
     private final Map<IslandId, ReentrantLock> locks = new ConcurrentHashMap<>();
     private volatile MarketPrices prices = MarketPrices.none();
+    private volatile Set<String> contraband = Set.of();
+    private volatile Set<String> smugglers = Set.of();
 
     @SuppressWarnings("TooManyParameters")
     public PortMarket(
@@ -134,6 +137,20 @@ public final class PortMarket {
     /** How each port's trade moves its prices; without it, prices stay as written. */
     public void usePrices(MarketPrices prices) {
         this.prices = Objects.requireNonNull(prices, "prices");
+    }
+
+    /**
+     * The goods the operator marks as contraband, and the ports that take them: every other port refuses to buy
+     * one. Without it, every port buys what its market lists.
+     */
+    public void useContraband(Set<String> items, Set<String> takers) {
+        this.contraband = Set.copyOf(items);
+        this.smugglers = Set.copyOf(takers);
+    }
+
+    /** Whether {@code port} buys {@code item} if its market lists it: anything, unless it is contraband. */
+    public boolean takes(Port port, String item) {
+        return !contraband.contains(item) || smugglers.contains(port.id());
     }
 
     /** Where {@code vessel} is now. */
@@ -220,6 +237,9 @@ public final class PortMarket {
     public Result<Deal, String> sell(IslandId vessel, PlayerUuid actor, Port port, Port.Good good) {
         if (!good.bought()) {
             return Result.err("tradewinds.market.not_bought");
+        }
+        if (!takes(port, good.item())) {
+            return Result.err("tradewinds.market.contraband");
         }
         ReentrantLock held = lockOf(vessel);
         held.lock();

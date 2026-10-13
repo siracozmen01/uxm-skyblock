@@ -5,9 +5,11 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.OptionalLong;
+import java.util.Set;
 import java.util.UUID;
 import java.util.function.BiFunction;
 import java.util.function.Function;
@@ -23,6 +25,9 @@ import com.uxplima.uxmskyblock.core.domain.session.ServerNodeId;
  * What may happen to a vessel at sea. As it sets sail each kind of event is rolled once, by the operator's chance,
  * and the ones that come are given a moment of the voyage. When the moment comes, a storm makes the voyage longer,
  * pirates take a toll from the island bank or board when it cannot pay, and a find fills the hold from a loot table.
+ *
+ * <p>A lawful port may also send customs aboard as a vessel arrives, as often as its chance says: what the hold
+ * carries of the goods the operator marks as contraband is seized, and the vessel's standing in that port falls.
  *
  * <p>Each event happens once, on the node that holds the vessel's lease; one of a voyage that ended another way, as
  * when an operator moved the vessel, comes to nothing. Everything here reads and writes durable storage: call it off
@@ -70,7 +75,38 @@ public final class SeaHazards {
                 case STORM -> storm;
                 case PIRATES -> pirates;
                 case FIND -> find;
+                case CUSTOMS -> 0;
             };
+        }
+    }
+
+    /**
+     * The goods only some ports take, and the customs of the ports that do not.
+     *
+     * @param contraband the items the operator marks as contraband
+     * @param chances how likely customs are to board a vessel arriving at each lawful port, by its key
+     * @param standingLost how much standing a vessel caught with contraband loses in that port
+     */
+    public record Customs(Set<String> contraband, Map<String, Double> chances, long standingLost) {
+
+        /** No contraband and no customs. */
+        public static final Customs NONE = new Customs(Set.of(), Map.of(), 0);
+
+        public Customs {
+            contraband = Set.copyOf(contraband);
+            chances = Map.copyOf(chances);
+            for (double chance : chances.values()) {
+                if (!(chance >= 0 && chance <= 1)) {
+                    throw new IllegalArgumentException("a chance is from 0 to 1: " + chance);
+                }
+            }
+            if (standingLost < 0) {
+                throw new IllegalArgumentException("standing lost is not below 0: " + standingLost);
+            }
+        }
+
+        double chanceAt(String portId) {
+            return chances.getOrDefault(portId, 0.0);
         }
     }
 
@@ -91,6 +127,16 @@ public final class SeaHazards {
 
         /** A find, waiting to be rolled and stowed by {@link #stow}. */
         record Find(Planned event) implements Struck {}
+
+        /**
+         * Customs looked through the hold: {@code seized} is what they took of each contraband item, empty when the
+         * hold carried none, and the vessel's standing in the port fell by {@code standingLost}.
+         */
+        record Inspected(Planned event, Map<String, Integer> seized, long standingLost) implements Struck {
+            public Inspected {
+                seized = Map.copyOf(seized);
+            }
+        }
     }
 
     /** What became of a find. */
@@ -114,6 +160,9 @@ public final class SeaHazards {
     private final RandomGenerator random;
     private final Function<IslandId, Optional<PlayerUuid>> captainOf;
     private final Chances chances;
+    private final PortMarket.Goods goods;
+    private final MarketOrdersPort orders;
+    private final Customs customs;
 
     /** @param captainOf who the bank names as paying a vessel's toll */
     @SuppressWarnings("TooManyParameters")
@@ -128,7 +177,10 @@ public final class SeaHazards {
             Clock clock,
             RandomGenerator random,
             Function<IslandId, Optional<PlayerUuid>> captainOf,
-            Chances chances) {
+            Chances chances,
+            PortMarket.Goods goods,
+            MarketOrdersPort orders,
+            Customs customs) {
         this.port = Objects.requireNonNull(port, "port");
         this.market = Objects.requireNonNull(market, "market");
         this.voyages = Objects.requireNonNull(voyages, "voyages");
@@ -140,6 +192,9 @@ public final class SeaHazards {
         this.random = Objects.requireNonNull(random, "random");
         this.captainOf = Objects.requireNonNull(captainOf, "captainOf");
         this.chances = Objects.requireNonNull(chances, "chances");
+        this.goods = Objects.requireNonNull(goods, "goods");
+        this.orders = Objects.requireNonNull(orders, "orders");
+        this.customs = Objects.requireNonNull(customs, "customs");
     }
 
     /**
@@ -156,6 +211,10 @@ public final class SeaHazards {
                 }
             }
         }
+        // Customs board as the vessel arrives, however long the voyage took.
+        if (random.nextDouble() < customs.chanceAt(portId)) {
+            planned.add(new Planned(vessel, Hazard.CUSTOMS, portId, arrives));
+        }
         port.plan(vessel, planned);
         return List.copyOf(planned);
     }
@@ -167,6 +226,10 @@ public final class SeaHazards {
             OptionalLong epoch = lease.hold(event.vessel());
             if (epoch.isEmpty()) {
                 // Another node holds the vessel: the event is that node's.
+                continue;
+            }
+            if (event.hazard() == Hazard.CUSTOMS) {
+                inspect(event, epoch.getAsLong()).ifPresent(struck::add);
                 continue;
             }
             Optional<VoyagesPort.Voyage> sailing = heldBy(event);
@@ -186,6 +249,49 @@ public final class SeaHazards {
                     event.hazard() == Hazard.STORM ? storm(event, sailing.get(), epoch.getAsLong()) : pirates(event));
         }
         return List.copyOf(struck);
+    }
+
+    /**
+     * Customs look through the hold of a vessel that arrived where they wait, and take its contraband in the same
+     * transaction that takes them away. Nothing yet while the vessel is still at sea, as after a storm; nothing ever
+     * for a voyage bound elsewhere now.
+     */
+    private Optional<Struck> inspect(Planned event, long epoch) {
+        Optional<VoyagesPort.Voyage> voyage =
+                voyages.voyage(event.vessel()).filter(one -> one.portId().equals(event.portId()));
+        if (voyage.isEmpty()) {
+            port.claim(event);
+            return Optional.empty();
+        }
+        if (voyage.get().arrivesAt().isAfter(clock.instant())) {
+            return Optional.empty();
+        }
+        Optional<VesselsPort.Cargo> cargo = vessels.cargo(event.vessel());
+        if (cargo.isEmpty()) {
+            return Optional.empty();
+        }
+        byte[] hold = cargo.get().items();
+        Map<String, Integer> seized = new java.util.TreeMap<>();
+        for (String item : customs.contraband()) {
+            int count = goods.count(hold, item);
+            Optional<byte[]> without = count == 0 ? Optional.empty() : goods.take(hold, item, count);
+            if (without.isPresent()) {
+                hold = without.get();
+                seized.put(item, count);
+            }
+        }
+        if (seized.isEmpty()) {
+            return port.claim(event) ? Optional.of(new Struck.Inspected(event, Map.of(), 0)) : Optional.empty();
+        }
+        if (!port.stow(
+                event, new MarketOrdersPort.HoldWrite(epoch, node, cargo.get().version(), hold))) {
+            // The hold moved under the customs, or another call took them: the next watch looks again.
+            return Optional.empty();
+        }
+        long standing = orders.standing(event.vessel(), event.portId());
+        long lost = Math.min(standing, customs.standingLost());
+        orders.setStanding(event.vessel(), event.portId(), standing - lost);
+        return Optional.of(new Struck.Inspected(event, seized, lost));
     }
 
     /**

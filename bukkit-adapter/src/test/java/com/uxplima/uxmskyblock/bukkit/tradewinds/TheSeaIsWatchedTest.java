@@ -174,6 +174,28 @@ class TheSeaIsWatchedTest extends MockBukkitHarness {
     }
 
     @Test
+    @DisplayName("Customs tell the crew what they seized and the standing it cost, or that the hold was clean")
+    void customs() {
+        PlayerMock ada = createPlayer("Ada");
+        IslandId vessel = IslandId.of(UUID.randomUUID());
+        Island island = crewed(vessel, ada);
+        SeaHazards hazards = mock(SeaHazards.class);
+        Planned customs = new Planned(vessel, Hazard.CUSTOMS, "emerald-bay", NOW);
+        when(hazards.strike())
+                .thenReturn(List.of(new Struck.Inspected(customs, Map.of("GUNPOWDER", 10, "TNT", 2), 50_000)))
+                .thenReturn(List.of(new Struck.Inspected(customs, Map.of(), 0)));
+        SeaWatch watch = watch(hazards, island, "enabled = true");
+
+        watch.watch();
+        assertThat(said(ada))
+                .singleElement()
+                .asString()
+                .contains("Emerald Bay", "10 Gunpowder", "2 TNT", "fell by", "500.00");
+        watch.watch();
+        assertThat(said(ada)).singleElement().asString().contains("found nothing");
+    }
+
+    @Test
     @DisplayName("A find goes into the hold whole, or not at all")
     void whole() {
         byte[] full =
