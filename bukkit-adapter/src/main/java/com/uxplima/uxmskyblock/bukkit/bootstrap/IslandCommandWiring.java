@@ -360,6 +360,8 @@ final class IslandCommandWiring {
             gameplay.tradeWindsWiring().harbour().useMenuEngine(integration.menuEngine());
             gameplay.tradeWindsWiring().holds().useMenuEngine(integration.menuEngine());
             tree.useHarbour(gameplay.tradeWindsWiring().harbour());
+            gameplay.tradeWindsWiring().contracts().useMenuEngine(integration.menuEngine());
+            tree.useContracts(gameplay.tradeWindsWiring().contracts());
         }
         if (gameplay.tradeWiring().enabled()) {
             tree.useTrades(gameplay.tradeWiring().trades());

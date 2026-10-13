@@ -457,6 +457,7 @@ public final class GameplayWiring {
         this.cacheEviction.whenForgotten(this.brixWiring.service()::forget);
         this.cacheEviction.whenForgotten(this.tradeWindsWiring.service()::forget);
         this.cacheEviction.whenForgotten(this.tradeWindsWiring.market()::forget);
+        this.cacheEviction.whenForgotten(this.tradeWindsWiring.contracts()::forget);
         // Three more that hold something for every island a player has merely walked on. Each of
         // them answers a question on the movement or interaction path, and each of them remembers
         // the answer so the path is not a query. An island id is a fresh uuid every time, so an

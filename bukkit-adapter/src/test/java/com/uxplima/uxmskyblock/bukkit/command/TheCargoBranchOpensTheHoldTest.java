@@ -103,6 +103,23 @@ class TheCargoBranchOpensTheHoldTest {
         verify(player).sendMessage(any(Component.class));
     }
 
+    @Test
+    @DisplayName("The contracts branch opens the desk, and says so when TradeWinds is off")
+    void theContractsBranch() throws Exception {
+        com.uxplima.uxmskyblock.bukkit.tradewinds.ContractDesk desk =
+                mock(com.uxplima.uxmskyblock.bukkit.tradewinds.ContractDesk.class);
+        tree.useContracts(desk);
+
+        dispatcher().execute("island contracts", source());
+
+        verify(desk).open(player);
+
+        tree.useContracts(null);
+        dispatcher().execute("island contracts", source());
+        verify(player).sendMessage(any(Component.class));
+        verify(desk).open(player);
+    }
+
     private CommandDispatcher<CommandSourceStack> dispatcher() {
         CommandDispatcher<CommandSourceStack> dispatcher = new CommandDispatcher<>();
         dispatcher.register(tree.buildRoot());

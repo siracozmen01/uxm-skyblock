@@ -117,6 +117,9 @@ class EveryMilestoneFiresWhatWasWrittenTest {
                         "oneblock-moment",
                         "oneblock-lucky-break",
                         "vessel-sailed",
+                        "vessel-contract-taken",
+                        "vessel-contract-delivered",
+                        "vessel-contract-failed",
                         "upside-down-mirrored"));
     }
 

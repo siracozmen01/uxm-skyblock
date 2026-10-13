@@ -10,6 +10,7 @@ import java.util.logging.Logger;
 
 import org.bukkit.Material;
 
+import com.uxplima.uxmskyblock.core.application.tradewinds.Contract;
 import com.uxplima.uxmskyblock.core.application.tradewinds.Port;
 import com.uxplima.uxmskyblock.core.application.tradewinds.PriceDrift;
 import com.uxplima.uxmskyblock.core.application.tradewinds.Ranks;
@@ -27,6 +28,7 @@ import org.spongepowered.configurate.ConfigurationNode;
  * @param icons the item each port is shown as, by its key
  * @param standing how a vessel's standing in a port moves its prices there
  * @param drift how a port's trade moves its prices, for every vessel alike
+ * @param contracts the deliveries the ports offer
  */
 public record TradeWindsConfiguration(
         boolean enabled,
@@ -35,7 +37,8 @@ public record TradeWindsConfiguration(
         List<Port> ports,
         Map<String, String> icons,
         Standing standing,
-        PriceDrift drift) {
+        PriceDrift drift,
+        TradeWindsContracts contracts) {
 
     /**
      * The drift a file that writes none has: a tenth of a percent for each item, from half to one and a half the
@@ -71,6 +74,28 @@ public record TradeWindsConfiguration(
                             new Port.Good("IRON_INGOT", 8, 1_800, 2_600),
                             new Port.Good("EMERALD", 4, 14_000, 18_000))));
 
+    /**
+     * The deliveries a file that writes no ports offers: wheat from Emerald Bay to Saltmarsh, and pumpkins from
+     * Ironhaven to Emerald Bay, each paying whoever delivers it.
+     */
+    public static final TradeWindsContracts SHIPPED_CONTRACTS = new TradeWindsContracts(
+            List.of(
+                    new Contract(
+                            "grain-run", "emerald-bay", "WHEAT", 64, "saltmarsh", java.time.Duration.ofMinutes(30)),
+                    new Contract(
+                            "harvest-home", "ironhaven", "PUMPKIN", 32, "emerald-bay", java.time.Duration.ofHours(1))),
+            Map.of(
+                    "grain-run", paying("150"),
+                    "harvest-home", paying("300")),
+            Map.of(
+                    "grain-run", "@tradewinds.contracts.previews.grain-run",
+                    "harvest-home", "@tradewinds.contracts.previews.harvest-home"),
+            TradeWindsContracts.SHIPPED_AT_ONCE);
+
+    private static TradeWindsContracts.Reward paying(String amount) {
+        return new TradeWindsContracts.Reward(List.of("[give-money] " + amount), List.of());
+    }
+
     /** The items the shipped ports are shown as. */
     public static final Map<String, String> SHIPPED_ICONS =
             Map.of("emerald-bay", "EMERALD", "saltmarsh", "PRISMARINE_SHARD", "ironhaven", "IRON_INGOT");
@@ -88,6 +113,7 @@ public record TradeWindsConfiguration(
         Objects.requireNonNull(sea, "sea must not be null");
         Objects.requireNonNull(standing, "standing must not be null");
         Objects.requireNonNull(drift, "drift must not be null");
+        Objects.requireNonNull(contracts, "contracts must not be null");
         Objects.requireNonNull(ranks, "ranks must not be null");
         ports = List.copyOf(ports);
         icons = Map.copyOf(icons);
@@ -133,7 +159,14 @@ public record TradeWindsConfiguration(
 
     public static TradeWindsConfiguration defaultConfiguration() {
         return new TradeWindsConfiguration(
-                true, Sea.SHIPPED, SHIPPED_RANKS, SHIPPED_PORTS, SHIPPED_ICONS, SHIPPED_STANDING, SHIPPED_DRIFT);
+                true,
+                Sea.SHIPPED,
+                SHIPPED_RANKS,
+                SHIPPED_PORTS,
+                SHIPPED_ICONS,
+                SHIPPED_STANDING,
+                SHIPPED_DRIFT,
+                SHIPPED_CONTRACTS);
     }
 
     public static TradeWindsConfiguration load(ConfigurationNode root) {
@@ -157,7 +190,10 @@ public record TradeWindsConfiguration(
                 ports,
                 icons,
                 standing(root.node("standing")),
-                drift(root.node("market-drift")));
+                drift(root.node("market-drift")),
+                root.node("ports").virtual()
+                        ? SHIPPED_CONTRACTS
+                        : TradeWindsContracts.read(root.node("ports"), root.node("contracts-at-once"), ports));
     }
 
     /**

@@ -351,10 +351,16 @@ public final class IslandCommandTree {
 
     private com.uxplima.uxmskyblock.bukkit.tradewinds.@Nullable CargoHolds cargoHolds;
     private com.uxplima.uxmskyblock.bukkit.tradewinds.@Nullable Harbour harbour;
+    private com.uxplima.uxmskyblock.bukkit.tradewinds.@Nullable ContractDesk contracts;
 
     /** What {@code /is sail} and {@code /is market} open, while the operator lets islands be vessels. */
     public void useHarbour(com.uxplima.uxmskyblock.bukkit.tradewinds.@Nullable Harbour harbour) {
         this.harbour = harbour;
+    }
+
+    /** What {@code /is contracts} opens, while the operator lets islands be vessels. */
+    public void useContracts(com.uxplima.uxmskyblock.bukkit.tradewinds.@Nullable ContractDesk contracts) {
+        this.contracts = contracts;
     }
 
     /** What {@code /is cargo} opens, while the operator lets islands be TradeWinds vessels. */
@@ -745,6 +751,7 @@ public final class IslandCommandTree {
                 .then(Cmd.literal("cargo").executes(this::executeCargo))
                 .then(Cmd.literal("sail").executes(ctx -> executeHarbour(ctx, true)))
                 .then(Cmd.literal("market").executes(ctx -> executeHarbour(ctx, false)))
+                .then(Cmd.literal("contracts").executes(this::executeContracts))
                 .then(Cmd.literal("course").executes(this::executeCourse))
                 .then(Cmd.literal("chunks")
                         .executes(ctx -> executeChunks(ctx, false))
@@ -925,6 +932,20 @@ public final class IslandCommandTree {
         } else {
             open.market(player);
         }
+        return Cmd.OK;
+    }
+
+    private int executeContracts(CommandContext<CommandSourceStack> ctx) {
+        if (!(ctx.getSource().getSender() instanceof Player player)) {
+            send(ctx.getSource().getSender(), "error.players_only");
+            return Cmd.OK;
+        }
+        com.uxplima.uxmskyblock.bukkit.tradewinds.ContractDesk open = this.contracts;
+        if (open == null) {
+            send(player, "tradewinds.hold.not_vessel");
+            return Cmd.OK;
+        }
+        open.open(player);
         return Cmd.OK;
     }
 

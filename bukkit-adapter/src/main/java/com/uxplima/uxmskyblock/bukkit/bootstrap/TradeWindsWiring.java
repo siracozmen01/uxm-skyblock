@@ -9,6 +9,7 @@ import com.uxplima.uxmskyblock.bukkit.config.TradeWindsConfiguration;
 import com.uxplima.uxmskyblock.bukkit.schematic.IslandStart;
 import com.uxplima.uxmskyblock.bukkit.tradewinds.CargoHoldListener;
 import com.uxplima.uxmskyblock.bukkit.tradewinds.CargoHolds;
+import com.uxplima.uxmskyblock.bukkit.tradewinds.ContractDesk;
 import com.uxplima.uxmskyblock.bukkit.tradewinds.Crew;
 import com.uxplima.uxmskyblock.bukkit.tradewinds.Harbour;
 import com.uxplima.uxmskyblock.bukkit.tradewinds.HoldGoods;
@@ -17,6 +18,7 @@ import com.uxplima.uxmskyblock.bukkit.tradewinds.VesselStart;
 import com.uxplima.uxmskyblock.core.application.gamemode.CreationActionProvider;
 import com.uxplima.uxmskyblock.core.application.scheduler.SchedulerPort;
 import com.uxplima.uxmskyblock.core.application.tradewinds.CargoTransfer;
+import com.uxplima.uxmskyblock.core.application.tradewinds.ContractBoard;
 import com.uxplima.uxmskyblock.core.application.tradewinds.PortMarket;
 import com.uxplima.uxmskyblock.core.application.tradewinds.VesselLease;
 import com.uxplima.uxmskyblock.core.application.tradewinds.VesselService;
@@ -33,6 +35,8 @@ public final class TradeWindsWiring {
     private final CargoHolds holds;
     private final PortMarket market;
     private final Harbour harbour;
+    private final ContractDesk contracts;
+    private @org.jspecify.annotations.Nullable AutoCloseable lateness;
     private @org.jspecify.annotations.Nullable AutoCloseable recovery;
     private final CargoHoldListener listener;
     private final com.uxplima.uxmskyblock.bukkit.inventory.HoldStillListener holdStill;
@@ -76,18 +80,34 @@ public final class TradeWindsWiring {
                 configuration.messages(),
                 com.uxplima.uxmskyblock.bukkit.creative.SealedInventory::holds,
                 market::rank);
+        Crew crew = new Crew(service, islands::findIslandAt, sessions(coordinator));
         this.harbour = new Harbour(
+                market, config, persistence.vesselsPort(), goods, crew, scheduler, configuration.messages(), clock);
+        var effectPlayer =
+                new com.uxplima.uxmskyblock.bukkit.effect.InteractionEffectPlayer(scheduler, configuration.messages());
+        harbour.useEffects(effectPlayer, configuration.effectsConfig());
+        this.contracts = new ContractDesk(
+                new ContractBoard(
+                        persistence.contractsPort(),
+                        market,
+                        persistence.vesselsPort(),
+                        goods,
+                        lease,
+                        authority.serverNodeId(),
+                        clock,
+                        config.contracts().offered(),
+                        config.contracts().atOnce()),
                 market,
                 config,
                 persistence.vesselsPort(),
                 goods,
-                new Crew(service, islands::findIslandAt, sessions(coordinator)),
+                crew,
                 scheduler,
                 configuration.messages(),
-                clock);
-        harbour.useEffects(
-                new com.uxplima.uxmskyblock.bukkit.effect.InteractionEffectPlayer(scheduler, configuration.messages()),
-                configuration.effectsConfig());
+                clock,
+                org.bukkit.Bukkit::getPlayer,
+                persistence.islandStoragePort()::findIslandById);
+        contracts.useEffects(effectPlayer, configuration.effectsConfig());
         this.listener = new CargoHoldListener(holds);
         this.holdStill = new com.uxplima.uxmskyblock.bukkit.inventory.HoldStillListener(holds::moving);
         start();
@@ -129,6 +149,11 @@ public final class TradeWindsWiring {
         return harbour;
     }
 
+    /** The contracts the ports offer, as the crew takes and delivers them. */
+    public ContractDesk contracts() {
+        return contracts;
+    }
+
     /**
      * Carries on, once a minute, the orders a crash or a busy bank left open on vessels whose bank this
      * node writes. Started with the plugin, while TradeWinds is enabled.
@@ -150,19 +175,32 @@ public final class TradeWindsWiring {
                 },
                 java.time.Duration.ofSeconds(30),
                 java.time.Duration.ofMinutes(1));
+        // A contract not delivered in time fails within a quarter of a minute of its time running out.
+        lateness = scheduler.repeatAsync(
+                () -> {
+                    try {
+                        contracts.failOverdue();
+                    } catch (RuntimeException e) {
+                        LOGGER.log(Level.WARNING, "The TradeWinds contracts could not be looked over now.", e);
+                    }
+                },
+                java.time.Duration.ofSeconds(15),
+                java.time.Duration.ofSeconds(15));
     }
 
     /** Stops carrying orders on. */
     public void close() {
-        AutoCloseable running = recovery;
-        recovery = null;
-        if (running != null) {
-            try {
-                running.close();
-            } catch (Exception e) {
-                LOGGER.log(Level.FINE, "The TradeWinds order recovery did not stop cleanly.", e);
+        for (AutoCloseable running : new AutoCloseable[] {recovery, lateness}) {
+            if (running != null) {
+                try {
+                    running.close();
+                } catch (Exception e) {
+                    LOGGER.log(Level.FINE, "A TradeWinds task did not stop cleanly.", e);
+                }
             }
         }
+        recovery = null;
+        lateness = null;
     }
 
     /** The cargo holds of vessels. */

@@ -138,6 +138,7 @@ public final class PersistenceBootstrap implements AutoCloseable {
     private final com.uxplima.uxmskyblock.persistence.oneblock.SqlOneBlockContributionAdapter
             oneBlockContributionAdapter;
     private final com.uxplima.uxmskyblock.persistence.tradewinds.SqlMarketPricesAdapter marketPricesAdapter;
+    private final com.uxplima.uxmskyblock.persistence.tradewinds.SqlContractsAdapter contractsAdapter;
     private final com.uxplima.uxmskyblock.persistence.lifecycle.SqlLifecycleOwedEffectsAdapter
             lifecycleOwedEffectsAdapter;
     private final SqlNotificationAdapter notificationAdapter;
@@ -229,6 +230,7 @@ public final class PersistenceBootstrap implements AutoCloseable {
                 new com.uxplima.uxmskyblock.persistence.oneblock.SqlOneBlockContributionAdapter(database.dataSource());
         this.marketPricesAdapter =
                 new com.uxplima.uxmskyblock.persistence.tradewinds.SqlMarketPricesAdapter(database.dataSource());
+        this.contractsAdapter = new com.uxplima.uxmskyblock.persistence.tradewinds.SqlContractsAdapter(database);
         this.lifecycleOwedEffectsAdapter =
                 new com.uxplima.uxmskyblock.persistence.lifecycle.SqlLifecycleOwedEffectsAdapter(database.dataSource());
         this.notificationAdapter = new SqlNotificationAdapter(database.dataSource());
@@ -610,6 +612,11 @@ public final class PersistenceBootstrap implements AutoCloseable {
     /** The push trade left on each TradeWinds price. */
     public com.uxplima.uxmskyblock.core.application.tradewinds.MarketPricesPort marketPricesPort() {
         return marketPricesAdapter;
+    }
+
+    /** The contracts each TradeWinds vessel took. */
+    public com.uxplima.uxmskyblock.core.application.tradewinds.ContractsPort contractsPort() {
+        return contractsAdapter;
     }
 
     public NotificationStoragePort notificationStoragePort() {

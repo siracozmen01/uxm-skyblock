@@ -99,6 +99,7 @@ public final class ConfigurationLoader {
             "island-mission-list.conf",
             "tradewinds-sail.conf",
             "tradewinds-market.conf",
+            "tradewinds-contracts.conf",
             "island-vault-page.conf",
             "player-trade.conf",
             "vessel-cargo.conf",

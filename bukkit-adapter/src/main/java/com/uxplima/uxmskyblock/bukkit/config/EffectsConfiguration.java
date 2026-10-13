@@ -135,6 +135,15 @@ public final class EffectsConfiguration {
                         List.of("[sound] ui.toast.challenge_complete 1.0 1.4", "[particle] TOTEM_OF_UNDYING 30 0.6")));
         defaults.put("vessel-sailed", parseAll("vessel-sailed", List.of("[sound] entity.boat.paddle_water 1.0 0.8")));
         defaults.put(
+                "vessel-contract-taken",
+                parseAll("vessel-contract-taken", List.of("[sound] item.book.page_turn 1.0 1.0")));
+        defaults.put(
+                "vessel-contract-delivered",
+                parseAll("vessel-contract-delivered", List.of("[sound] entity.player.levelup 0.8 1.2")));
+        defaults.put(
+                "vessel-contract-failed",
+                parseAll("vessel-contract-failed", List.of("[sound] block.note_block.bass 1.0 0.6")));
+        defaults.put(
                 "upside-down-mirrored",
                 parseAll("upside-down-mirrored", List.of("[sound] block.sculk.spread 0.4 0.6")));
         return new InteractionEffects(defaults);
