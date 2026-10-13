@@ -43,4 +43,17 @@ dependencies:
     Pl3xMap:
       load: BEFORE
       required: false
+    # Blocks and creatures a OneBlock phase may name with the plugin's word in front, read when it is there.
+    ItemsAdder:
+      load: BEFORE
+      required: false
+    Nexo:
+      load: BEFORE
+      required: false
+    CraftEngine:
+      load: BEFORE
+      required: false
+    MythicMobs:
+      load: BEFORE
+      required: false
 

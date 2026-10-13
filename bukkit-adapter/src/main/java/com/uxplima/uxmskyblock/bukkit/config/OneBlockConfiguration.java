@@ -15,6 +15,7 @@ import org.bukkit.NamespacedKey;
 import org.bukkit.Registry;
 import org.bukkit.entity.EntityType;
 
+import com.uxplima.uxmskyblock.bukkit.outside.OutsideContent;
 import com.uxplima.uxmskyblock.core.domain.oneblock.OneBlockPhase;
 import com.uxplima.uxmskyblock.core.domain.oneblock.OneBlockPhases;
 import com.uxplima.uxmskyblock.core.domain.oneblock.WeightedPool;
@@ -102,11 +103,13 @@ public record OneBlockConfiguration(
             String block = value.node("block").getString();
             String drawnBlock = block == null
                     ? null
-                    : blocks.containsKey(phase + "/" + block) ? phase + "/" + block : blockData(block);
+                    : blocks.containsKey(phase + "/" + block) ? phase + "/" + block : drawableBlock(block);
             String creature = value.node("creature").getString();
             String drawnCreature = creature == null
                     ? null
-                    : creatures.containsKey(phase + "/" + creature) ? phase + "/" + creature : creatureName(creature);
+                    : creatures.containsKey(phase + "/" + creature)
+                            ? phase + "/" + creature
+                            : drawableCreature(creature);
             if ((block != null && drawnBlock == null) || (creature != null && drawnCreature == null)) {
                 warn(() -> "OneBlock phase '" + phase + "', moment " + written + ": "
                         + (block != null && drawnBlock == null
@@ -630,6 +633,9 @@ public record OneBlockConfiguration(
                 weights.merge(drawn, value.node("weight").getDouble(1), Double::sum);
                 continue;
             }
+            if (outside(phase, written, OutsideContent.Kind.BLOCK, value, weights)) {
+                continue;
+            }
             String known = blockData(written);
             if (known == null) {
                 warn(() -> "OneBlock phase '" + phase + "' names '" + written
@@ -662,6 +668,9 @@ public record OneBlockConfiguration(
                 weights.merge(drawn, value.node("weight").getDouble(1), Double::sum);
                 continue;
             }
+            if (outside(phase, written, OutsideContent.Kind.CREATURE, value, weights)) {
+                continue;
+            }
             String known = creatureName(written);
             if (known == null) {
                 warn(() -> "OneBlock phase '" + phase + "' names '" + written
@@ -671,6 +680,49 @@ public record OneBlockConfiguration(
             weights.merge(known, value.getDouble(0), Double::sum);
         }
         return weights;
+    }
+
+    /**
+     * Reads {@code written} when it names another plugin's block or creature: kept under its plugin's word while the
+     * plugin is on this server, left out with one warning when it is not.
+     *
+     * @return whether the name was another plugin's, read or left out
+     */
+    private static boolean outside(
+            String phase,
+            String written,
+            OutsideContent.Kind kind,
+            ConfigurationNode value,
+            Map<String, Double> weights) {
+        OutsideContent.Named named = OutsideContent.named(written, kind).orElse(null);
+        if (named == null) {
+            return false;
+        }
+        if (named.present()) {
+            weights.merge(named.written(), value.getDouble(0), Double::sum);
+        } else {
+            warn(() -> "OneBlock phase '" + phase + "' names '" + written + "', and " + named.plugin()
+                    + " is not on this server, so it is left out.");
+        }
+        return true;
+    }
+
+    /** A block a moment names: another plugin's while it is on this server, or one the server knows. */
+    private static @org.jspecify.annotations.Nullable String drawableBlock(String written) {
+        var named = OutsideContent.named(written, OutsideContent.Kind.BLOCK);
+        if (named.isPresent()) {
+            return named.get().present() ? named.get().written() : null;
+        }
+        return blockData(written);
+    }
+
+    /** A creature a moment names: another plugin's while it is on this server, or one the server knows. */
+    private static @org.jspecify.annotations.Nullable String drawableCreature(String written) {
+        var named = OutsideContent.named(written, OutsideContent.Kind.CREATURE);
+        if (named.isPresent()) {
+            return named.get().present() ? named.get().written() : null;
+        }
+        return creatureName(written);
     }
 
     /** The creature an object entry writes, or nothing, with the reason, when it cannot be. */

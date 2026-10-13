@@ -32,6 +32,7 @@ import com.uxplima.uxmskyblock.bukkit.i18n.Messages;
 import com.uxplima.uxmskyblock.bukkit.loot.LootContainers;
 import com.uxplima.uxmskyblock.bukkit.loot.LootTables;
 import com.uxplima.uxmskyblock.bukkit.loot.Rarity;
+import com.uxplima.uxmskyblock.bukkit.outside.OutsideContent;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -105,6 +106,13 @@ public final class OneBlockDraws {
     /** Sets the block at x, y, z to what was drawn: an entry, a block with its states, or a plain name. */
     public void lay(World world, int x, int y, int z, String drawn) {
         Block block = world.getBlockAt(x, y, z);
+        if (OutsideContent.named(drawn, OutsideContent.Kind.BLOCK).isPresent()) {
+            // Another plugin's block, or dirt when it cannot lay it.
+            if (!OutsideContent.place(drawn, block)) {
+                block.setType(Material.DIRT);
+            }
+            return;
+        }
         OneBlockEntries.Block entry = entries.get().blocks().get(drawn);
         String data = entry == null ? drawn : entry.data();
         if (data.indexOf('[') >= 0) {
@@ -128,6 +136,10 @@ public final class OneBlockDraws {
 
     /** What was drawn, as an operator reads it: the block's name. */
     public String named(String drawn) {
+        var outside = OutsideContent.named(drawn, OutsideContent.Kind.BLOCK);
+        if (outside.isPresent()) {
+            return outside.get().id();
+        }
         OneBlockEntries.Block entry = entries.get().blocks().get(drawn);
         String data = entry == null ? drawn : entry.data();
         int states = data.indexOf('[');
@@ -142,6 +154,9 @@ public final class OneBlockDraws {
      */
     public @Nullable Entity spawn(Location at, String drawn, @Nullable Player breaker) {
         World world = Objects.requireNonNull(at.getWorld(), "at must be in a world");
+        if (OutsideContent.named(drawn, OutsideContent.Kind.CREATURE).isPresent()) {
+            return OutsideContent.spawn(drawn, at);
+        }
         OneBlockEntries.Creature entry = entries.get().creatures().get(drawn);
         EntityType type = typeOf(entry == null ? drawn : entry.type());
         if (type == null || !type.isSpawnable()) {
