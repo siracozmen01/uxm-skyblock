@@ -106,9 +106,17 @@ class TheCourseBranchShowsTheBoardTest {
         verify(tagging).tag(player, com.uxplima.uxmskyblock.bukkit.parkour.ParkourTagging.Kind.CATEGORY, null);
         verify(tagging).rate(player, 4);
 
+        com.uxplima.uxmskyblock.bukkit.parkour.ParkourCourses courses =
+                mock(com.uxplima.uxmskyblock.bukkit.parkour.ParkourCourses.class);
+        tree.useParkourCourses(courses);
+        dispatcher().execute("island courses", source());
+        verify(courses).open(player);
+
+        tree.useParkourCourses(null);
+        dispatcher().execute("island courses", source());
         tree.useParkourTagging(null);
         dispatcher().execute("island courserate 4", source());
-        verify(player).sendMessage(any(Component.class));
+        verify(player, org.mockito.Mockito.times(2)).sendMessage(any(Component.class));
     }
 
     private CommandDispatcher<CommandSourceStack> dispatcher() {

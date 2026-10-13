@@ -339,6 +339,13 @@ public final class IslandCommandTree {
 
     private com.uxplima.uxmskyblock.bukkit.parkour.@Nullable ParkourTagging parkourTagging;
 
+    private com.uxplima.uxmskyblock.bukkit.parkour.@Nullable ParkourCourses parkourCourses;
+
+    /** What {@code /is courses} opens, while islands can be Parkour courses. */
+    public void useParkourCourses(com.uxplima.uxmskyblock.bukkit.parkour.@Nullable ParkourCourses courses) {
+        this.parkourCourses = courses;
+    }
+
     /** What {@code /is coursetag} and {@code /is courserate} do, while islands can be Parkour courses. */
     public void useParkourTagging(com.uxplima.uxmskyblock.bukkit.parkour.@Nullable ParkourTagging tagging) {
         this.parkourTagging = tagging;
@@ -781,6 +788,7 @@ public final class IslandCommandTree {
                                         shop -> player ->
                                                 shop.side(player, StringArgumentType.getString(ctx, "side"))))))
                 .then(Cmd.literal("course").executes(this::executeCourse))
+                .then(Cmd.literal("courses").executes(this::executeCourses))
                 .then(Cmd.literal("coursetag")
                         .then(courseTag(
                                 "difficulty", com.uxplima.uxmskyblock.bukkit.parkour.ParkourTagging.Kind.DIFFICULTY))
@@ -962,6 +970,20 @@ public final class IslandCommandTree {
             return Cmd.OK;
         }
         done.accept(tagging, player);
+        return Cmd.OK;
+    }
+
+    private int executeCourses(CommandContext<CommandSourceStack> ctx) {
+        if (!(ctx.getSource().getSender() instanceof Player player)) {
+            send(ctx.getSource().getSender(), "error.players_only");
+            return Cmd.OK;
+        }
+        com.uxplima.uxmskyblock.bukkit.parkour.ParkourCourses courses = this.parkourCourses;
+        if (courses == null) {
+            send(player, "parkour.courses.none");
+            return Cmd.OK;
+        }
+        courses.open(player);
         return Cmd.OK;
     }
 

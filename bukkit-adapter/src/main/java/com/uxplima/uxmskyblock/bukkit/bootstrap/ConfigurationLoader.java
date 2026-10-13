@@ -100,6 +100,7 @@ public final class ConfigurationLoader {
             "tradewinds-sail.conf",
             "tradewinds-market.conf",
             "tradewinds-contracts.conf",
+            "parkour-courses.conf",
             "island-vault-page.conf",
             "player-trade.conf",
             "vessel-cargo.conf",

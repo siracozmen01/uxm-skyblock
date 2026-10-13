@@ -160,6 +160,7 @@ public final class PersistenceBootstrap implements AutoCloseable {
     private final com.uxplima.uxmskyblock.persistence.parkour.SqlParkourSplitsAdapter parkourSplitsAdapter;
     private final com.uxplima.uxmskyblock.persistence.parkour.SqlParkourRewardsAdapter parkourRewardsAdapter;
     private final com.uxplima.uxmskyblock.persistence.parkour.SqlParkourTagsAdapter parkourTagsAdapter;
+    private final com.uxplima.uxmskyblock.persistence.parkour.SqlParkourDirectoryAdapter parkourDirectoryAdapter;
     private final com.uxplima.uxmskyblock.persistence.parkour.SqlParkourAdapter parkourAdapter;
     private final com.uxplima.uxmskyblock.persistence.leaderboard.SqlModeStandingsAdapter modeStandingsAdapter;
     private final com.uxplima.uxmskyblock.persistence.brix.SqlBrixPlotsAdapter brixPlotsAdapter;
@@ -275,6 +276,8 @@ public final class PersistenceBootstrap implements AutoCloseable {
                 new com.uxplima.uxmskyblock.persistence.parkour.SqlParkourRewardsAdapter(database.dataSource());
         this.parkourTagsAdapter =
                 new com.uxplima.uxmskyblock.persistence.parkour.SqlParkourTagsAdapter(database.dataSource());
+        this.parkourDirectoryAdapter =
+                new com.uxplima.uxmskyblock.persistence.parkour.SqlParkourDirectoryAdapter(database.dataSource());
         this.modeStandingsAdapter =
                 new com.uxplima.uxmskyblock.persistence.leaderboard.SqlModeStandingsAdapter(database.dataSource());
         this.brixPlotsAdapter = new com.uxplima.uxmskyblock.persistence.brix.SqlBrixPlotsAdapter(database.dataSource());
@@ -544,6 +547,11 @@ public final class PersistenceBootstrap implements AutoCloseable {
 
     public com.uxplima.uxmskyblock.core.application.parkour.ParkourPort parkourPort() {
         return parkourAdapter;
+    }
+
+    /** The courses as the directory lists them. */
+    public com.uxplima.uxmskyblock.core.application.parkour.ParkourDirectoryPort parkourDirectoryPort() {
+        return parkourDirectoryAdapter;
     }
 
     /** Each course's tags and the stars its runners give it. */

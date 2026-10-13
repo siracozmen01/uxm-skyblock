@@ -71,6 +71,8 @@ class AWiredRunStartsEmptyHandedTest extends MockBukkitHarness {
         when(config.effectsConfig()).thenReturn(InteractionEffects.none());
         PersistenceBootstrap persistence = mock(PersistenceBootstrap.class);
         when(persistence.parkourPort()).thenReturn(port());
+        when(persistence.parkourDirectoryPort())
+                .thenReturn(mock(com.uxplima.uxmskyblock.core.application.parkour.ParkourDirectoryPort.class));
         when(persistence.parkourTagsPort())
                 .thenReturn(mock(com.uxplima.uxmskyblock.core.application.parkour.ParkourTagsPort.class));
         when(persistence.parkourRewardsPort())

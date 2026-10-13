@@ -342,6 +342,8 @@ final class IslandCommandWiring {
         if (gameplay.parkourWiring().enabled()) {
             tree.useParkourBoard(gameplay.parkourWiring().board());
             tree.useParkourTagging(gameplay.parkourWiring().tagging());
+            gameplay.parkourWiring().courses().useMenuEngine(integration.menuEngine());
+            tree.useParkourCourses(gameplay.parkourWiring().courses());
         }
         // A Poseidon island's lore: a book on Java, a form on Bedrock, pages from the language files.
         if (gameplay.poseidonWiring().enabled()) {
