@@ -34,6 +34,8 @@ public final class AcidIslandWiring implements AutoCloseable {
     private final AcidWaterListener waterListener;
     private boolean recipesAdded;
     private @Nullable AutoCloseable beat;
+    private @Nullable AutoCloseable tideBeat;
+    private final com.uxplima.uxmskyblock.bukkit.acid.AcidTideRunner tide;
 
     public AcidIslandWiring(
             ConfigurationWiring configuration,
@@ -60,8 +62,20 @@ public final class AcidIslandWiring implements AutoCloseable {
                 System::nanoTime,
                 org.bukkit.Bukkit::isOwnedByCurrentRegion));
         this.waterListener = new AcidWaterListener(hazard, configuration.messages());
+        // The sea rises and falls with the tide, around the islands players are on.
+        this.tide = new com.uxplima.uxmskyblock.bukkit.acid.AcidTideRunner(
+                service,
+                islands,
+                scheduler,
+                config,
+                configuration.effectsConfig(),
+                new InteractionEffectPlayer(scheduler, configuration.messages()),
+                configuration.messages(),
+                System::currentTimeMillis,
+                org.bukkit.World::isChunkLoaded);
         if (config.enabled()) {
             this.beat = hazard.start();
+            this.tideBeat = tide.start();
         }
         scheduler.async(() -> {
             try {
@@ -83,6 +97,11 @@ public final class AcidIslandWiring implements AutoCloseable {
 
     public AcidHazard hazard() {
         return hazard;
+    }
+
+    /** The tide, which brings a chunk of the sea to its level as the chunk loads. */
+    public com.uxplima.uxmskyblock.bukkit.acid.AcidTideRunner tide() {
+        return tide;
     }
 
     public AcidWaterListener waterListener() {
@@ -167,6 +186,15 @@ public final class AcidIslandWiring implements AutoCloseable {
                 Bukkit.getPotionBrewer().removePotionMix(AcidWater.BREWING);
             } catch (RuntimeException e) {
                 LOGGER.log(Level.FINE, "Brewing acid water clean could not be removed.", e);
+            }
+        }
+        AutoCloseable tideRunning = tideBeat;
+        tideBeat = null;
+        if (tideRunning != null) {
+            try {
+                tideRunning.close();
+            } catch (Exception e) {
+                LOGGER.log(Level.WARNING, "Stopping the acid tide failed.", e);
             }
         }
         AutoCloseable running = beat;

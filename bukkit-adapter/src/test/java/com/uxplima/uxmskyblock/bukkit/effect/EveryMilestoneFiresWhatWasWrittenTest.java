@@ -95,6 +95,8 @@ class EveryMilestoneFiresWhatWasWrittenTest {
                         "oneblock-phase-began",
                         "oneblock-creature-coming",
                         "acid-sea-burns",
+                        "acid-tide-falling",
+                        "acid-tide-rising",
                         "acid-rain-burns",
                         "acid-water-drunk",
                         "acid-clean-water-drunk",

@@ -144,6 +144,7 @@ public final class BootstrapEventRegistrar {
         }
         if (gameplayWiring.acidIslandWiring().enabled()) {
             pm.registerEvents(gameplayWiring.acidIslandWiring().waterListener(), plugin);
+            pm.registerEvents(gameplayWiring.acidIslandWiring().tide(), plugin);
             gameplayWiring.acidIslandWiring().addRecipes(plugin.getServer());
         }
         if (gameplayWiring.oneBlockWiring().enabled()) {

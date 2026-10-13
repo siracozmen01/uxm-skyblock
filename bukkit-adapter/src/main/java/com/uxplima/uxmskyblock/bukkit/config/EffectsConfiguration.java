@@ -87,6 +87,10 @@ public final class EffectsConfiguration {
         defaults.put("acid-rain-burns", parseAll("acid-rain-burns", List.of("[sound] block.fire.extinguish 0.3 1.9")));
         defaults.put("acid-water-drunk", parseAll("acid-water-drunk", List.of("[sound] entity.generic.drink 1.0 0.6")));
         defaults.put(
+                "acid-tide-rising", parseAll("acid-tide-rising", List.of("[sound] ambient.underwater.enter 0.6 0.7")));
+        defaults.put(
+                "acid-tide-falling", parseAll("acid-tide-falling", List.of("[sound] ambient.underwater.exit 0.6 0.7")));
+        defaults.put(
                 "acid-clean-water-drunk",
                 parseAll(
                         "acid-clean-water-drunk",

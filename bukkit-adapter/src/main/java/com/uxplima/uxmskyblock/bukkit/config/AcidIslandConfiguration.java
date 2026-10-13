@@ -21,6 +21,7 @@ import org.spongepowered.configurate.ConfigurationNode;
  * @param cleanWater what a bottle of clean water does for whoever drinks it
  * @param look the biome laid over the sea and the colours of the plugin's own
  * @param buried the structures buried in the sea's floor
+ * @param tide how the sea rises and falls
  */
 public record AcidIslandConfiguration(
         boolean enabled,
@@ -33,7 +34,8 @@ public record AcidIslandConfiguration(
         Armour armour,
         CleanWater cleanWater,
         Look look,
-        Buried buried) {
+        Buried buried,
+        Tide tide) {
 
     private static final Logger LOGGER = Logger.getLogger(AcidIslandConfiguration.class.getName());
 
@@ -288,6 +290,29 @@ public record AcidIslandConfiguration(
         }
     }
 
+    /**
+     * The acid tide and how often it is looked at.
+     *
+     * @param checkEvery how often the sea is brought to the tide's level
+     */
+    public record Tide(com.uxplima.uxmskyblock.core.domain.hazard.AcidTide tide, Duration checkEvery) {
+
+        public static final Tide SHIPPED = new Tide(
+                new com.uxplima.uxmskyblock.core.domain.hazard.AcidTide(2, Duration.ofMinutes(20)),
+                Duration.ofSeconds(10));
+
+        public static final Tide STILL =
+                new Tide(com.uxplima.uxmskyblock.core.domain.hazard.AcidTide.STILL, Duration.ofSeconds(10));
+
+        public Tide {
+            Objects.requireNonNull(tide, "tide must not be null");
+            Objects.requireNonNull(checkEvery, "checkEvery must not be null");
+            if (checkEvery.toSeconds() < 1) {
+                throw new IllegalArgumentException("the tide is looked at once a second at most: " + checkEvery);
+            }
+        }
+    }
+
     /** How acid water is made clean. Rain a cauldron catches is clean already. */
     public record Purification(boolean furnace, boolean brewingWithCoal) {}
 
@@ -300,6 +325,7 @@ public record AcidIslandConfiguration(
         Objects.requireNonNull(cleanWater, "cleanWater must not be null");
         Objects.requireNonNull(look, "look must not be null");
         Objects.requireNonNull(buried, "buried must not be null");
+        Objects.requireNonNull(tide, "tide must not be null");
         waterProtection = List.copyOf(waterProtection);
         waterEffects = List.copyOf(waterEffects);
     }
@@ -316,7 +342,8 @@ public record AcidIslandConfiguration(
                 Armour.SHIPPED,
                 CleanWater.SHIPPED,
                 Look.SHIPPED,
-                Buried.SHIPPED);
+                Buried.SHIPPED,
+                Tide.SHIPPED);
     }
 
     public static AcidIslandConfiguration load(ConfigurationNode root) {
@@ -373,7 +400,24 @@ public record AcidIslandConfiguration(
                 armour(hazard.node("armour")),
                 cleanWater(root.node("clean-water")),
                 look(seaNode.node("look")),
-                buried(seaNode.node("buried")));
+                buried(seaNode.node("buried")),
+                tide(seaNode.node("tide")));
+    }
+
+    /** The tide, as {@code sea tide} writes it; one that cannot be is the shipped one, said. */
+    private static Tide tide(ConfigurationNode node) {
+        try {
+            return new Tide(
+                    new com.uxplima.uxmskyblock.core.domain.hazard.AcidTide(
+                            node.node("rise").getInt(Tide.SHIPPED.tide().rise()),
+                            durationOf(
+                                    node.node("period").getString(""),
+                                    Tide.SHIPPED.tide().period())),
+                    durationOf(node.node("check-every").getString(""), Tide.SHIPPED.checkEvery()));
+        } catch (IllegalArgumentException e) {
+            LOGGER.warning(() -> "modules/acidisland.conf sea tide: " + e.getMessage() + ". The shipped tide is used.");
+            return Tide.SHIPPED;
+        }
     }
 
     /** The structures buried in the floor, as {@code sea buried} writes them; what cannot be read is the shipped. */
