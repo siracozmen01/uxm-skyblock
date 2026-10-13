@@ -58,6 +58,9 @@ import com.uxplima.uxmskyblock.core.domain.identity.PlayerUuid;
 import com.uxplima.uxmskyblock.core.domain.identity.ProfileId;
 import com.uxplima.uxmskyblock.core.domain.island.Island;
 import com.uxplima.uxmskyblock.core.domain.island.IslandBounds;
+import com.uxplima.uxmskyblock.core.domain.island.IslandMember;
+import com.uxplima.uxmskyblock.core.domain.island.IslandPermission;
+import com.uxplima.uxmskyblock.core.domain.island.IslandRole;
 import com.uxplima.uxmskyblock.core.domain.preset.StarterPreset;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -180,7 +183,10 @@ class ABoxedIslandIsPlayedInItsBoxTest extends MockBukkitHarness {
                 new InteractionEffects(java.util.Map.of(
                         "boxed-grew",
                         com.uxplima.uxmlib.condition.action.ActionList.parse(
-                                List.of("[console] probe grew %blocks% %size%")))),
+                                List.of("[console] probe grew %blocks% %size%")),
+                        "boxed-moved",
+                        com.uxplima.uxmlib.condition.action.ActionList.parse(
+                                List.of("[console] probe moved %x% %z%")))),
                 new InteractionEffectPlayer(),
                 uuid -> Optional.of(profile),
                 id -> id.equals(profile) ? Optional.of(islandId) : Optional.empty(),
@@ -310,6 +316,145 @@ class ABoxedIslandIsPlayedInItsBoxTest extends MockBukkitHarness {
         listener.onAdvancement(done(player, "story/smelt_iron"));
         assertThat(service.radius(islandId)).hasValue(11);
         assertThat(said(player)).noneSatisfy(line -> assertThat(line).contains("another island"));
+    }
+
+    @Test
+    @DisplayName(
+            "A pearl thrown from inside the box by its owner moves the box to where it lands, as far as a box reaches")
+    void aPearlMovesTheBox() {
+        service.start(islandId);
+        PlayerMock owner = createPlayer("Owner");
+
+        // The owner's role as stored before the box could be moved, which does not name it.
+        islands.cacheIsland(
+                islands.findIslandAt(new Location(boxedWorld, 0, 70, 0))
+                        .orElseThrow()
+                        .addMember(new IslandMember(
+                                PlayerUuid.of(owner.getUniqueId()),
+                                profile,
+                                new IslandRole(
+                                        "OWNER",
+                                        1000,
+                                        "Owner",
+                                        java.util.EnumSet.of(IslandPermission.BLOCK_BREAK),
+                                        true),
+                                Instant.now())),
+                "boxed");
+        List<String> spawns = new ArrayList<>();
+        listener.useSpawnMover((id, box, x, y, z) -> spawns.add(id.equals(islandId) + " " + box + " " + x + " " + z));
+        boolean tooFar = pearl(owner, 1, 1, 48, 0);
+        assertThat(tooFar).isTrue();
+        assertThat(said(owner)).singleElement().asString().contains("cannot reach that far");
+        assertThat(service.offset(islandId)).isEqualTo(com.uxplima.uxmskyblock.core.domain.boxed.BoxOffset.NONE);
+
+        boolean moved = pearl(owner, 2, -1, 20, -7);
+        assertThat(moved).isFalse();
+        assertThat(service.offset(islandId)).isEqualTo(new com.uxplima.uxmskyblock.core.domain.boxed.BoxOffset(20, -7));
+        assertThat(changed).containsExactly(islandId);
+        assertThat(said(owner)).singleElement().asString().contains("moved to where your pearl landed");
+        assertThat(spawns)
+                .describedAs("the spawn is asked to follow into the moved box, to where the pearl landed")
+                .containsExactly("true " + IslandBounds.fromCenterAndRadius(20, -7, 5) + " 20.5 -6.5");
+        assertThat(fired)
+                .describedAs("the effect list, with how far the box lies")
+                .containsExactly("moved 20 -7");
+        assertThat(service.reach(islandId)).hasValue(25);
+        // What the border service does once told the box changed: the island's square reaches round the moved box.
+        islands.cacheIsland(
+                Island.create(
+                        islandId,
+                        IslandBounds.fromCenterAndRadius(0, 0, 25),
+                        PlayerUuid.of(UUID.randomUUID()),
+                        profile,
+                        Instant.now()),
+                "boxed");
+
+        assertThat(listener.outsideEveryBox(owner, new Location(boxedWorld, 1, 70, 1)))
+                .describedAs("where the box stood")
+                .isTrue();
+        assertThat(listener.outsideEveryBox(owner, new Location(boxedWorld, 24, 70, -3)))
+                .isFalse();
+        assertThat(BoxedListener.boxOf(
+                        service,
+                        islands.findIslandAt(new Location(boxedWorld, 0, 70, 0)).orElseThrow()))
+                .hasValue(IslandBounds.fromCenterAndRadius(20, -7, 5));
+
+        boolean fromOutside = pearl(owner, 1, 1, 22, -7);
+        assertThat(fromOutside).describedAs("thrown from outside the box now").isFalse();
+        assertThat(service.offset(islandId)).isEqualTo(new com.uxplima.uxmskyblock.core.domain.boxed.BoxOffset(20, -7));
+    }
+
+    @Test
+    @DisplayName("The border is drawn round the box where a pearl moved it")
+    void theBorderFollowsAMovedBox() {
+        service.start(islandId);
+        service.move(islandId, new com.uxplima.uxmskyblock.core.domain.boxed.BoxOffset(3, -4));
+        Player player = mock(Player.class);
+        when(player.isOnline()).thenReturn(true);
+        when(player.getUniqueId()).thenReturn(UUID.randomUUID());
+        when(player.getWorld()).thenReturn(boxedWorld);
+        when(player.getLocation()).thenReturn(new Location(boxedWorld, 1.5, 70, 1.5));
+        WorldBorder border = mock(WorldBorder.class);
+
+        new BoxedBorders(service, islands, scheduler, Duration.ofSeconds(1), () -> border).show(player);
+
+        verify(border).setCenter(3.5, -3.5);
+        verify(border).setSize(11.0);
+    }
+
+    @Test
+    @DisplayName(
+            "A pearl of a player whose role may not move the box moves nothing, and never carries them out of every box")
+    void aPearlWithoutTheRole() {
+        IslandId other = IslandId.of(UUID.randomUUID());
+        islands.cacheIsland(
+                Island.create(
+                        other,
+                        IslandBounds.fromCenterAndRadius(1000, 0, 5),
+                        PlayerUuid.of(UUID.randomUUID()),
+                        ProfileId.of(UUID.randomUUID()),
+                        Instant.now()),
+                "boxed");
+        service.start(other);
+        PlayerMock guest = createPlayer("Guest");
+
+        assertThat(pearl(guest, 1000, 0, 1003, 2)).describedAs("inside the box").isFalse();
+        assertThat(pearl(guest, 1000, 0, 1030, 0))
+                .describedAs("out of every box")
+                .isTrue();
+        assertThat(said(guest)).singleElement().asString().contains("outside your box");
+        assertThat(service.offset(other)).isEqualTo(com.uxplima.uxmskyblock.core.domain.boxed.BoxOffset.NONE);
+        // A role of the operator's that may change the biome, but not move the box.
+        IslandRole gardener =
+                new IslandRole("GARDENER", 300, "Gardener", java.util.EnumSet.of(IslandPermission.BIOME_CHANGE), false);
+        islands.cacheIsland(
+                Island.create(
+                                other,
+                                IslandBounds.fromCenterAndRadius(1000, 0, 5),
+                                PlayerUuid.of(UUID.randomUUID()),
+                                ProfileId.of(UUID.randomUUID()),
+                                Instant.now())
+                        .addMember(
+                                new IslandMember(PlayerUuid.of(guest.getUniqueId()), profile, gardener, Instant.now())),
+                "boxed");
+        assertThat(pearl(guest, 1000, 0, 1003, 2)).isFalse();
+        assertThat(service.offset(other)).isEqualTo(com.uxplima.uxmskyblock.core.domain.boxed.BoxOffset.NONE);
+        assertThat(listener.refuses(new com.uxplima.uxmskyblock.bukkit.arrival.Arrival(
+                        guest,
+                        new Location(boxedWorld, 1000, 70, 0),
+                        new Location(boxedWorld, 1030, 70, 0),
+                        com.uxplima.uxmskyblock.bukkit.arrival.ArrivalCause.TELEPORT,
+                        false)))
+                .describedAs("only a pearl is judged here")
+                .isFalse();
+        assertThat(listener.refuses(new com.uxplima.uxmskyblock.bukkit.arrival.Arrival(
+                        guest,
+                        null,
+                        new Location(boxedWorld, 1030, 70, 0),
+                        com.uxplima.uxmskyblock.bukkit.arrival.ArrivalCause.PEARL,
+                        false)))
+                .describedAs("a pearl with nowhere it came from")
+                .isFalse();
     }
 
     @Test
@@ -478,6 +623,16 @@ class ABoxedIslandIsPlayedInItsBoxTest extends MockBukkitHarness {
         BlockBreakEvent event = new BlockBreakEvent(block, player);
         listener.onBreak(event);
         return event;
+    }
+
+    /** Whether the box refuses a pearl from one place to another, as the arrival watch asks it. */
+    private boolean pearl(Player player, int fromX, int fromZ, int toX, int toZ) {
+        return listener.refuses(new com.uxplima.uxmskyblock.bukkit.arrival.Arrival(
+                player,
+                new Location(boxedWorld, fromX + 0.5, 70, fromZ + 0.5),
+                new Location(boxedWorld, toX + 0.5, 70, toZ + 0.5),
+                com.uxplima.uxmskyblock.bukkit.arrival.ArrivalCause.PEARL,
+                false));
     }
 
     private static PlayerAdvancementDoneEvent done(Player player, String key) {

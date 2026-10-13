@@ -57,7 +57,7 @@ final class BoxedLandStorageScenario {
         assertThat(land.rings(other)).isEqualTo(OptionalInt.of(1));
     }
 
-    private static void seedIsland(Database database, IslandId island) throws SQLException {
+    static void seedIsland(Database database, IslandId island) throws SQLException {
         try (Connection conn = database.connection();
                 PreparedStatement ps = conn.prepareStatement(
                         "INSERT INTO islands (id, owner_account_uuid, owner_profile_id, lifecycle, created_at, "

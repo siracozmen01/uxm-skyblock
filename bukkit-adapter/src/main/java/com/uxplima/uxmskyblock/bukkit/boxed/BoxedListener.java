@@ -28,6 +28,9 @@ import org.bukkit.event.player.PlayerQuitEvent;
 
 import net.kyori.adventure.text.minimessage.tag.resolver.Placeholder;
 
+import com.uxplima.uxmskyblock.bukkit.arrival.Arrival;
+import com.uxplima.uxmskyblock.bukkit.arrival.ArrivalCause;
+import com.uxplima.uxmskyblock.bukkit.arrival.ArrivalGate;
 import com.uxplima.uxmskyblock.bukkit.effect.InteractionEffectPlayer;
 import com.uxplima.uxmskyblock.bukkit.effect.InteractionEffects;
 import com.uxplima.uxmskyblock.bukkit.i18n.Messages;
@@ -35,10 +38,13 @@ import com.uxplima.uxmskyblock.bukkit.listener.IslandProtectionListener;
 import com.uxplima.uxmskyblock.core.application.boxed.BoxedService;
 import com.uxplima.uxmskyblock.core.application.scheduler.SchedulerPort;
 import com.uxplima.uxmskyblock.core.domain.boxed.AdvancementFacts;
+import com.uxplima.uxmskyblock.core.domain.boxed.BoxOffset;
 import com.uxplima.uxmskyblock.core.domain.identity.IslandId;
 import com.uxplima.uxmskyblock.core.domain.identity.PlayerUuid;
 import com.uxplima.uxmskyblock.core.domain.identity.ProfileId;
 import com.uxplima.uxmskyblock.core.domain.island.Island;
+import com.uxplima.uxmskyblock.core.domain.island.IslandBounds;
+import com.uxplima.uxmskyblock.core.domain.island.IslandPermission;
 
 /**
  * A Boxed island's box: it grows when one of the island's players makes an advancement, and in a
@@ -47,7 +53,7 @@ import com.uxplima.uxmskyblock.core.domain.island.Island;
  * <p>Inside a box the island's own protection answers, as on any island. What this adds is the land
  * between boxes, which on generated terrain is land, not empty air.
  */
-public final class BoxedListener implements Listener {
+public final class BoxedListener implements Listener, ArrivalGate {
 
     private static final Logger LOGGER = Logger.getLogger(BoxedListener.class.getName());
 
@@ -69,6 +75,19 @@ public final class BoxedListener implements Listener {
     private final String bypassPermission;
     private final Map<UUID, Long> lastTold = new ConcurrentHashMap<>();
     private volatile boolean visitorsEarn;
+
+    /** Moves an island's spawn to a spot when it stands outside a box. Off the main thread: it writes a row. */
+    @FunctionalInterface
+    public interface SpawnMover {
+        void moveInto(IslandId islandId, IslandBounds box, double x, double y, double z);
+    }
+
+    private volatile SpawnMover spawnMover = (islandId, box, x, y, z) -> {};
+
+    /** What moves an island's spawn after its box, when the box left it behind. */
+    public void useSpawnMover(SpawnMover mover) {
+        this.spawnMover = Objects.requireNonNull(mover, "mover must not be null");
+    }
 
     @SuppressWarnings("TooManyParameters")
     public BoxedListener(
@@ -235,7 +254,99 @@ public final class BoxedListener implements Listener {
         if (!bypassPermission.isEmpty() && player.hasPermission(bypassPermission)) {
             return false;
         }
-        return islands.findIslandAt(at).isEmpty();
+        Optional<Island> island = islands.findIslandAt(at);
+        if (island.isEmpty()) {
+            return true;
+        }
+        // On a Boxed island only its box is played, which a pearl may have moved off the island's centre.
+        return boxOf(service, island.get())
+                .map(box -> !box.contains(at.getBlockX(), at.getBlockZ()))
+                .orElse(false);
+    }
+
+    /** Where the island's box stands now: around its centre, moved as far as a pearl moved it. Memory only. */
+    static Optional<IslandBounds> boxOf(BoxedService service, Island island) {
+        java.util.OptionalInt radius = service.radius(island.id());
+        if (radius.isEmpty()) {
+            return Optional.empty();
+        }
+        BoxOffset offset = service.offset(island.id());
+        return Optional.of(IslandBounds.fromCenterAndRadius(
+                island.bounds().centerX() + offset.dx(), island.bounds().centerZ() + offset.dz(), radius.getAsInt()));
+    }
+
+    /**
+     * An ender pearl, whether the server announced its teleport or the arrival watch found the player moved by it. One
+     * thrown from inside a Boxed island's box by a player whose role may move it moves the box to where it lands, as
+     * far as a box reaches from the island's centre. Any other pearl that carries a player out of every box is
+     * refused, as a step out is.
+     */
+    @Override
+    public boolean refuses(Arrival arrival) {
+        Location from = arrival.from();
+        if (arrival.cause() != ArrivalCause.PEARL || from == null) {
+            return false;
+        }
+        Player player = arrival.player();
+        Location to = arrival.to();
+        Optional<Island> island = islands.findIslandAt(from).filter(found -> service.isBoxed(found.id()));
+        boolean thrownInside = island.isPresent()
+                && to.getWorld() != null
+                && to.getWorld().equals(from.getWorld())
+                && boxOf(service, island.get())
+                        .map(box -> box.contains(from.getBlockX(), from.getBlockZ()))
+                        .orElse(false);
+        if (thrownInside && mayMoveTheBox(player, island.get())) {
+            Island moved = island.get();
+            BoxOffset offset = new BoxOffset(
+                    to.getBlockX() - moved.bounds().centerX(),
+                    to.getBlockZ() - moved.bounds().centerZ());
+            if (!service.canMove(moved.id(), offset)) {
+                messages.send(player, "boxed.move.too_far");
+                return true;
+            }
+            UUID playerId = player.getUniqueId();
+            Location landed = to.clone();
+            scheduler.async(() -> moveTheBox(player, playerId, moved, offset, landed));
+            return false;
+        }
+        if (outsideEveryBox(player, to)) {
+            tell(player);
+            return true;
+        }
+        return false;
+    }
+
+    private boolean mayMoveTheBox(Player player, Island island) {
+        Optional<ProfileId> profile = activeProfile.apply(player.getUniqueId());
+        // An owner's role kept from before the box could be moved does not name it, and an owner may all the same.
+        return profile.isPresent()
+                && (island.isOwner(profile.get()) || island.hasPermission(profile.get(), IslandPermission.BOX_MOVE));
+    }
+
+    private void moveTheBox(Player player, UUID playerId, Island island, BoxOffset offset, Location landed) {
+        IslandId islandId = island.id();
+        try {
+            var moved = service.move(islandId, offset);
+            if (!moved.isOk()) {
+                scheduler.onEntity(PlayerUuid.of(playerId), () -> messages.send(player, moved.errorOrThrow()));
+                return;
+            }
+            boxChanged.accept(islandId);
+            // A spawn the box left behind follows it, to where the pearl landed, so /is home lands in the box.
+            boxOf(service, island)
+                    .ifPresent(box -> spawnMover.moveInto(islandId, box, landed.getX(), landed.getY(), landed.getZ()));
+            scheduler.onEntity(PlayerUuid.of(playerId), () -> {
+                messages.send(player, "boxed.moved");
+                effectPlayer.fire(
+                        effects,
+                        "boxed-moved",
+                        player,
+                        java.util.Map.of("x", Integer.toString(offset.dx()), "z", Integer.toString(offset.dz())));
+            });
+        } catch (RuntimeException e) {
+            LOGGER.log(Level.WARNING, e, () -> "The box of island " + islandId + " could not be moved.");
+        }
     }
 
     private void tell(Player player) {

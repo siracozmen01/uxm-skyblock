@@ -28,7 +28,7 @@ import com.uxplima.uxmlib.storage.sql.Dialect;
 public final class SkyblockMigrations {
 
     /** The latest production schema version. */
-    public static final int LATEST_VERSION = 62;
+    public static final int LATEST_VERSION = 63;
 
     /** Human-readable description of migration V28. */
     public static final String V28_DESCRIPTION = "create profile cosmetics and island recycle operations";
@@ -128,6 +128,9 @@ public final class SkyblockMigrations {
 
     /** Human-readable description of migration V62. */
     public static final String V62_DESCRIPTION = "keep how far each boxed island's template land is copied";
+
+    /** Human-readable description of migration V63. */
+    public static final String V63_DESCRIPTION = "keep how far each boxed island's box was moved";
 
     /** Human-readable description of migration V39. */
     public static final String V39_DESCRIPTION =

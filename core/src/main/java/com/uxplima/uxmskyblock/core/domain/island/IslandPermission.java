@@ -48,6 +48,8 @@ public enum IslandPermission {
     MEMBER_DEMOTE,
     SETTINGS_MODIFY,
     BIOME_CHANGE,
+    /** Moving a Boxed island's box with an ender pearl. */
+    BOX_MOVE,
     WARP_CREATE,
     WARP_DELETE,
 

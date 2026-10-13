@@ -84,7 +84,7 @@ public final class BoxedBorders {
             return;
         }
         Optional<Island> island = islands.findIslandAt(at).filter(found -> service.isBoxed(found.id()));
-        Optional<IslandBounds> box = island.map(Island::bounds);
+        Optional<IslandBounds> box = island.flatMap(found -> BoxedListener.boxOf(service, found));
         String world = player.getWorld().getName();
         String now = box.map(bounds -> world + ":" + bounds.centerX() + ":" + bounds.centerZ() + ":" + bounds.radius())
                 .orElse("");

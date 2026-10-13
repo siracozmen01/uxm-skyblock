@@ -58,6 +58,14 @@ public final class IslandBoundaryListener implements Listener, ArrivalGate, Arri
     /** Whether an island is edged by the border a client draws. One that is not shows its edge some other way. */
     private volatile java.util.function.Predicate<IslandId> drawsBorder = island -> true;
 
+    /** The islands whose pearls a rule of their own game mode judges, as a Boxed island's box does. */
+    private volatile java.util.function.Predicate<IslandId> pearlsJudgedElsewhere = island -> false;
+
+    /** Leaves a pearl thrown from one of these islands to the rule of its game mode. */
+    public void leavePearlsOf(java.util.function.Predicate<IslandId> islands) {
+        this.pearlsJudgedElsewhere = Objects.requireNonNull(islands, "islands must not be null");
+    }
+
     /** Tells the listener which islands the client's border edges, and which show their edge some other way. */
     public void useBorderFor(java.util.function.Predicate<IslandId> drawsBorder) {
         this.drawsBorder = Objects.requireNonNull(drawsBorder, "drawsBorder must not be null");
@@ -158,7 +166,9 @@ public final class IslandBoundaryListener implements Listener, ArrivalGate, Arri
         if (arrival.cause() != ArrivalCause.PEARL || from == null) {
             return false;
         }
-        if (protectionListener.findIslandAt(from).isPresent()
+        Optional<Island> thrownFrom = protectionListener.findIslandAt(from);
+        if (thrownFrom.isPresent()
+                && !pearlsJudgedElsewhere.test(thrownFrom.get().id())
                 && protectionListener.findIslandAt(arrival.to()).isEmpty()) {
             messages.send(arrival.player(), "navigation.pearl_blocked");
             return true;

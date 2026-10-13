@@ -175,4 +175,65 @@ class ABoxGrowsWithAdvancementsTest {
         assertThat(service.grant(ordinary, 1)).isEmpty();
         assertThat(service.resize(ordinary, 6)).isEmpty();
     }
+
+    @Test
+    @DisplayName("A box is moved within what a box reaches from the island's centre, kept, and its reach covers it")
+    void aBoxIsMoved() {
+        Map<IslandId, com.uxplima.uxmskyblock.core.domain.boxed.BoxOffset> kept = new HashMap<>();
+        BoxOffsetsPort offsets = new BoxOffsetsPort() {
+            @Override
+            public Map<IslandId, com.uxplima.uxmskyblock.core.domain.boxed.BoxOffset> findAll() {
+                return Map.copyOf(kept);
+            }
+
+            @Override
+            public void move(IslandId id, com.uxplima.uxmskyblock.core.domain.boxed.BoxOffset offset) {
+                kept.put(id, offset);
+            }
+        };
+        BoxedService moving = new BoxedService(port, rules, offsets);
+        moving.start(islandId);
+        var near = new com.uxplima.uxmskyblock.core.domain.boxed.BoxOffset(-2, 3);
+        var far = new com.uxplima.uxmskyblock.core.domain.boxed.BoxOffset(4, 0);
+
+        assertThat(moving.offset(islandId)).isEqualTo(com.uxplima.uxmskyblock.core.domain.boxed.BoxOffset.NONE);
+        assertThat(moving.canMove(islandId, near)).isTrue();
+        assertThat(moving.canMove(islandId, far))
+                .describedAs("5 and 4 is past 8")
+                .isFalse();
+        assertThat(moving.move(islandId, far).errorOrThrow()).isEqualTo("boxed.move.too_far");
+        assertThat(moving.move(IslandId.of(UUID.randomUUID()), near).errorOrThrow())
+                .isEqualTo("boxed.move.no_box");
+        assertThat(moving.move(islandId, near).orElseThrow()).isEqualTo(near);
+        assertThat(kept).containsEntry(islandId, near);
+        assertThat(moving.offset(islandId)).isEqualTo(near);
+        assertThat(moving.radius(islandId)).hasValue(5);
+        assertThat(moving.reach(islandId))
+                .describedAs("the box and how far it moved")
+                .hasValue(8);
+        assertThat(moving.reach(IslandId.of(UUID.randomUUID()))).isEmpty();
+
+        moving.grant(islandId, 3);
+        assertThat(moving.radius(islandId))
+                .describedAs("a moved box grows no further than 8 from the centre")
+                .hasValue(5);
+        assertThat(moving.grant(islandId, 1).orElseThrow().toRadius()).isEqualTo(5);
+        assertThat(moving.canMove(islandId, near))
+                .describedAs("a box that earned 8 may stand only at the centre")
+                .isFalse();
+        assertThat(moving.canMove(islandId, com.uxplima.uxmskyblock.core.domain.boxed.BoxOffset.NONE))
+                .isTrue();
+        assertThat(moving.reach(islandId)).hasValue(8);
+
+        BoxedService again = new BoxedService(port, rules, offsets);
+        again.prime();
+        assertThat(again.offset(islandId)).describedAs("read back at the start").isEqualTo(near);
+        islands.remove(islandId);
+        again.forget(islandId);
+        assertThat(again.offset(islandId)).isEqualTo(com.uxplima.uxmskyblock.core.domain.boxed.BoxOffset.NONE);
+        assertThat(new com.uxplima.uxmskyblock.core.domain.boxed.BoxOffset(-7, 3).reach())
+                .isEqualTo(7);
+        assertThat(new com.uxplima.uxmskyblock.core.domain.boxed.BoxOffset(2, -9).reach())
+                .isEqualTo(9);
+    }
 }

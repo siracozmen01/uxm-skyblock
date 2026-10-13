@@ -281,6 +281,23 @@ class IslandBoundaryListenerTest extends MockBukkitHarness {
                         false)))
                 .describedAs("a command teleport off an island is no pearl")
                 .isFalse();
+        boundaryListener.leavePearlsOf(id -> id.equals(island.id()));
+        assertThat(boundaryListener.refuses(new com.uxplima.uxmskyblock.bukkit.arrival.Arrival(
+                        player,
+                        new Location(world, 0, 64, 0),
+                        new Location(world, 50, 64, 50),
+                        com.uxplima.uxmskyblock.bukkit.arrival.ArrivalCause.PEARL,
+                        false)))
+                .describedAs("a pearl from an island whose game mode judges its pearls")
+                .isFalse();
+        boundaryListener.leavePearlsOf(id -> false);
+        assertThat(boundaryListener.refuses(new com.uxplima.uxmskyblock.bukkit.arrival.Arrival(
+                        player,
+                        new Location(world, 0, 64, 0),
+                        new Location(world, 50, 64, 50),
+                        com.uxplima.uxmskyblock.bukkit.arrival.ArrivalCause.PEARL,
+                        false)))
+                .isTrue();
     }
 
     @Test

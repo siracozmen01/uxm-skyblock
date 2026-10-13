@@ -151,6 +151,7 @@ public final class PersistenceBootstrap implements AutoCloseable {
     private final com.uxplima.uxmskyblock.persistence.acid.SqlAcidIslandsAdapter acidIslandsAdapter;
     private final com.uxplima.uxmskyblock.persistence.boxed.SqlBoxedIslandsAdapter boxedIslandsAdapter;
     private final com.uxplima.uxmskyblock.persistence.boxed.SqlBoxedLandAdapter boxedLandAdapter;
+    private final com.uxplima.uxmskyblock.persistence.boxed.SqlBoxOffsetsAdapter boxOffsetsAdapter;
     private final com.uxplima.uxmskyblock.persistence.poseidon.SqlPoseidonIslandsAdapter poseidonIslandsAdapter;
     private final com.uxplima.uxmskyblock.persistence.stranger.SqlStrangerRealmsAdapter strangerRealmsAdapter;
     private final com.uxplima.uxmskyblock.persistence.parkour.SqlParkourAdapter parkourAdapter;
@@ -248,6 +249,8 @@ public final class PersistenceBootstrap implements AutoCloseable {
                 new com.uxplima.uxmskyblock.persistence.acid.SqlAcidIslandsAdapter(database.dataSource());
         this.boxedLandAdapter =
                 new com.uxplima.uxmskyblock.persistence.boxed.SqlBoxedLandAdapter(database.dataSource());
+        this.boxOffsetsAdapter =
+                new com.uxplima.uxmskyblock.persistence.boxed.SqlBoxOffsetsAdapter(database.dataSource());
         this.boxedIslandsAdapter =
                 new com.uxplima.uxmskyblock.persistence.boxed.SqlBoxedIslandsAdapter(database.dataSource());
         this.poseidonIslandsAdapter =
@@ -564,6 +567,11 @@ public final class PersistenceBootstrap implements AutoCloseable {
     /** How far each Boxed island played on the template's land has it copied. */
     public com.uxplima.uxmskyblock.core.application.boxed.BoxedLandPort boxedLandPort() {
         return boxedLandAdapter;
+    }
+
+    /** How far each moved Boxed box lies from its island's centre. */
+    public com.uxplima.uxmskyblock.core.application.boxed.BoxOffsetsPort boxOffsetsPort() {
+        return boxOffsetsAdapter;
     }
 
     /** Which islands are AcidIsland islands, and where their seas stand. */

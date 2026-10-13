@@ -337,14 +337,15 @@ public final class GameplayWiring {
         // read the radius: an island that paid for the top tier reached exactly as far as one that
         // had paid nothing. The edge follows the tier now, and the protection index is told, because
         // it is what answers for every block a player touches.
-        // A Boxed island reaches as far as its box, a StrangerRealms island as far as its size tier and
+        // A Boxed island reaches as far as its box, wherever an ender pearl moved it, a StrangerRealms island as far as
+        // its size tier and
         // its members take it, and every other island as far as its size tier.
         IslandSizeAllowance sizeAllowance = new IslandSizeAllowance(this.economicWiring.upgradeService());
         this.borderService = new IslandBorderService(
                 persistence.islandStoragePort(),
                 islandId -> this.boxedWiring
                         .service()
-                        .radius(islandId)
+                        .reach(islandId)
                         .orElseGet(() ->
                                 this.strangerRealmsWiring.claimRadius(islandId, sizeAllowance.applyAsInt(islandId))),
                 persistence.islandMutationLock());
@@ -427,7 +428,12 @@ public final class GameplayWiring {
                 persistence.islandStoragePort()::findLocationByIslandId);
         var border = environmentWiring.boundaryListener();
         if (border != null) {
-            border.useBorderFor(islandEdges::drawsBorder);
+            // A Boxed island's border is its box, which BoxedBorders draws; its island square, wider once a pearl moved
+            // the box, is not drawn.
+            border.useBorderFor(island -> islandEdges.drawsBorder(island)
+                    && !this.boxedWiring.service().isBoxed(island));
+            // A pearl thrown from a Boxed island is judged by its box, which a pearl may move.
+            border.leavePearlsOf(this.boxedWiring.service()::isBoxed);
             islandEdges.whenChanged(island -> refreshTheBorderOn(island, border));
         }
         islandEdges.whenChanged(islandEdgeWalls::changed);
@@ -450,7 +456,7 @@ public final class GameplayWiring {
         // An island is cleared over its border, everywhere its game mode wrote past it, a box grown past it and a
         // margin past all of them, on every path that removes it. Its starts say where they wrote.
         this.adminWiring.useWipeAreas(new com.uxplima.uxmskyblock.core.application.recycle.IslandWipeAreas(
-                persistence.islandFootprintPort(), this.boxedWiring.service()::radius, clearMargin(config.rootNode())));
+                persistence.islandFootprintPort(), this.boxedWiring.service()::reach, clearMargin(config.rootNode())));
         this.creationWiring.schematicEngine().useFootprints(persistence.islandFootprintPort());
         this.cacheEviction.whenForgotten(this.poseidonWiring.service()::forget);
         this.cacheEviction.whenForgotten(this.strangerRealmsWiring.service()::forget);

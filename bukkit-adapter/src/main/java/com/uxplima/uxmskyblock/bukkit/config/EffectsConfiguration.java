@@ -91,6 +91,7 @@ public final class EffectsConfiguration {
                 parseAll("acid-clean-water-filled", List.of("[sound] item.bottle.fill 1.0 1.0")));
         defaults.put("acid-vent-fumes", parseAll("acid-vent-fumes", List.of("[particle] CAMPFIRE_COSY_SMOKE 4 0.4")));
         defaults.put("boxed-grew", parseAll("boxed-grew", List.of("[sound] entity.player.levelup 0.8 1.6")));
+        defaults.put("boxed-moved", parseAll("boxed-moved", List.of("[sound] entity.enderman.teleport 0.8 1.2")));
         defaults.put(
                 "brix-plot-entered", parseAll("brix-plot-entered", List.of("[sound] block.beacon.activate 0.6 1.4")));
         defaults.put("brix-plot-left", parseAll("brix-plot-left", List.of("[sound] block.beacon.deactivate 0.6 1.4")));

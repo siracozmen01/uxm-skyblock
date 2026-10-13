@@ -7,6 +7,7 @@ import java.util.OptionalLong;
 import java.util.concurrent.ConcurrentHashMap;
 
 import com.uxplima.uxmskyblock.core.domain.boxed.AdvancementFacts;
+import com.uxplima.uxmskyblock.core.domain.boxed.BoxOffset;
 import com.uxplima.uxmskyblock.core.domain.boxed.BoxRules;
 import com.uxplima.uxmskyblock.core.domain.identity.IslandId;
 
@@ -22,10 +23,33 @@ public final class BoxedService {
     private final BoxedIslandsPort port;
     private final BoxRules rules;
     private final Map<IslandId, Long> earned = new ConcurrentHashMap<>();
+    private final BoxOffsetsPort offsetsPort;
+    private final Map<IslandId, BoxOffset> offsets = new ConcurrentHashMap<>();
 
+    /** A service whose moved boxes are kept in memory only, as a test's are. */
     public BoxedService(BoxedIslandsPort port, BoxRules rules) {
+        this(port, rules, new KeptInMemory());
+    }
+
+    public BoxedService(BoxedIslandsPort port, BoxRules rules, BoxOffsetsPort offsetsPort) {
         this.port = Objects.requireNonNull(port, "port must not be null");
         this.rules = Objects.requireNonNull(rules, "rules must not be null");
+        this.offsetsPort = Objects.requireNonNull(offsetsPort, "offsetsPort must not be null");
+    }
+
+    /** Moved boxes kept nowhere but here. */
+    private static final class KeptInMemory implements BoxOffsetsPort {
+        private final Map<IslandId, BoxOffset> kept = new ConcurrentHashMap<>();
+
+        @Override
+        public Map<IslandId, BoxOffset> findAll() {
+            return Map.copyOf(kept);
+        }
+
+        @Override
+        public void move(IslandId islandId, BoxOffset offset) {
+            kept.put(islandId, offset);
+        }
     }
 
     public BoxRules rules() {
@@ -36,6 +60,7 @@ public final class BoxedService {
     public int prime() {
         Map<IslandId, Long> all = port.findAll();
         all.forEach(earned::putIfAbsent);
+        offsetsPort.findAll().forEach(offsets::putIfAbsent);
         return all.size();
     }
 
@@ -54,7 +79,57 @@ public final class BoxedService {
     /** How far the island's box reaches, or empty for an island that is not a Boxed island. Memory only. */
     public OptionalInt radius(IslandId islandId) {
         Long blocks = earned.get(islandId);
-        return blocks == null ? OptionalInt.empty() : OptionalInt.of(rules.radius(blocks));
+        if (blocks == null) {
+            return OptionalInt.empty();
+        }
+        return OptionalInt.of(boxed(islandId, blocks));
+    }
+
+    /** The radius of the island's box once it earned {@code blocks}. */
+    private int boxed(IslandId islandId, long blocks) {
+        // A moved box grows no further than a box never moved could reach, measured from the island's centre.
+        return Math.min(
+                rules.radius(blocks), rules.maxRadius() - offset(islandId).reach());
+    }
+
+    /** How far the island's box lies from the island's centre. Memory only. */
+    public BoxOffset offset(IslandId islandId) {
+        return offsets.getOrDefault(islandId, BoxOffset.NONE);
+    }
+
+    /**
+     * How far from the island's centre its box reaches, along either way: the box's radius and how far it was
+     * moved. The island's protected square is this wide, so the box is inside it wherever it was moved. Memory only.
+     */
+    public OptionalInt reach(IslandId islandId) {
+        OptionalInt radius = radius(islandId);
+        return radius.isEmpty()
+                ? radius
+                : OptionalInt.of(radius.getAsInt() + offset(islandId).reach());
+    }
+
+    /** Whether the island's box, as wide as it is now, may be moved {@code to} from the island's centre. Memory only. */
+    public boolean canMove(IslandId islandId, BoxOffset to) {
+        Long blocks = earned.get(islandId);
+        return blocks != null && rules.radius(blocks) + to.reach() <= rules.maxRadius();
+    }
+
+    /**
+     * Moves the island's box {@code to} from the island's centre. Off the main thread: it writes a row.
+     *
+     * @return the box's offset now, or why it was not moved: no Boxed island, or further than a box reaches
+     */
+    public com.uxplima.uxmskyblock.core.domain.result.Result<BoxOffset, String> move(IslandId islandId, BoxOffset to) {
+        Objects.requireNonNull(to, "to must not be null");
+        if (!isBoxed(islandId)) {
+            return com.uxplima.uxmskyblock.core.domain.result.Result.err("boxed.move.no_box");
+        }
+        if (!canMove(islandId, to)) {
+            return com.uxplima.uxmskyblock.core.domain.result.Result.err("boxed.move.too_far");
+        }
+        offsetsPort.move(islandId, to);
+        offsets.put(islandId, to);
+        return com.uxplima.uxmskyblock.core.domain.result.Result.ok(to);
     }
 
     /**
@@ -72,8 +147,8 @@ public final class BoxedService {
             return java.util.Optional.empty();
         }
         long before = earned.merge(islandId, (long) blocks, Long::sum) - blocks;
-        int from = rules.radius(before);
-        int to = rules.radius(before + blocks);
+        int from = boxed(islandId, before);
+        int to = boxed(islandId, before + blocks);
         return java.util.Optional.of(new Grown(islandId, blocks, from, to));
     }
 
@@ -89,7 +164,8 @@ public final class BoxedService {
         }
         port.grant(islandId, blocks);
         long before = earned.merge(islandId, (long) blocks, Long::sum) - blocks;
-        return java.util.Optional.of(new Grown(islandId, blocks, rules.radius(before), rules.radius(before + blocks)));
+        return java.util.Optional.of(
+                new Grown(islandId, blocks, boxed(islandId, before), boxed(islandId, before + blocks)));
     }
 
     /**
@@ -121,6 +197,7 @@ public final class BoxedService {
             earned.put(islandId, stored.getAsLong());
         } else {
             earned.remove(islandId);
+            offsets.remove(islandId);
         }
     }
 }

@@ -48,7 +48,7 @@ public final class BoxedWiring implements AutoCloseable {
             Function<UUID, Optional<ProfileId>> activeProfile) {
         this.config = Objects.requireNonNull(configuration.boxedConfig(), "boxedConfig must not be null");
         this.scheduler = Objects.requireNonNull(scheduler, "scheduler must not be null");
-        this.service = new BoxedService(persistence.boxedIslandsPort(), config.rules());
+        this.service = new BoxedService(persistence.boxedIslandsPort(), config.rules(), persistence.boxOffsetsPort());
         String islandWorld = configuration.nodeConfig().worldName();
         Set<String> boxedWorlds = configuration.presetConfig().presets().stream()
                 .filter(preset -> preset.mode() == GameModeType.BOXED)
@@ -75,6 +75,9 @@ public final class BoxedWiring implements AutoCloseable {
                 boxedWorlds,
                 config.bypassPermission());
         listener.letVisitorsEarn(config.visitorsEarn());
+        var locations = new com.uxplima.uxmskyblock.core.application.island.IslandLocationService(
+                persistence.islandStoragePort(), persistence.islandMutationLock());
+        listener.useSpawnMover((islandId, box, x, y, z) -> locations.moveSpawnInto(islandId, box, x, y, z));
         scheduler.async(() -> {
             try {
                 int count = service.prime();

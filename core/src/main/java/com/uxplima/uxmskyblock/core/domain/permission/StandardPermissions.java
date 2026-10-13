@@ -55,6 +55,7 @@ public final class StandardPermissions {
     public static final PermissionKey MEMBER_DEMOTE = PermissionKey.uxm("member.demote");
     public static final PermissionKey SETTINGS_MODIFY = PermissionKey.uxm("settings.modify");
     public static final PermissionKey BIOME_CHANGE = PermissionKey.uxm("biome.change");
+    public static final PermissionKey BOX_MOVE = PermissionKey.uxm("box.move");
     public static final PermissionKey WARP_CREATE = PermissionKey.uxm("warp.create");
     public static final PermissionKey WARP_DELETE = PermissionKey.uxm("warp.delete");
 
@@ -95,6 +96,7 @@ public final class StandardPermissions {
         map.put(IslandPermission.MEMBER_DEMOTE, MEMBER_DEMOTE);
         map.put(IslandPermission.SETTINGS_MODIFY, SETTINGS_MODIFY);
         map.put(IslandPermission.BIOME_CHANGE, BIOME_CHANGE);
+        map.put(IslandPermission.BOX_MOVE, BOX_MOVE);
         map.put(IslandPermission.WARP_CREATE, WARP_CREATE);
         map.put(IslandPermission.WARP_DELETE, WARP_DELETE);
         map.put(IslandPermission.CHAT_VIEW, CHAT_VIEW);

@@ -6,6 +6,7 @@ import java.util.Optional;
 import com.uxplima.uxmskyblock.core.domain.identity.IslandId;
 import com.uxplima.uxmskyblock.core.domain.identity.ProfileId;
 import com.uxplima.uxmskyblock.core.domain.island.Island;
+import com.uxplima.uxmskyblock.core.domain.island.IslandBounds;
 import com.uxplima.uxmskyblock.core.domain.island.IslandLocation;
 import com.uxplima.uxmskyblock.core.domain.island.IslandPermission;
 
@@ -75,6 +76,38 @@ public final class IslandLocationService {
                             current.spawnX(),
                             y,
                             current.spawnZ(),
+                            current.spawnYaw(),
+                            current.spawnPitch()));
+            return true;
+        });
+    }
+
+    /**
+     * Moves the island's spawn to {@code x}, {@code y}, {@code z} in its own world when it stands outside {@code keep},
+     * as when a Boxed island's box moved away from it. Returns whether it moved.
+     */
+    public boolean moveSpawnInto(IslandId islandId, IslandBounds keep, double x, double y, double z) {
+        Objects.requireNonNull(islandId, "islandId must not be null");
+        Objects.requireNonNull(keep, "keep must not be null");
+        return mutationLock.inside(islandId, () -> {
+            Optional<Island> island = islandStoragePort.findIslandById(islandId);
+            Optional<IslandLocation> location = islandStoragePort.findLocationByIslandId(islandId);
+            if (island.isEmpty() || location.isEmpty()) {
+                return false;
+            }
+            IslandLocation current = location.get();
+            if (keep.contains((int) Math.floor(current.spawnX()), (int) Math.floor(current.spawnZ()))) {
+                return false;
+            }
+            islandStoragePort.saveIsland(
+                    island.get(),
+                    new IslandLocation(
+                            islandId,
+                            current.worldName(),
+                            current.bounds(),
+                            x,
+                            y,
+                            z,
                             current.spawnYaw(),
                             current.spawnPitch()));
             return true;

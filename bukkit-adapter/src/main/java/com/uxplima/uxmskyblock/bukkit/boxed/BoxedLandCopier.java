@@ -129,7 +129,8 @@ public final class BoxedLandCopier {
         scheduler.async(() -> {
             try {
                 OptionalInt kept = port.rings(islandId);
-                OptionalInt radius = service.radius(islandId);
+                // As far as the box reaches from the island's centre, wherever it was moved.
+                OptionalInt radius = service.reach(islandId);
                 Optional<IslandLocation> place = places.apply(islandId);
                 if (kept.isEmpty() || radius.isEmpty() || place.isEmpty()) {
                     finish(islandId, job);

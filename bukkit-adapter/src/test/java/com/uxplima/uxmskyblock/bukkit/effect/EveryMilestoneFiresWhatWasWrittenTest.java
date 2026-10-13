@@ -100,6 +100,7 @@ class EveryMilestoneFiresWhatWasWrittenTest {
                         "acid-clean-water-filled",
                         "acid-vent-fumes",
                         "boxed-grew",
+                        "boxed-moved",
                         "poseidon-dry-air",
                         "poseidon-sun-burns",
                         "poseidon-still-drowns",

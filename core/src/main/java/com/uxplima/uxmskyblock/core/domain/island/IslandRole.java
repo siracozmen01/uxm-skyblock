@@ -63,6 +63,7 @@ public record IslandRole(String id, int weight, String displayName, Set<IslandPe
                     IslandPermission.MEMBER_KICK,
                     IslandPermission.SETTINGS_MODIFY,
                     IslandPermission.BIOME_CHANGE,
+                    IslandPermission.BOX_MOVE,
                     IslandPermission.WARP_CREATE,
                     IslandPermission.WARP_DELETE,
                     IslandPermission.VAULT_VIEW,
