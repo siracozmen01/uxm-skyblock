@@ -87,6 +87,11 @@ public final class EffectsConfiguration {
         defaults.put("acid-rain-burns", parseAll("acid-rain-burns", List.of("[sound] block.fire.extinguish 0.3 1.9")));
         defaults.put("acid-water-drunk", parseAll("acid-water-drunk", List.of("[sound] entity.generic.drink 1.0 0.6")));
         defaults.put(
+                "acid-clean-water-drunk",
+                parseAll(
+                        "acid-clean-water-drunk",
+                        List.of("[sound] entity.generic.drink 1.0 1.2", "[particle] HEART 3 0.4")));
+        defaults.put(
                 "acid-clean-water-filled",
                 parseAll("acid-clean-water-filled", List.of("[sound] item.bottle.fill 1.0 1.0")));
         defaults.put("acid-vent-fumes", parseAll("acid-vent-fumes", List.of("[particle] CAMPFIRE_COSY_SMOKE 4 0.4")));

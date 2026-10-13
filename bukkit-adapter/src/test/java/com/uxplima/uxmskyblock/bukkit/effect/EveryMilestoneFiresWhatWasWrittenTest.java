@@ -97,6 +97,7 @@ class EveryMilestoneFiresWhatWasWrittenTest {
                         "acid-sea-burns",
                         "acid-rain-burns",
                         "acid-water-drunk",
+                        "acid-clean-water-drunk",
                         "acid-clean-water-filled",
                         "acid-vent-fumes",
                         "acid-item-dissolved",

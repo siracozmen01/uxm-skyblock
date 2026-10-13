@@ -262,7 +262,8 @@ class TheSeaDissolvesItemsAndBurnsCreaturesTest extends MockBukkitHarness {
                 List.of(),
                 new AcidIslandConfiguration.Purification(true, true),
                 seaLife,
-                AcidIslandConfiguration.Armour.NONE);
+                AcidIslandConfiguration.Armour.NONE,
+                AcidIslandConfiguration.CleanWater.NONE);
         return new AcidSeaLife(
                 service,
                 islands,

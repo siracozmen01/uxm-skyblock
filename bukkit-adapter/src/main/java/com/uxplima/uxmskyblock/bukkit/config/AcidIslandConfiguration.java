@@ -17,6 +17,7 @@ import org.spongepowered.configurate.ConfigurationNode;
  * @param waterEffects the effects the sea gives, each written {@code name:amplifier:seconds}
  * @param seaLife what the sea does to items and creatures in it
  * @param armour the full sets of armour that keep the acid off
+ * @param cleanWater what a bottle of clean water does for whoever drinks it
  */
 public record AcidIslandConfiguration(
         boolean enabled,
@@ -26,7 +27,8 @@ public record AcidIslandConfiguration(
         List<String> waterEffects,
         Purification purification,
         SeaLife seaLife,
-        Armour armour) {
+        Armour armour,
+        CleanWater cleanWater) {
 
     private static final Logger LOGGER = Logger.getLogger(AcidIslandConfiguration.class.getName());
 
@@ -143,6 +145,26 @@ public record AcidIslandConfiguration(
         }
     }
 
+    /**
+     * What a bottle of clean water drunk on an AcidIsland island does.
+     *
+     * @param heals the health it gives back, 0 for none; a heart is 2
+     * @param effects the effects it gives, each written {@code name:amplifier:seconds}
+     */
+    public record CleanWater(double heals, List<String> effects) {
+
+        public static final CleanWater SHIPPED = new CleanWater(4.0, List.of());
+
+        public static final CleanWater NONE = new CleanWater(0, List.of());
+
+        public CleanWater {
+            effects = List.copyOf(effects);
+            if (heals < 0 || heals > 1024) {
+                throw new IllegalArgumentException("clean water heals from 0 to 1024: " + heals);
+            }
+        }
+    }
+
     /** How acid water is made clean. Rain a cauldron catches is clean already. */
     public record Purification(boolean furnace, boolean brewingWithCoal) {}
 
@@ -152,6 +174,7 @@ public record AcidIslandConfiguration(
         Objects.requireNonNull(purification, "purification must not be null");
         Objects.requireNonNull(seaLife, "seaLife must not be null");
         Objects.requireNonNull(armour, "armour must not be null");
+        Objects.requireNonNull(cleanWater, "cleanWater must not be null");
         waterProtection = List.copyOf(waterProtection);
         waterEffects = List.copyOf(waterEffects);
     }
@@ -165,7 +188,8 @@ public record AcidIslandConfiguration(
                 List.of("poison:0:3"),
                 new Purification(true, true),
                 SeaLife.SHIPPED,
-                Armour.SHIPPED);
+                Armour.SHIPPED,
+                CleanWater.SHIPPED);
     }
 
     public static AcidIslandConfiguration load(ConfigurationNode root) {
@@ -215,7 +239,21 @@ public record AcidIslandConfiguration(
                         purification.node("furnace").getBoolean(true),
                         purification.node("brewing-with-coal").getBoolean(true)),
                 seaLife(root.node("sea-life")),
-                armour(hazard.node("armour")));
+                armour(hazard.node("armour")),
+                cleanWater(root.node("clean-water")));
+    }
+
+    /** What clean water does, as {@code clean-water} writes it; what cannot be read is the shipped. */
+    private static CleanWater cleanWater(ConfigurationNode node) {
+        try {
+            return new CleanWater(
+                    node.node("heals").getDouble(CleanWater.SHIPPED.heals()),
+                    strings(node.node("effects"), CleanWater.SHIPPED.effects()));
+        } catch (IllegalArgumentException e) {
+            LOGGER.warning(
+                    () -> "modules/acidisland.conf clean-water: " + e.getMessage() + ". The shipped one is used.");
+            return CleanWater.SHIPPED;
+        }
     }
 
     /** The armour that keeps the acid off, as {@code hazard armour} writes it; what cannot be read is the shipped. */

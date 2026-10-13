@@ -56,6 +56,8 @@ public final class AcidHazard {
     private final AcidIslandConfiguration.Armour armour;
     private final InteractionEffects effects;
     private final InteractionEffectPlayer effectPlayer;
+    private final AcidIslandConfiguration.CleanWater cleanWater;
+    private final List<PotionEffect> cleanEffects;
     private @Nullable AcidSeaLife seaLife;
 
     public AcidHazard(
@@ -85,6 +87,8 @@ public final class AcidHazard {
                 effectsWritten("sea vents effects", config.sea().vents().effects());
         this.sea = config.sea();
         this.armour = config.armour();
+        this.cleanWater = config.cleanWater();
+        this.cleanEffects = effectsWritten("clean-water effects", cleanWater.effects());
     }
 
     /** Starts the beat. Closing what it returns stops it. */
@@ -204,6 +208,30 @@ public final class AcidHazard {
         }
         effectPlayer.fire(effects, "acid-water-drunk", player);
         return taken;
+    }
+
+    /**
+     * A player drank a bottle of clean water: it gives back the health the operator wrote, up to the player's most,
+     * and its effects. Returns the health it gave back.
+     */
+    public double drankClean(Player player) {
+        double most = player.getAttribute(org.bukkit.attribute.Attribute.MAX_HEALTH) == null
+                ? player.getHealth()
+                : player.getAttribute(org.bukkit.attribute.Attribute.MAX_HEALTH).getValue();
+        double healed = Math.max(0, Math.min(cleanWater.heals(), most - player.getHealth()));
+        if (healed > 0) {
+            player.setHealth(player.getHealth() + healed);
+        }
+        for (PotionEffect effect : cleanEffects) {
+            player.addPotionEffect(effect);
+        }
+        effectPlayer.fire(effects, "acid-clean-water-drunk", player, java.util.Map.of("healed", healedText(healed)));
+        return healed;
+    }
+
+    /** {@code 4} for four, {@code 1.5} for one and a half. */
+    static String healedText(double healed) {
+        return java.math.BigDecimal.valueOf(healed).stripTrailingZeros().toPlainString();
     }
 
     /** A player filled a clean bottle from a cauldron, which the plugin did in the server's place. */

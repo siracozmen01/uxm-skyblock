@@ -69,6 +69,11 @@ class AcidWaterIsMadeCleanTest extends MockBukkitHarness {
     private AcidWaterListener listener;
 
     @SuppressWarnings("NullAway.Init")
+    private java.util.function.Function<AcidIslandConfiguration.CleanWater, AcidWaterListener> healing;
+
+    private final List<String> fired = new java.util.ArrayList<>();
+
+    @SuppressWarnings("NullAway.Init")
     private PlayerMock player;
 
     private final Map<IslandId, Integer> stored = new HashMap<>();
@@ -108,7 +113,8 @@ class AcidWaterIsMadeCleanTest extends MockBukkitHarness {
                 List.of("poison:0:3"),
                 new AcidIslandConfiguration.Purification(true, true),
                 AcidIslandConfiguration.SeaLife.NONE,
-                AcidIslandConfiguration.Armour.NONE);
+                AcidIslandConfiguration.Armour.NONE,
+                AcidIslandConfiguration.CleanWater.NONE);
         AcidHazard hazard = new AcidHazard(
                 service,
                 islands,
@@ -117,6 +123,34 @@ class AcidWaterIsMadeCleanTest extends MockBukkitHarness {
                 InteractionEffects.none(),
                 new InteractionEffectPlayer());
         listener = new AcidWaterListener(hazard, Messages.bundled());
+        healing = clean -> new AcidWaterListener(
+                new AcidHazard(
+                        service,
+                        islands,
+                        mock(SchedulerPort.class),
+                        new AcidIslandConfiguration(
+                                true,
+                                AcidIslandConfiguration.Sea.SHIPPED,
+                                new AcidRules(3.0, 1.0, true, Duration.ofSeconds(1)),
+                                List.of(),
+                                List.of("poison:0:3"),
+                                new AcidIslandConfiguration.Purification(true, true),
+                                AcidIslandConfiguration.SeaLife.NONE,
+                                AcidIslandConfiguration.Armour.NONE,
+                                clean),
+                        new InteractionEffects(java.util.Map.of(
+                                "acid-clean-water-drunk",
+                                com.uxplima.uxmlib.condition.action.ActionList.parse(
+                                        List.of("[console] probe healed %healed%")))),
+                        new InteractionEffectPlayer()),
+                Messages.bundled());
+        server.getCommandMap().register("probe", new org.bukkit.command.Command("probe") {
+            @Override
+            public boolean execute(org.bukkit.command.CommandSender sender, String label, String[] args) {
+                fired.add(String.join(" ", args));
+                return true;
+            }
+        });
         player = createPlayer("Drinker");
         player.setGameMode(GameMode.SURVIVAL);
         player.teleport(new Location(world, 8.5, Y, 8.5));
@@ -164,6 +198,77 @@ class AcidWaterIsMadeCleanTest extends MockBukkitHarness {
         assertThat(player.getHealth()).isEqualTo(17.0);
         assertThat(player.getPotionEffect(PotionEffectType.POISON)).isNotNull();
         assertThat(said(player)).anySatisfy(line -> assertThat(line).contains("acid water"));
+    }
+
+    @Test
+    @DisplayName(
+            "Clean water drunk on an AcidIsland island heals as the operator wrote, up to the most, with its effects")
+    void cleanWaterHeals() {
+        AcidWaterListener heals =
+                healing.apply(new AcidIslandConfiguration.CleanWater(5.0, List.of("regeneration:0:5")));
+        player.setHealth(10.0);
+        player.nextComponentMessage();
+
+        heals.onDrink(new PlayerItemConsumeEvent(player, AcidWater.cleanBottle(), EquipmentSlot.HAND));
+
+        assertThat(player.getHealth()).isEqualTo(15.0);
+        assertThat(player.getPotionEffect(PotionEffectType.REGENERATION))
+                .extracting(org.bukkit.potion.PotionEffect::getDuration)
+                .isEqualTo(100);
+        assertThat(player.getPotionEffect(PotionEffectType.POISON)).isNull();
+        assertThat(fired).containsExactly("healed 5");
+        assertThat(net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer.plainText()
+                        .serialize(player.nextComponentMessage()))
+                .contains("5 health");
+
+        player.setHealth(18.5);
+        heals.onDrink(new PlayerItemConsumeEvent(player, AcidWater.cleanBottle(), EquipmentSlot.HAND));
+        assertThat(player.getHealth()).describedAs("up to the most").isEqualTo(20.0);
+        assertThat(fired).last().isEqualTo("healed 1.5");
+        assertThat(net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer.plainText()
+                        .serialize(player.nextComponentMessage()))
+                .contains("1.5 health");
+
+        player.removePotionEffect(PotionEffectType.REGENERATION);
+        heals.onDrink(new PlayerItemConsumeEvent(player, AcidWater.cleanBottle(), EquipmentSlot.HAND));
+        assertThat(player.getPotionEffect(PotionEffectType.REGENERATION))
+                .describedAs("the effects even at full health")
+                .isNotNull();
+        assertThat(player.nextComponentMessage())
+                .describedAs("nothing to say at full health")
+                .isNull();
+
+        player.setHealth(10.0);
+        player.teleport(new Location(world, 1008.5, Y, 8.5));
+        heals.onDrink(new PlayerItemConsumeEvent(player, AcidWater.cleanBottle(), EquipmentSlot.HAND));
+        assertThat(player.getHealth())
+                .describedAs("on an island of another mode")
+                .isEqualTo(10.0);
+        player.teleport(new Location(world, 8.5, Y, 8.5));
+        heals.onDrink(new PlayerItemConsumeEvent(player, AcidWater.waterBottle(), EquipmentSlot.HAND));
+        assertThat(player.getHealth()).describedAs("acid water does not heal").isEqualTo(7.0);
+    }
+
+    @Test
+    @DisplayName("What clean water does is read from the file, and what cannot be is the shipped")
+    void cleanWaterIsRead() throws Exception {
+        assertThat(cleanOf("clean-water { heals = 6, effects = [\"regeneration:0:5\"] }"))
+                .isEqualTo(new AcidIslandConfiguration.CleanWater(6, List.of("regeneration:0:5")));
+        assertThat(cleanOf("enabled = true")).isEqualTo(AcidIslandConfiguration.CleanWater.SHIPPED);
+        assertThat(cleanOf("clean-water { heals = -1 }")).isEqualTo(AcidIslandConfiguration.CleanWater.SHIPPED);
+        assertThat(cleanOf("clean-water { heals = 1025 }")).isEqualTo(AcidIslandConfiguration.CleanWater.SHIPPED);
+        assertThat(cleanOf(new String(
+                        AcidWaterIsMadeCleanTest.class
+                                .getResourceAsStream("/modules/acidisland.conf")
+                                .readAllBytes(),
+                        java.nio.charset.StandardCharsets.UTF_8)))
+                .isEqualTo(AcidIslandConfiguration.CleanWater.SHIPPED);
+    }
+
+    private static AcidIslandConfiguration.CleanWater cleanOf(String written) throws Exception {
+        return AcidIslandConfiguration.load(org.spongepowered.configurate.hocon.HoconConfigurationLoader.builder()
+                        .buildAndLoadString(written))
+                .cleanWater();
     }
 
     @Test

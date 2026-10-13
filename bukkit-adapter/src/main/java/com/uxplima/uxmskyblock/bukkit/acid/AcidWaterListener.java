@@ -36,6 +36,17 @@ public final class AcidWaterListener implements Listener {
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onDrink(PlayerItemConsumeEvent event) {
         Player player = event.getPlayer();
+        if (AcidWater.isClean(event.getItem()) && hazard.onAcidIsland(player.getLocation())) {
+            double healed = hazard.drankClean(player);
+            if (healed > 0) {
+                messages.send(
+                        player,
+                        "acid.drank_clean",
+                        net.kyori.adventure.text.minimessage.tag.resolver.Placeholder.unparsed(
+                                "healed", AcidHazard.healedText(healed)));
+            }
+            return;
+        }
         if (!AcidWater.isAcid(event.getItem()) || !hazard.onAcidIsland(player.getLocation())) {
             return;
         }
