@@ -51,10 +51,11 @@ public record ParkourConfiguration(boolean enabled, Markers markers, Runs runs, 
      * @param fallDepth how far below the last checkpoint a runner may fall before being put back on it
      * @param timeLimit how long a run may take before it is dropped
      * @param boardSize how many runners the course command shows
+     * @param splits whether each checkpoint says how long the run took to it, against the runner's best
      */
-    public record Runs(int fallDepth, Duration timeLimit, int boardSize) {
+    public record Runs(int fallDepth, Duration timeLimit, int boardSize, boolean splits) {
 
-        public static final Runs SHIPPED = new Runs(8, Duration.ofMinutes(30), 10);
+        public static final Runs SHIPPED = new Runs(8, Duration.ofMinutes(30), 10, true);
 
         public Runs {
             Objects.requireNonNull(timeLimit, "timeLimit must not be null");
@@ -162,7 +163,8 @@ public record ParkourConfiguration(boolean enabled, Markers markers, Runs runs, 
             runs = new Runs(
                     run.node("fall-depth").getInt(Runs.SHIPPED.fallDepth()),
                     AcidIslandConfiguration.durationOf(run.node("time-limit").getString(""), Runs.SHIPPED.timeLimit()),
-                    run.node("board-size").getInt(Runs.SHIPPED.boardSize()));
+                    run.node("board-size").getInt(Runs.SHIPPED.boardSize()),
+                    run.node("splits").getBoolean(Runs.SHIPPED.splits()));
         } catch (IllegalArgumentException e) {
             LOGGER.warning(() -> "modules/parkour.conf runs: " + e.getMessage() + ". The shipped runs are used.");
             runs = Runs.SHIPPED;

@@ -61,6 +61,8 @@ public final class ParkourWiring implements AutoCloseable {
                 configuration.effectsConfig(),
                 new InteractionEffectPlayer(scheduler, configuration.messages()));
         runs.whenStarted(modes::startRun);
+        runs.splits(new com.uxplima.uxmskyblock.bukkit.parkour.ParkourSplits(
+                persistence.parkourSplitsPort(), scheduler, config.runs().splits()));
         runs.ghosts(new com.uxplima.uxmskyblock.bukkit.parkour.ParkourGhosts(
                 persistence.parkourGhostsPort(),
                 scheduler,
