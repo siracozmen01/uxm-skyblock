@@ -161,13 +161,28 @@ public record OneBlockConfiguration(
                                         written.node("breaker").getList(String.class, List.of())),
                                 EffectsConfiguration.parseAll(
                                         "oneblock phase " + phase + ", " + event + ".members",
-                                        written.node("members").getList(String.class, List.of()))));
+                                        written.node("members").getList(String.class, List.of())),
+                                event.equals(OneBlockLists.LUCKY) ? chance(phase, written.node("chance")) : 1));
             } catch (org.spongepowered.configurate.serialize.SerializationException wrong) {
                 LOGGER.warning(() -> "OneBlock phase '" + phase + "', " + event + " cannot be read: "
                         + wrong.getMessage() + ". The shipped list in modules/effects.conf runs instead.");
             }
         }
         return byEvent;
+    }
+
+    /**
+     * How often a break of {@code phase} is lucky, as its file writes {@code lucky.chance}, from 0 to 1. A chance left
+     * out, or one that is no chance, is said in the console and read as never.
+     */
+    private static double chance(String phase, ConfigurationNode node) {
+        double chance = node.getDouble(-1);
+        if (chance >= 0 && chance <= 1) {
+            return chance;
+        }
+        LOGGER.warning(() -> "OneBlock phase '" + phase + "' has a lucky break with chance '" + node.raw()
+                + "', which is no chance from 0 to 1, so no break of it is lucky.");
+        return 0;
     }
 
     /** The slots a creature's equipment is written by. */
@@ -231,6 +246,17 @@ public record OneBlockConfiguration(
     public java.util.Optional<OneBlockLists> listsOf(String phase, String event) {
         return java.util.Optional.ofNullable(lists.getOrDefault(phase, Map.of()).get(event))
                 .filter(written -> !written.isEmpty());
+    }
+
+    /**
+     * How often a break of the phase {@code phase} is lucky, when its file writes a lucky break with a chance above
+     * nothing, whether or not it writes lists for it.
+     */
+    public java.util.OptionalDouble luckOf(String phase) {
+        OneBlockLists lucky = lists.getOrDefault(phase, Map.of()).get(OneBlockLists.LUCKY);
+        return lucky == null || lucky.chance() <= 0
+                ? java.util.OptionalDouble.empty()
+                : java.util.OptionalDouble.of(lucky.chance());
     }
 
     /** What happens once {@code broken} blocks of the phase {@code phase} are broken, if anything. */

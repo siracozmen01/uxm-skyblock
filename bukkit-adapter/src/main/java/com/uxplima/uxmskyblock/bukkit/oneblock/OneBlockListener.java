@@ -58,6 +58,8 @@ public final class OneBlockListener implements Listener {
     private volatile @org.jspecify.annotations.Nullable OneBlockProgressBars bars;
     private volatile @org.jspecify.annotations.Nullable OneBlockBlockLines blockLines;
     private volatile @org.jspecify.annotations.Nullable OneBlockBiomes biomes;
+    private volatile java.util.function.DoubleSupplier luck =
+            () -> java.util.concurrent.ThreadLocalRandom.current().nextDouble();
 
     public OneBlockListener(
             OneBlockService service,
@@ -86,6 +88,11 @@ public final class OneBlockListener implements Listener {
     /** Tells it how a breaker sees their island's progress. */
     public void useBars(OneBlockProgressBars bars) {
         this.bars = Objects.requireNonNull(bars, "bars must not be null");
+    }
+
+    /** Rolls whether a break is lucky, from 0 to 1, in place of the server's own chance. */
+    void useLuck(java.util.function.DoubleSupplier luck) {
+        this.luck = Objects.requireNonNull(luck, "luck must not be null");
     }
 
     /** Tells it how a phase gives its island its biome. */
@@ -313,7 +320,36 @@ public final class OneBlockListener implements Listener {
                                     "phase",
                                     phase,
                                     "break",
-                                    Long.toString(next.position().intoPhase())))));
+                                    Long.toString(next.position().intoPhase()),
+                                    "cycle",
+                                    Long.toString(next.nextCycle() + 1)))));
+        }
+        // A lucky break, as often as the file of the phase the broken block belonged to says: the phase it finished,
+        // when it finished one, and that phase's last block.
+        OneBlockPhaseLists lists = phaseLists;
+        String of = next.finished()
+                .map(com.uxplima.uxmskyblock.core.domain.oneblock.OneBlockPhase::key)
+                .orElse(phase);
+        if (lists != null && lists.lucky(of, luck.getAsDouble())) {
+            Map<String, String> lucky = Map.of(
+                    "phase",
+                    of,
+                    "break",
+                    Long.toString(next.finished()
+                            .map(com.uxplima.uxmskyblock.core.domain.oneblock.OneBlockPhase::blocks)
+                            .orElse(next.position().intoPhase())),
+                    "cycle",
+                    // The round the broken block was broken in.
+                    Long.toString(next.cycle() + 1));
+            if (!lists.run(
+                    effectPlayer,
+                    of,
+                    com.uxplima.uxmskyblock.bukkit.config.OneBlockLists.LUCKY,
+                    owner,
+                    player,
+                    lucky)) {
+                effectPlayer.fire(effects, "oneblock-lucky-break", player, lucky);
+            }
         }
         ModeMissions counts = missions;
         // The block broken belonged to the phase it finished, when it finished one.
@@ -329,7 +365,8 @@ public final class OneBlockListener implements Listener {
                     next.position().phase().key(),
                     1L);
             OneBlockPhaseLists written = phaseLists;
-            String cycle = Long.toString(next.cycle());
+            // Which pass through the phases, from 1, as the panel and the placeholders count it.
+            String cycle = Long.toString(next.cycle() + 1);
             next.finished().ifPresent(finished -> {
                 Map<String, String> says = Map.of("phase", finished.key(), "cycle", cycle);
                 // The phase's own lists, or the shipped one when it wrote none.
@@ -354,7 +391,9 @@ public final class OneBlockListener implements Listener {
                     "phase",
                     next.position().phase().key(),
                     "blocks",
-                    Long.toString(next.position().phaseLength()));
+                    Long.toString(next.position().phaseLength()),
+                    "cycle",
+                    Long.toString(next.nextCycle() + 1));
             pay(islandId, phase, "began", next.nextCycle(), player, () -> {
                 if (written == null || !written.run(effectPlayer, phase, "began", owner, player, began)) {
                     effectPlayer.fire(effects, "oneblock-phase-began", player, began);

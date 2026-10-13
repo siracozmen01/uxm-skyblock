@@ -172,7 +172,9 @@ class APhaseRunsItsOwnListsTest extends MockBukkitHarness {
                 .isEmpty();
         membersHear();
 
-        assertThat(fired.subList(0, 2)).containsExactly("Breaker finished meadow 0", "Breaker first meadow");
+        assertThat(fired.subList(0, 2))
+                .describedAs("the first round of the phases is round 1")
+                .containsExactly("Breaker finished meadow 1", "Breaker first meadow");
         assertThat(fired.subList(2, fired.size()))
                 .describedAs("each member on their own thread, in no order")
                 .containsExactlyInAnyOrder(
@@ -200,7 +202,7 @@ class APhaseRunsItsOwnListsTest extends MockBukkitHarness {
         breakIt(block);
         breakIt(block);
         membersHear();
-        assertThat(fired.getFirst()).isEqualTo("Breaker finished meadow 1");
+        assertThat(fired.getFirst()).isEqualTo("Breaker finished meadow 2");
         assertThat(fired.subList(1, fired.size()))
                 .containsExactlyInAnyOrder(
                         "Breaker heard meadow", "Mate heard meadow", "Breaker began cave 2", "Mate began cave 2");

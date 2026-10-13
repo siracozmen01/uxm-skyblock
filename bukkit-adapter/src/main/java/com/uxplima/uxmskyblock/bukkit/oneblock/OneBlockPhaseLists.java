@@ -37,6 +37,12 @@ public final class OneBlockPhaseLists {
         this.online = Objects.requireNonNull(online, "online must not be null");
     }
 
+    /** Whether a break of {@code phase} is lucky, for a roll from 0 to 1: as often as its file's chance says. */
+    public boolean lucky(String phase, double roll) {
+        java.util.OptionalDouble chance = config.get().luckOf(phase);
+        return chance.isPresent() && roll < chance.getAsDouble();
+    }
+
     /**
      * Runs the lists {@code phase} writes for {@code event}, on the breaker's thread. Answers whether the phase wrote
      * any, so the caller runs the shipped list of modules/effects.conf when it wrote none.

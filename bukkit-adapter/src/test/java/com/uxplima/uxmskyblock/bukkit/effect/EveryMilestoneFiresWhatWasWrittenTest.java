@@ -115,6 +115,7 @@ class EveryMilestoneFiresWhatWasWrittenTest {
                         "loot-legendary",
                         "oneblock-phase-finished",
                         "oneblock-moment",
+                        "oneblock-lucky-break",
                         "vessel-sailed",
                         "upside-down-mirrored"));
     }

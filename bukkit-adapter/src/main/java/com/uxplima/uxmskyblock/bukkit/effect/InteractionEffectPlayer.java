@@ -93,8 +93,11 @@ public final class InteractionEffectPlayer {
         if (list.actions().isEmpty()) {
             return;
         }
+        // The player's name is answered here, so a line that names it works on a server without PlaceholderAPI.
+        Map<String, String> named = new java.util.HashMap<>(says);
+        named.putIfAbsent("player_name", player.getName());
         try {
-            list.run(contextFor(player, says));
+            list.run(contextFor(player, named));
         } catch (ActionCostException unpaid) {
             // A price nobody can pay is the operator's own gate doing its job. The engine charges
             // every cost before it runs anything, so nothing has happened and nobody is half
