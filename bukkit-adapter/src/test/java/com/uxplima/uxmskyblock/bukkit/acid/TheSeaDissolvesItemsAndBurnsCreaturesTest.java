@@ -58,7 +58,6 @@ class TheSeaDissolvesItemsAndBurnsCreaturesTest extends MockBukkitHarness {
     private final List<String> fired = new ArrayList<>();
     private Predicate<Entity> owned = entity -> true;
     private final List<String> rolled = new ArrayList<>();
-    private final java.util.Set<UUID> online = new java.util.HashSet<>();
     private final Map<UUID, UUID> thrown = new java.util.HashMap<>();
     private static final AcidIslandConfiguration.Offerings BONES = new AcidIslandConfiguration.Offerings(
             Duration.ofSeconds(2),
@@ -267,7 +266,8 @@ class TheSeaDissolvesItemsAndBurnsCreaturesTest extends MockBukkitHarness {
         for (int slot = 0; slot < player.getInventory().getSize(); slot++) {
             player.getInventory().setItem(slot, new ItemStack(Material.DIRT, 64));
         }
-        onAVent(6, new ItemStack(Material.GOLD_INGOT));
+        Item thrownGold = onAVent(6, new ItemStack(Material.GOLD_INGOT));
+        thrown.put(thrownGold.getUniqueId(), player.getUniqueId());
 
         life.around(player);
         now.addAndGet(2 * SECOND);
@@ -296,33 +296,34 @@ class TheSeaDissolvesItemsAndBurnsCreaturesTest extends MockBukkitHarness {
     }
 
     @Test
-    @DisplayName(
-            "Its thrower's own check answers an offering while they are online, and another's once they are long away")
+    @DisplayName("Only its thrower's own check answers an offering: another's, or one nobody threw, dissolves")
     void theThrowerIsAnswered() {
         AcidSeaLife life = life(AcidIslandConfiguration.SeaLife.SHIPPED, BONES);
         PlayerMock thrower = createPlayer("Thrower");
         thrower.teleport(new Location(world, 8.5, Y + 3, 8.5));
-        online.add(thrower.getUniqueId());
         Item gold = onAVent(6, new ItemStack(Material.GOLD_INGOT, 2));
         thrown.put(gold.getUniqueId(), thrower.getUniqueId());
 
         life.around(player);
         now.addAndGet(2 * SECOND);
         life.around(player);
-        assertThat(rolled).describedAs("left to its thrower").isEmpty();
+        assertThat(rolled).describedAs("not for another player").isEmpty();
         life.around(thrower);
         assertThat(rolled).containsExactly("test:gold for Thrower");
 
-        now.addAndGet(7 * SECOND);
+        now.addAndGet(60 * SECOND);
         life.around(player);
-        assertThat(rolled).describedAs("long enough").containsExactly("test:gold for Thrower", "test:gold for Swimmer");
+        assertThat(rolled).describedAs("however long it waits").hasSize(1);
+        assertThat(gold.isValid()).describedAs("it dissolves instead").isFalse();
 
-        Item gone = onAVent(10, new ItemStack(Material.GOLD_INGOT));
-        thrown.put(gone.getUniqueId(), UUID.randomUUID());
+        Item dropped = onAVent(10, new ItemStack(Material.BONE, 8));
         life.around(player);
-        now.addAndGet(2 * SECOND);
+        now.addAndGet(3 * SECOND);
         life.around(player);
-        assertThat(rolled).describedAs("a thrower who left").hasSize(3);
+        assertThat(rolled).describedAs("a drop nobody threw").hasSize(1);
+        now.addAndGet(10 * SECOND);
+        life.around(player);
+        assertThat(dropped.isValid()).isFalse();
     }
 
     @Test
@@ -373,6 +374,7 @@ class TheSeaDissolvesItemsAndBurnsCreaturesTest extends MockBukkitHarness {
         AcidSeaLife life =
                 life(new AcidIslandConfiguration.SeaLife(32, false, Duration.ZERO, false, 0, List.of()), BONES);
         Item gold = onAVent(6, new ItemStack(Material.GOLD_INGOT));
+        thrown.put(gold.getUniqueId(), player.getUniqueId());
         Item dirt = itemIn(4, Material.WATER, new ItemStack(Material.DIRT));
 
         life.around(player);
@@ -468,17 +470,7 @@ class TheSeaDissolvesItemsAndBurnsCreaturesTest extends MockBukkitHarness {
                     rolled.add(table + " for " + looter.getName());
                     return List.of(new ItemStack(Material.PRISMARINE_SHARD, 2));
                 },
-                new AcidSeaLife.Throwers() {
-                    @Override
-                    public @org.jspecify.annotations.Nullable UUID of(Item item) {
-                        return thrown.get(item.getUniqueId());
-                    }
-
-                    @Override
-                    public boolean online(UUID player) {
-                        return online.contains(player);
-                    }
-                });
+                item -> thrown.get(item.getUniqueId()));
     }
 
     private Item itemIn(int x, Material fill, ItemStack stack) {

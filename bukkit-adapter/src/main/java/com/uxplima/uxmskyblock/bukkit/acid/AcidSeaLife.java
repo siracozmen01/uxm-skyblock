@@ -33,9 +33,11 @@ import com.uxplima.uxmskyblock.core.domain.island.Island;
  * What lies and swims in the acid sea around a player: an item dissolves once it has lain in the sea a while, and a
  * creature burns at each check, as {@code sea-life} of {@code modules/acidisland.conf} lets them.
  *
- * <p>An item that sinks onto a vent and lies there a while is an offering, when the vent takes items of its kind:
- * as many as the offering takes are taken, and a roll of its loot table goes to whoever threw them, or, with the
- * thrower gone or long away, to the player whose check found it. An item no offering takes dissolves as any other.
+ * <p>An item that sinks onto a vent and lies there a while is an offering, when the vent takes items of its kind and
+ * the player whose check finds it is the one who threw it: as many as the offering takes are taken, and a roll of its
+ * loot table goes to them. An item nobody threw, as a creature drops dying in the sea or a dispenser throws, and an
+ * item another player threw, is no offering for anyone else; it dissolves as any other. So no player is answered for
+ * another's offering, and no vent pays out for drops nobody gave.
  *
  * <p>Each player's check looks around them on their own thread, and touches only what that thread owns, so on Folia
  * nothing is read or changed from a region it does not belong to. Two players near one creature burn it once a check,
@@ -43,11 +45,10 @@ import com.uxplima.uxmskyblock.core.domain.island.Island;
  */
 public final class AcidSeaLife {
 
-    /** Who threw an item, and whether they are on the server. */
+    /** Who threw an item, if anybody did. */
+    @FunctionalInterface
     public interface Throwers {
         @org.jspecify.annotations.Nullable UUID of(Item item);
-
-        boolean online(UUID player);
     }
 
     private final AcidIslandService service;
@@ -158,6 +159,10 @@ public final class AcidSeaLife {
         if (at.getBlock().getRelative(org.bukkit.block.BlockFace.DOWN).getType() != AcidSeaStart.VENT) {
             return false;
         }
+        if (!player.getUniqueId().equals(throwers.of(item))) {
+            // Only its thrower's own check answers an offering.
+            return false;
+        }
         ItemStack stack = item.getItemStack();
         String key = stack.getType().getKey().toString();
         java.util.Optional<AcidIslandConfiguration.Offering> offering = offerings.answering(key);
@@ -166,14 +171,6 @@ public final class AcidSeaLife {
         }
         long waited = now - since;
         if (waited < offerings.after().toNanos()) {
-            return true;
-        }
-        UUID thrower = throwers.of(item);
-        if (thrower != null
-                && !thrower.equals(player.getUniqueId())
-                && throwers.online(thrower)
-                && waited < offerings.after().toNanos() * 3 + checkNanos) {
-            // Its thrower's own check answers it, while they are near.
             return true;
         }
         int takes = offering.get().takes();

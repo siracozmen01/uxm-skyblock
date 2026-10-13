@@ -63,17 +63,7 @@ public final class AcidIslandWiring implements AutoCloseable {
                 org.bukkit.Bukkit::isOwnedByCurrentRegion,
                 configuration.messages(),
                 new com.uxplima.uxmskyblock.bukkit.acid.ServerVentLoot(),
-                new com.uxplima.uxmskyblock.bukkit.acid.AcidSeaLife.Throwers() {
-                    @Override
-                    public java.util.@Nullable UUID of(org.bukkit.entity.Item item) {
-                        return item.getThrower();
-                    }
-
-                    @Override
-                    public boolean online(java.util.UUID player) {
-                        return org.bukkit.Bukkit.getPlayer(player) != null;
-                    }
-                }));
+                org.bukkit.entity.Item::getThrower));
         this.waterListener = new AcidWaterListener(hazard, configuration.messages());
         // The sea rises and falls with the tide, around the islands players are on.
         this.tide = new com.uxplima.uxmskyblock.bukkit.acid.AcidTideRunner(
