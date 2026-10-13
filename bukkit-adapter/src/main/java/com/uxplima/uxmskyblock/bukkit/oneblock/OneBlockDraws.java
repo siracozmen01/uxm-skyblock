@@ -184,6 +184,47 @@ public final class OneBlockDraws {
         return MiniMessage.miniMessage().deserialize(written);
     }
 
+    /** Whether the creature drawn is one that attacks, so its island is told it comes. */
+    public boolean hostile(String drawn) {
+        EntityType type = typeOf(creatureType(drawn));
+        Class<? extends Entity> made = type == null ? null : type.getEntityClass();
+        return made != null && org.bukkit.entity.Enemy.class.isAssignableFrom(made);
+    }
+
+    /**
+     * The creature drawn as a player reads it: its entry's name in {@code reader}'s language, or its kind, which the
+     * player's own game reads in their language.
+     */
+    public Component creatureName(String drawn, @Nullable Player reader) {
+        OneBlockEntries.Creature entry = entries.get().creatures().get(drawn);
+        String name = entry == null ? null : entry.name();
+        if (name != null) {
+            return nameOf(name, reader);
+        }
+        EntityType type = typeOf(creatureType(drawn));
+        return type == null ? Component.text(plainKind(drawn)) : Component.translatable(type.translationKey());
+    }
+
+    /** The creature drawn as an operator's line reads it: its entry's plain name, or its kind, as {@code cave spider}. */
+    public String plainCreatureName(String drawn) {
+        OneBlockEntries.Creature entry = entries.get().creatures().get(drawn);
+        String name = entry == null ? null : entry.name();
+        return name != null && !name.startsWith("@")
+                ? net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer.plainText()
+                        .serialize(MiniMessage.miniMessage().deserialize(name))
+                : plainKind(drawn);
+    }
+
+    private String plainKind(String drawn) {
+        String type = creatureType(drawn);
+        return type.substring(type.indexOf(':') + 1).replace('_', ' ').toLowerCase(Locale.ROOT);
+    }
+
+    private String creatureType(String drawn) {
+        OneBlockEntries.Creature entry = entries.get().creatures().get(drawn);
+        return entry == null ? drawn : entry.type();
+    }
+
     private static @Nullable EntityType typeOf(String name) {
         NamespacedKey key = NamespacedKey.fromString(name.toLowerCase(Locale.ROOT));
         return key == null ? null : Registry.ENTITY_TYPE.get(key);

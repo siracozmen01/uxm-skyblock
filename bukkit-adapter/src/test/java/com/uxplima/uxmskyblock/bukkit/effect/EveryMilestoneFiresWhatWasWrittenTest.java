@@ -93,6 +93,7 @@ class EveryMilestoneFiresWhatWasWrittenTest {
                         "member-joined",
                         "upgrade-bought",
                         "oneblock-phase-began",
+                        "oneblock-creature-coming",
                         "acid-sea-burns",
                         "acid-rain-burns",
                         "acid-water-drunk",

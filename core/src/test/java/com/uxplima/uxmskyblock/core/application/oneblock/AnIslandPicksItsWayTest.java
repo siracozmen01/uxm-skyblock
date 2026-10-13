@@ -111,6 +111,9 @@ class AnIslandPicksItsWayTest {
                 .isFalse();
         assertThat(service.pick(ISLAND, "plains", "forest")).isTrue();
         assertThat(service.branchAhead(ISLAND)).isEmpty();
+        assertThat(service.pick(ISLAND, "plains", "cave"))
+                .describedAs("a window left open picks over nothing")
+                .isFalse();
 
         OneBlockService.Broken next = service.onBreak(ISLAND).orElseThrow();
         assertThat(next.position().phase().key()).isEqualTo("forest");

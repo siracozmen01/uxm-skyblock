@@ -31,7 +31,8 @@ public final class OneBlockService {
     /**
      * What one break did: what the block becomes, what appears on it, whether a phase began, the phase it finished
      * when one did, the pass through the phases the broken block belonged to, from 0, and the pass the block it turns
-     * into belongs to, one more than that when the break went round to the first phase again.
+     * into belongs to, one more than that when the break went round to the first phase again, and the creatures the
+     * break drew ahead, each so many breaks before it comes.
      */
     public record Broken(
             String nextBlock,
@@ -40,7 +41,19 @@ public final class OneBlockService {
             boolean phaseBegan,
             Optional<OneBlockPhase> finished,
             long cycle,
-            long nextCycle) {}
+            long nextCycle,
+            java.util.List<Coming> coming) {
+
+        public Broken {
+            coming = java.util.List.copyOf(coming);
+        }
+    }
+
+    /** A creature drawn ahead of its break: what it is, and how many breaks from now it comes. */
+    public record Coming(String creature, long inBreaks) {}
+
+    /** What one break draws, drawn ahead of it. */
+    private record Drawn(long at, String block, Optional<String> creature) {}
 
     /** What an operator's change did to an island's count. */
     public record Changed(long was, long now) {}
@@ -58,6 +71,8 @@ public final class OneBlockService {
         final Map<String, String> picks = new ConcurrentHashMap<>();
         /** The island's way through the phases with its picks, worked out again after a pick. */
         volatile @Nullable OneBlockPhases route;
+        /** The draws made ahead for the coming breaks, in order, each for the count it belongs to. */
+        final java.util.ArrayDeque<Drawn> ahead = new java.util.ArrayDeque<>();
         /** What the island waits for before its next phase, or nothing. */
         final java.util.concurrent.atomic.AtomicReference<OneBlockWaitPort.@Nullable Waiting> waiting =
                 new java.util.concurrent.atomic.AtomicReference<>();
@@ -72,6 +87,10 @@ public final class OneBlockService {
     private final OneBlockRewardPort rewards;
     private final OneBlockWaitPort waits;
     private final OneBlockBranchPort branches;
+
+    /** How many breaks ahead each island's draws are made. */
+    private volatile int lookAhead;
+
     private final OneBlockPhases phases;
     private final RandomGenerator random;
     private final Map<IslandId, Counted> counted = new ConcurrentHashMap<>();
@@ -176,16 +195,56 @@ public final class OneBlockService {
         long broken = held.total.incrementAndGet();
         held.unwritten.incrementAndGet();
         OneBlockPhases way = routeOf(held);
+        Drawn now;
+        java.util.List<Coming> coming = new java.util.ArrayList<>();
+        synchronized (held.ahead) {
+            while (!held.ahead.isEmpty() && held.ahead.peekFirst().at() < broken) {
+                held.ahead.pollFirst();
+            }
+            Drawn first = held.ahead.peekFirst();
+            now = first != null && first.at() == broken ? held.ahead.pollFirst() : draw(way, broken);
+            Drawn last = held.ahead.peekLast();
+            for (long at = last == null ? broken + 1 : last.at() + 1; at <= broken + lookAhead; at++) {
+                Drawn next = draw(way, at);
+                held.ahead.addLast(next);
+                long in = at - broken;
+                next.creature().ifPresent(creature -> coming.add(new Coming(creature, in)));
+            }
+        }
         return Optional.of(new Broken(
-                way.nextBlock(broken, random),
-                way.nextCreature(broken, random),
+                now.block(),
+                now.creature(),
                 way.positionAt(broken),
                 way.startsAPhase(broken),
                 way.startsAPhase(broken)
                         ? Optional.of(way.positionAt(broken - 1).phase())
                         : Optional.empty(),
                 way.cycleOf(broken - 1),
-                way.cycleOf(broken)));
+                way.cycleOf(broken),
+                coming));
+    }
+
+    private Drawn draw(OneBlockPhases way, long at) {
+        String block = way.nextBlock(at, random);
+        return new Drawn(at, block, way.nextCreature(at, random));
+    }
+
+    /**
+     * Draws each island's blocks and creatures {@code breaks} breaks ahead, so a creature is known before it comes;
+     * none draws each break as it happens.
+     */
+    public void lookAhead(int breaks) {
+        if (breaks < 0) {
+            throw new IllegalArgumentException("Nothing is drawn behind a break: " + breaks);
+        }
+        this.lookAhead = breaks;
+    }
+
+    /** Lets go of the draws made ahead, which a count set or a way picked no longer follows. */
+    private static void drawAgain(Counted held) {
+        synchronized (held.ahead) {
+            held.ahead.clear();
+        }
     }
 
     /**
@@ -271,15 +330,21 @@ public final class OneBlockService {
     /**
      * Has the island follow {@code phase} with {@code chosen}, in memory; {@link #storePick} writes it.
      *
-     * @return whether it was picked: {@code chosen} must be one of the phases that may follow {@code phase}
+     * <p>A pick is made once. The island's place is read along its way, so a pick made over an earlier one, by a window
+     * left open after the island went on, would move it to another phase.
+     *
+     * @return whether it was picked: {@code chosen} must be one of the phases that may follow {@code phase}, and the
+     *     island must not have picked after {@code phase} yet
      */
     public boolean pick(IslandId islandId, String phase, String chosen) {
         Counted held = held(islandId);
-        if (held == null || !phases.optionsAfter(phase).contains(chosen)) {
+        if (held == null
+                || !phases.optionsAfter(phase).contains(chosen)
+                || held.picks.putIfAbsent(phase, chosen) != null) {
             return false;
         }
-        held.picks.put(phase, chosen);
         held.route = null;
+        drawAgain(held);
         return true;
     }
 
@@ -412,6 +477,7 @@ public final class OneBlockService {
             return Optional.empty();
         }
         long was = held.total.getAndSet(count);
+        drawAgain(held);
         held.replaced.set(true);
         writeNow(islandId, held);
         return Optional.of(new Changed(was, count));
@@ -434,6 +500,7 @@ public final class OneBlockService {
             was = held.total.get();
             now = Math.max(0, Math.addExact(was, breaks));
         } while (!held.total.compareAndSet(was, now));
+        drawAgain(held);
         held.replaced.set(true);
         writeNow(islandId, held);
         return Optional.of(new Changed(was, now));

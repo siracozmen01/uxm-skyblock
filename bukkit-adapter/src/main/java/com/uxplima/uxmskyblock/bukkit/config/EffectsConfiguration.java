@@ -66,6 +66,9 @@ public final class EffectsConfiguration {
                 parseAll("oneblock-phase-finished", List.of("[sound] block.amethyst_block.chime 1.0 1.0")));
         defaults.put("oneblock-moment", parseAll("oneblock-moment", List.of("[sound] block.note_block.bell 1.0 1.2")));
         defaults.put(
+                "oneblock-creature-coming",
+                parseAll("oneblock-creature-coming", List.of("[sound] block.note_block.didgeridoo 0.8 0.6")));
+        defaults.put(
                 "oneblock-phase-began",
                 parseAll(
                         "oneblock-phase-began",

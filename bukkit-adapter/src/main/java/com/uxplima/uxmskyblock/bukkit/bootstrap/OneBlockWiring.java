@@ -42,6 +42,7 @@ public final class OneBlockWiring implements AutoCloseable {
                 persistence.oneBlockBranchPort(),
                 config.phases(),
                 new SplittableRandom());
+        service.lookAhead(config.creatureWarning());
         this.saving = scheduler.repeatAsync(service::flush, config.saveInterval(), config.saveInterval());
         this.listener = new com.uxplima.uxmskyblock.bukkit.oneblock.OneBlockListener(
                 service,

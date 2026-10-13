@@ -196,6 +196,28 @@ public final class OneBlockListener implements Listener {
      */
     private void counted(Island owner, Player player, World world, int x, int y, int z, OneBlockService.Broken next) {
         OneBlockPauses waits = pauses;
+        OneBlockDraws ahead = draws;
+        // A hostile creature drawn ahead is told now, so the breaker is ready when it comes.
+        for (OneBlockService.Coming coming : next.coming()) {
+            if (!ahead.hostile(coming.creature())) {
+                continue;
+            }
+            net.kyori.adventure.text.Component creature = ahead.creatureName(coming.creature(), player);
+            messages.send(
+                    player,
+                    "oneblock.creature_coming",
+                    Placeholder.component("creature", creature),
+                    Placeholder.unparsed("breaks", Long.toString(coming.inBreaks())));
+            effectPlayer.fire(
+                    effects,
+                    "oneblock-creature-coming",
+                    player,
+                    Map.of(
+                            "creature",
+                            ahead.plainCreatureName(coming.creature()),
+                            "breaks",
+                            Long.toString(coming.inBreaks())));
+        }
         // Set once the break has finished: set now, the break would clear it again.
         OneBlockDraws drawn = draws;
         OneBlockMoments happens = moments;

@@ -42,6 +42,7 @@ import org.spongepowered.configurate.ConfigurationNode;
  * @param gates what stands before each phase begins, by phase, for a phase that writes anything
  * @param chooseWithin how long an island at the end of a phase that branches has to pick the way on, before the
  *     first is taken
+ * @param creatureWarning how many breaks before a hostile creature comes its island is told, nothing for never
  */
 public record OneBlockConfiguration(
         boolean enabled,
@@ -52,7 +53,11 @@ public record OneBlockConfiguration(
         Map<String, Map<Long, OneBlockMoment>> moments,
         Map<String, Map<String, OneBlockLists>> lists,
         Map<String, OneBlockGate> gates,
-        Duration chooseWithin) {
+        Duration chooseWithin,
+        int creatureWarning) {
+
+    /** How many breaks ahead a hostile creature is told, when the file names no number. */
+    public static final int DEFAULT_CREATURE_WARNING = 5;
 
     /** How long an island has to pick the way on, when the file names no time. */
     public static final Duration DEFAULT_CHOOSE_WITHIN = Duration.ofSeconds(60);
@@ -174,7 +179,8 @@ public record OneBlockConfiguration(
                 Map.of(),
                 Map.of(),
                 Map.of(),
-                DEFAULT_CHOOSE_WITHIN);
+                DEFAULT_CHOOSE_WITHIN,
+                0);
     }
 
     /** How often counted breaks are written, when the file names no interval. */
@@ -198,6 +204,9 @@ public record OneBlockConfiguration(
         lists = java.util.Collections.unmodifiableMap(listed);
         gates = Map.copyOf(gates);
         Objects.requireNonNull(chooseWithin, "chooseWithin");
+        if (creatureWarning < 0) {
+            throw new IllegalArgumentException("A creature is not told after it came: " + creatureWarning);
+        }
     }
 
     /** What stands before the phase {@code phase} begins: nothing, unless its file writes a wait or requirements. */
@@ -342,6 +351,12 @@ public record OneBlockConfiguration(
                             + DEFAULT_CHOOSE_WITHIN.toSeconds() + " seconds is used.");
                     return DEFAULT_CHOOSE_WITHIN;
                 });
+        int warning = root.node("creature-warning").getInt(DEFAULT_CREATURE_WARNING);
+        if (warning < 0) {
+            LOGGER.warning(() -> "creature-warning is " + warning + ", which is below nothing, so "
+                    + DEFAULT_CREATURE_WARNING + " is used.");
+        }
+        int creatureWarning = warning < 0 ? DEFAULT_CREATURE_WARNING : warning;
         return new OneBlockConfiguration(
                 enabled,
                 new OneBlockPhases(phases, after, branches),
@@ -351,7 +366,8 @@ public record OneBlockConfiguration(
                 moments,
                 lists,
                 gates,
-                chooseWithin);
+                chooseWithin,
+                creatureWarning);
     }
 
     /**
