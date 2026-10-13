@@ -446,6 +446,7 @@ public final class GameplayWiring {
         }
         this.cacheEviction.whenForgotten(this.acidIslandWiring.service()::forget);
         this.cacheEviction.whenForgotten(this.boxedWiring.service()::forget);
+        this.cacheEviction.whenForgotten(this.boxedWiring::forgetLand);
         // An island is cleared over its border, everywhere its game mode wrote past it, a box grown past it and a
         // margin past all of them, on every path that removes it. Its starts say where they wrote.
         this.adminWiring.useWipeAreas(new com.uxplima.uxmskyblock.core.application.recycle.IslandWipeAreas(

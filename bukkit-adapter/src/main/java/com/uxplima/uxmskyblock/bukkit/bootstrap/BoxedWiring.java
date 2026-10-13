@@ -38,6 +38,7 @@ public final class BoxedWiring implements AutoCloseable {
     private final BoxedListener listener;
     private volatile Consumer<IslandId> boxChanged = islandId -> {};
     private @Nullable AutoCloseable borders;
+    private final com.uxplima.uxmskyblock.bukkit.boxed.BoxedLandCopier land;
 
     public BoxedWiring(
             ConfigurationWiring configuration,
@@ -53,6 +54,13 @@ public final class BoxedWiring implements AutoCloseable {
                 .filter(preset -> preset.mode() == GameModeType.BOXED)
                 .map(preset -> preset.worldOr(islandWorld))
                 .collect(Collectors.toUnmodifiableSet());
+        this.land = new com.uxplima.uxmskyblock.bukkit.boxed.BoxedLandCopier(
+                persistence.boxedLandPort(),
+                service,
+                persistence.islandStoragePort()::findLocationByIslandId,
+                new com.uxplima.uxmskyblock.bukkit.boxed.TemplateChunks(scheduler, org.bukkit.Bukkit::getWorld),
+                scheduler,
+                config.land());
         this.listener = new BoxedListener(
                 service,
                 islands,
@@ -74,7 +82,10 @@ public final class BoxedWiring implements AutoCloseable {
             }
         });
         if (config.enabled()) {
-            this.borders = new BoxedBorders(service, islands, scheduler, config.borderEvery()).start();
+            BoxedBorders shown = new BoxedBorders(service, islands, scheduler, config.borderEvery());
+            // A player on an island is when its land is brought up to its box, after a stop cut it short.
+            shown.whenShown(land::bringUp);
+            this.borders = shown.start();
         }
     }
 
@@ -85,6 +96,12 @@ public final class BoxedWiring implements AutoCloseable {
 
     private void boxChanged(IslandId islandId) {
         boxChanged.accept(islandId);
+        land.bringUp(islandId);
+    }
+
+    /** Lets go of the land copying for an island that is gone. */
+    public void forgetLand(IslandId islandId) {
+        land.forget(islandId);
     }
 
     /** What an operator's change to a box asks for: the island's edge moved to it. */
@@ -106,7 +123,9 @@ public final class BoxedWiring implements AutoCloseable {
 
     /** The action that makes an island a Boxed island, while Boxed is enabled, and none otherwise. */
     public List<CreationActionProvider<IslandStart>> startActions() {
-        return config.enabled() ? List.of(new BoxedStart(service, scheduler, this::boxChanged)) : List.of();
+        return config.enabled()
+                ? List.of(new BoxedStart(service, scheduler, this::boxChanged, land::begin))
+                : List.of();
     }
 
     /** Stops showing players their boxes, before the server stops. */

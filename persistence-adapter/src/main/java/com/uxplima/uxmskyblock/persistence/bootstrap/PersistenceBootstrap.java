@@ -150,6 +150,7 @@ public final class PersistenceBootstrap implements AutoCloseable {
     private final com.uxplima.uxmskyblock.persistence.boundary.SqlIslandEdgeAdapter islandEdgeAdapter;
     private final com.uxplima.uxmskyblock.persistence.acid.SqlAcidIslandsAdapter acidIslandsAdapter;
     private final com.uxplima.uxmskyblock.persistence.boxed.SqlBoxedIslandsAdapter boxedIslandsAdapter;
+    private final com.uxplima.uxmskyblock.persistence.boxed.SqlBoxedLandAdapter boxedLandAdapter;
     private final com.uxplima.uxmskyblock.persistence.poseidon.SqlPoseidonIslandsAdapter poseidonIslandsAdapter;
     private final com.uxplima.uxmskyblock.persistence.stranger.SqlStrangerRealmsAdapter strangerRealmsAdapter;
     private final com.uxplima.uxmskyblock.persistence.parkour.SqlParkourAdapter parkourAdapter;
@@ -245,6 +246,8 @@ public final class PersistenceBootstrap implements AutoCloseable {
         this.islandEdgeAdapter = new com.uxplima.uxmskyblock.persistence.boundary.SqlIslandEdgeAdapter(database);
         this.acidIslandsAdapter =
                 new com.uxplima.uxmskyblock.persistence.acid.SqlAcidIslandsAdapter(database.dataSource());
+        this.boxedLandAdapter =
+                new com.uxplima.uxmskyblock.persistence.boxed.SqlBoxedLandAdapter(database.dataSource());
         this.boxedIslandsAdapter =
                 new com.uxplima.uxmskyblock.persistence.boxed.SqlBoxedIslandsAdapter(database.dataSource());
         this.poseidonIslandsAdapter =
@@ -556,6 +559,11 @@ public final class PersistenceBootstrap implements AutoCloseable {
     /** Which islands are Boxed islands, and the advancements each has earned. */
     public com.uxplima.uxmskyblock.core.application.boxed.BoxedIslandsPort boxedIslandsPort() {
         return boxedIslandsAdapter;
+    }
+
+    /** How far each Boxed island played on the template's land has it copied. */
+    public com.uxplima.uxmskyblock.core.application.boxed.BoxedLandPort boxedLandPort() {
+        return boxedLandAdapter;
     }
 
     /** Which islands are AcidIsland islands, and where their seas stand. */

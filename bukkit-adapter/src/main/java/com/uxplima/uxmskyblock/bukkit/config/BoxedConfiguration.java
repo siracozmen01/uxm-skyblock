@@ -19,8 +19,10 @@ import org.spongepowered.configurate.ConfigurationNode;
  *
  * @param borderEvery how often each player on a Boxed island is shown where their box ends
  * @param bypassPermission a node whose holder is not kept inside a box, empty for nobody
+ * @param land the land a new island plays on
  */
-public record BoxedConfiguration(boolean enabled, BoxRules rules, Duration borderEvery, String bypassPermission) {
+public record BoxedConfiguration(
+        boolean enabled, BoxRules rules, Duration borderEvery, String bypassPermission, BoxedLand land) {
 
     private static final Logger LOGGER = Logger.getLogger(BoxedConfiguration.class.getName());
 
@@ -28,13 +30,14 @@ public record BoxedConfiguration(boolean enabled, BoxRules rules, Duration borde
         Objects.requireNonNull(rules, "rules must not be null");
         Objects.requireNonNull(borderEvery, "borderEvery must not be null");
         Objects.requireNonNull(bypassPermission, "bypassPermission must not be null");
+        Objects.requireNonNull(land, "land must not be null");
         if (borderEvery.toMillis() < 50) {
             throw new IllegalArgumentException("the border is brought up to date at most once a tick");
         }
     }
 
     public static BoxedConfiguration defaultConfiguration() {
-        return new BoxedConfiguration(true, BoxRules.shipped(), Duration.ofSeconds(1), "");
+        return new BoxedConfiguration(true, BoxRules.shipped(), Duration.ofSeconds(1), "", BoxedLand.SHIPPED);
     }
 
     public static BoxedConfiguration load(ConfigurationNode root) {
@@ -76,7 +79,8 @@ public record BoxedConfiguration(boolean enabled, BoxRules rules, Duration borde
                 root.node("enabled").getBoolean(true),
                 rules,
                 every.toMillis() < 50 ? Duration.ofSeconds(1) : every,
-                root.node("bypass-permission").getString("").trim());
+                root.node("bypass-permission").getString("").trim(),
+                BoxedLand.read(root.node("land")));
     }
 
     /** A window written as {@code 500ms}, {@code 2s} or a plain number of seconds. */

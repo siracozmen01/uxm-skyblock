@@ -35,6 +35,8 @@ public final class BoxedBorders {
     private final Duration every;
     private final java.util.function.Supplier<WorldBorder> borders;
     private final Map<UUID, String> shown = new ConcurrentHashMap<>();
+    private volatile java.util.function.Consumer<com.uxplima.uxmskyblock.core.domain.identity.IslandId> entered =
+            islandId -> {};
 
     public BoxedBorders(
             BoxedService service, IslandProtectionListener islands, SchedulerPort scheduler, Duration every) {
@@ -53,6 +55,11 @@ public final class BoxedBorders {
         this.islands = Objects.requireNonNull(islands, "islands must not be null");
         this.scheduler = Objects.requireNonNull(scheduler, "scheduler must not be null");
         this.every = Objects.requireNonNull(every, "every must not be null");
+    }
+
+    /** What is told of an island whose box a player is shown anew, as when they step onto it or it grows. */
+    public void whenShown(java.util.function.Consumer<com.uxplima.uxmskyblock.core.domain.identity.IslandId> then) {
+        this.entered = Objects.requireNonNull(then, "then must not be null");
     }
 
     /** Starts the beat. Closing what it returns stops it. */
@@ -76,9 +83,8 @@ public final class BoxedBorders {
         if (at == null) {
             return;
         }
-        Optional<IslandBounds> box = islands.findIslandAt(at)
-                .filter(found -> service.isBoxed(found.id()))
-                .map(Island::bounds);
+        Optional<Island> island = islands.findIslandAt(at).filter(found -> service.isBoxed(found.id()));
+        Optional<IslandBounds> box = island.map(Island::bounds);
         String world = player.getWorld().getName();
         String now = box.map(bounds -> world + ":" + bounds.centerX() + ":" + bounds.centerZ() + ":" + bounds.radius())
                 .orElse("");
@@ -98,5 +104,6 @@ public final class BoxedBorders {
         border.setWarningDistance(0);
         player.setWorldBorder(border);
         shown.put(player.getUniqueId(), now);
+        entered.accept(island.orElseThrow().id());
     }
 }

@@ -184,16 +184,57 @@ class ABoxedIslandIsPlayedInItsBoxTest extends MockBukkitHarness {
     }
 
     @Test
-    @DisplayName("Making the island Boxed records it and moves its edge to the starting box")
+    @DisplayName(
+            "Making the island Boxed records it, lays its land, and only then moves its edge and lets it be played")
     void theStartRecordsTheIsland() throws Exception {
         StarterSchematicEngine engine = new StarterSchematicEngine();
-        engine.actions().register(new BoxedStart(service, scheduler, changed::add));
+        List<String> order = new java.util.ArrayList<>();
+        java.util.concurrent.CompletableFuture<Void> laid = new java.util.concurrent.CompletableFuture<>();
+        engine.actions()
+                .register(new BoxedStart(
+                        service,
+                        scheduler,
+                        id -> {
+                            changed.add(id);
+                            order.add("edge");
+                        },
+                        id -> {
+                            order.add("land at " + service.radius(id).orElse(-1));
+                            return laid;
+                        }));
 
-        engine.build(new IslandStart(boxedWorld, islandId, 0, 70, 0, preset()), List.of(BoxedStart.ACTION))
-                .join();
+        java.util.concurrent.CompletableFuture<Void> built =
+                engine.build(new IslandStart(boxedWorld, islandId, 0, 70, 0, preset()), List.of(BoxedStart.ACTION));
 
+        assertThat(built).describedAs("the land is not laid yet").isNotDone();
+        assertThat(order).containsExactly("land at 5");
+        laid.completeExceptionally(new IllegalStateException("a land that could not be laid"));
+        built.join();
         assertThat(service.radius(islandId)).hasValue(5);
         assertThat(changed).containsExactly(islandId);
+        assertThat(order)
+                .describedAs("a land that failed still lets the island be played")
+                .containsExactly("land at 5", "edge");
+    }
+
+    @Test
+    @DisplayName("An island that could not be made Boxed is let be played, with no land laid and no edge moved")
+    void aStartThatFails() throws Exception {
+        BoxedIslandsPort broken = mock(BoxedIslandsPort.class);
+        org.mockito.Mockito.doThrow(new IllegalStateException("the database is down"))
+                .when(broken)
+                .add(islandId);
+        List<IslandId> laid = new ArrayList<>();
+        BoxedStart start = new BoxedStart(
+                new BoxedService(broken, new BoxRules(5, 2, 50, Map.of(), List.of())), scheduler, changed::add, id -> {
+                    laid.add(id);
+                    return java.util.concurrent.CompletableFuture.completedFuture(null);
+                });
+
+        assertThat(start.applyThen(new IslandStart(boxedWorld, islandId, 0, 70, 0, preset())))
+                .isDone();
+        assertThat(laid).isEmpty();
+        assertThat(changed).isEmpty();
     }
 
     @Test
@@ -284,9 +325,12 @@ class ABoxedIslandIsPlayedInItsBoxTest extends MockBukkitHarness {
         when(player.getLocation()).thenReturn(new Location(boxedWorld, 1.5, 70, 1.5));
         WorldBorder border = mock(WorldBorder.class);
         BoxedBorders borders = new BoxedBorders(service, islands, scheduler, Duration.ofSeconds(1), () -> border);
+        List<IslandId> seen = new java.util.ArrayList<>();
+        borders.whenShown(seen::add);
 
         borders.show(player);
         borders.show(player);
+        assertThat(seen).describedAs("told once, as the box is shown anew").containsExactly(islandId);
 
         verify(player, org.mockito.Mockito.times(1)).setWorldBorder(border);
         verify(border).setSize(11.0);
@@ -302,6 +346,7 @@ class ABoxedIslandIsPlayedInItsBoxTest extends MockBukkitHarness {
                 "boxed");
         borders.show(player);
         verify(border).setSize(15.0);
+        assertThat(seen).describedAs("and again as it grows").containsExactly(islandId, islandId);
 
         when(player.getLocation()).thenReturn(new Location(skyblock, 1.5, 70, 1.5));
         when(player.getWorld()).thenReturn(skyblock);
