@@ -245,11 +245,31 @@ class TheSeaRunsBetweenIslandsTest extends MockBukkitHarness {
                 .describedAs("past it")
                 .isEqualTo(Material.AIR);
 
+        acid.getBlockAt(8, SURFACE + 1, 0).setType(Material.AIR);
+        tide.round();
+        assertThat(acid.getBlockAt(8, SURFACE + 1, 0).getType())
+                .describedAs("the same level is not laid again")
+                .isEqualTo(Material.AIR);
+        acid.getBlockAt(8, SURFACE + 1, 0).setType(Material.WATER);
+
         acid.getBlockAt(-40, SURFACE + 1, 0).setType(Material.AIR);
         tide.onChunkLoad(new ChunkLoadEvent(acid.getChunkAt(-3, 0), false));
         assertThat(acid.getBlockAt(-40, SURFACE + 1, 0).getType())
                 .describedAs("as it loads")
                 .isEqualTo(Material.WATER);
+
+        // Sailing on, the chunks brought are remembered for this level only, and forgotten as it moves on.
+        // Twenty-five chunks around the player, and the one that loaded.
+        int around = tide.rememberedOpen() - 1;
+        for (int x = 1000; x <= 9000; x += 1000) {
+            player.teleport(new Location(acid, x + 0.5, SURFACE + 2, 0.5));
+            tide.round();
+        }
+        assertThat(tide.rememberedOpen()).isEqualTo(around * 10 + 1);
+        assertThat(around).isEqualTo(25);
+        millis.set(0);
+        tide.round();
+        assertThat(tide.rememberedOpen()).describedAs("a new level").isEqualTo(around);
 
         player.teleport(new Location(other, 0.5, SURFACE + 2, 0.5));
         tide.round();

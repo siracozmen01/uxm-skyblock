@@ -57,7 +57,10 @@ public final class AcidTideRunner implements Listener {
     private final LongSupplier clock;
     private final Loaded loaded;
     private final Map<IslandId, Integer> brought = new ConcurrentHashMap<>();
-    private final Map<String, Integer> broughtOpen = new ConcurrentHashMap<>();
+    // The chunks of the open sea brought to the level openLevel names, forgotten as the level moves on, so a sea
+    // that runs on as far as players sail is remembered only around them, for one level at a time.
+    private final java.util.Set<String> broughtOpen = ConcurrentHashMap.newKeySet();
+    private volatile int openLevel = -1;
     private final AcidWaters waters;
     private volatile int level = -1;
     private volatile int heading;
@@ -171,8 +174,7 @@ public final class AcidTideRunner implements Listener {
         int reach = (sea.radius() >> 4) + 1;
         for (int chunkX = (at.getBlockX() >> 4) - reach; chunkX <= (at.getBlockX() >> 4) + reach; chunkX++) {
             for (int chunkZ = (at.getBlockZ() >> 4) - reach; chunkZ <= (at.getBlockZ() >> 4) + reach; chunkZ++) {
-                Integer before = broughtOpen.put(world.getName() + ":" + chunkX + ":" + chunkZ, now);
-                if (before != null && before == now) {
+                if (!rememberOpen(world.getName() + ":" + chunkX + ":" + chunkZ, now)) {
                     continue;
                 }
                 int cx = chunkX;
@@ -184,6 +186,20 @@ public final class AcidTideRunner implements Listener {
                 });
             }
         }
+    }
+
+    /** Remembers a chunk of the open sea brought to {@code level}; whether it was not already. */
+    private boolean rememberOpen(String chunk, int level) {
+        if (openLevel != level) {
+            broughtOpen.clear();
+            openLevel = level;
+        }
+        return broughtOpen.add(chunk);
+    }
+
+    /** How many chunks of the open sea are remembered. */
+    int rememberedOpen() {
+        return broughtOpen.size();
     }
 
     /** A chunk of an AcidIsland island's sea that loads is brought to the tide there and then, on its own thread. */
@@ -200,7 +216,7 @@ public final class AcidTideRunner implements Listener {
         if (waters.openSea(world)) {
             // The whole world is one sea, at one surface.
             int level = tide.tide().level(clock.getAsLong());
-            broughtOpen.put(world.getName() + ":" + chunkX + ":" + chunkZ, level);
+            rememberOpen(world.getName() + ":" + chunkX + ":" + chunkZ, level);
             set(
                     world,
                     chunkX << 4,
