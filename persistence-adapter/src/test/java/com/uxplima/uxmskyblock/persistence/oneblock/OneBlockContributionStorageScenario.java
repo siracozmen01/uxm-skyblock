@@ -51,6 +51,9 @@ final class OneBlockContributionStorageScenario {
         assertThat(breaks.findAll())
                 .describedAs("a deleted island's breaks go with it")
                 .isEmpty();
+        assertThatThrownBy(() -> breaks.add(other, ada, 1))
+                .describedAs("breaks of an island deleted meanwhile are refused, not tried for ever")
+                .isInstanceOf(IllegalStateException.class);
     }
 
     private static void seedIsland(Database database, IslandId island) throws SQLException {

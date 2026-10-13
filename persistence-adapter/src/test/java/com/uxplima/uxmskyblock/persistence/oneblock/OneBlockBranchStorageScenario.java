@@ -1,6 +1,7 @@
 package com.uxplima.uxmskyblock.persistence.oneblock;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.sql.Connection;
 import java.sql.PreparedStatement;
@@ -45,6 +46,9 @@ final class OneBlockBranchStorageScenario {
         assertThat(branches.findAll())
                 .describedAs("a deleted island's picks go with it")
                 .isEmpty();
+        assertThatThrownBy(() -> branches.pick(new Pick(other, "plains", "cave")))
+                .describedAs("a pick of an island deleted meanwhile is refused, not tried for ever")
+                .isInstanceOf(IllegalStateException.class);
     }
 
     private static void seedIsland(Database database, IslandId island) throws SQLException {

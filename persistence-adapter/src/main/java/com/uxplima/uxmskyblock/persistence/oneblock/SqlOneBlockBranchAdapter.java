@@ -62,23 +62,27 @@ public final class SqlOneBlockBranchAdapter implements OneBlockBranchPort {
     public void pick(Pick pick) {
         Objects.requireNonNull(pick, "pick must not be null");
         try (Connection conn = dataSource.getConnection()) {
-            try (PreparedStatement ps = conn.prepareStatement(
-                    "UPDATE oneblock_branches SET chosen = ? WHERE island_id = ? AND phase = ?")) {
-                fill(ps, pick);
-                if (ps.executeUpdate() == 1) {
+            for (int attempt = 0; attempt < 2; attempt++) {
+                try (PreparedStatement ps = conn.prepareStatement(
+                        "UPDATE oneblock_branches SET chosen = ? WHERE island_id = ? AND phase = ?")) {
+                    fill(ps, pick);
+                    if (ps.executeUpdate() == 1) {
+                        return;
+                    }
+                }
+                try (PreparedStatement ps = conn.prepareStatement(
+                        "INSERT INTO oneblock_branches (chosen, island_id, phase) VALUES (?, ?, ?)")) {
+                    fill(ps, pick);
+                    ps.executeUpdate();
                     return;
+                } catch (SQLException taken) {
+                    if (!SqlConstraint.violated(taken)) {
+                        throw taken;
+                    }
+                    // Written between the two statements, or the island is gone: change it once more, then give up.
                 }
             }
-            try (PreparedStatement ps = conn.prepareStatement(
-                    "INSERT INTO oneblock_branches (chosen, island_id, phase) VALUES (?, ?, ?)")) {
-                fill(ps, pick);
-                ps.executeUpdate();
-            } catch (SQLException taken) {
-                if (!SqlConstraint.violated(taken)) {
-                    throw taken;
-                }
-                pick(pick);
-            }
+            throw new IllegalStateException("The pick of OneBlock island " + pick.islandId() + " found no row twice");
         } catch (SQLException e) {
             throw new IllegalStateException("Could not record the pick of OneBlock island " + pick.islandId(), e);
         }

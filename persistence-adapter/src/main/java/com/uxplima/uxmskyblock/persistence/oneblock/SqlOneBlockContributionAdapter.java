@@ -43,7 +43,10 @@ public final class SqlOneBlockContributionAdapter implements OneBlockContributio
         }
     }
 
-    /** Adds to the player's row, or writes it when there is none; of two first breaks at once the second adds. */
+    /**
+     * Adds to the player's row, or writes it when there is none; of two first breaks at once the second adds. A row
+     * that can neither be added to nor written twice over, as for an island deleted meanwhile, is refused.
+     */
     @Override
     public void add(IslandId islandId, PlayerUuid player, long breaks) {
         Objects.requireNonNull(islandId, "islandId must not be null");
@@ -52,23 +55,28 @@ public final class SqlOneBlockContributionAdapter implements OneBlockContributio
             throw new IllegalArgumentException("breaks must be at least one: " + breaks);
         }
         try (Connection conn = dataSource.getConnection()) {
-            try (PreparedStatement ps = conn.prepareStatement(
-                    "UPDATE oneblock_member_breaks SET breaks = breaks + ? WHERE island_id = ? AND player_uuid = ?")) {
-                fill(ps, islandId, player, breaks);
-                if (ps.executeUpdate() == 1) {
+            for (int attempt = 0; attempt < 2; attempt++) {
+                try (PreparedStatement ps = conn.prepareStatement(
+                        "UPDATE oneblock_member_breaks SET breaks = breaks + ? WHERE island_id = ? AND player_uuid = ?")) {
+                    fill(ps, islandId, player, breaks);
+                    if (ps.executeUpdate() == 1) {
+                        return;
+                    }
+                }
+                try (PreparedStatement ps = conn.prepareStatement(
+                        "INSERT INTO oneblock_member_breaks (breaks, island_id, player_uuid) VALUES (?, ?, ?)")) {
+                    fill(ps, islandId, player, breaks);
+                    ps.executeUpdate();
                     return;
+                } catch (SQLException taken) {
+                    if (!SqlConstraint.violated(taken)) {
+                        throw taken;
+                    }
+                    // Written between the two statements, or the island is gone: add once more, then give up.
                 }
             }
-            try (PreparedStatement ps = conn.prepareStatement(
-                    "INSERT INTO oneblock_member_breaks (breaks, island_id, player_uuid) VALUES (?, ?, ?)")) {
-                fill(ps, islandId, player, breaks);
-                ps.executeUpdate();
-            } catch (SQLException taken) {
-                if (!SqlConstraint.violated(taken)) {
-                    throw taken;
-                }
-                add(islandId, player, breaks);
-            }
+            throw new IllegalStateException(
+                    "The breaks of " + player + " on OneBlock island " + islandId + " found no row twice");
         } catch (SQLException e) {
             throw new IllegalStateException(
                     "Could not add the breaks of " + player + " on OneBlock island " + islandId, e);

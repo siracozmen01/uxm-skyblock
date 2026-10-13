@@ -69,26 +69,30 @@ public final class SqlOneBlockWaitAdapter implements OneBlockWaitPort {
         Objects.requireNonNull(waiting, "waiting must not be null");
         String island = waiting.islandId().value().toString();
         try (Connection conn = dataSource.getConnection()) {
-            try (PreparedStatement ps = conn.prepareStatement(
-                    "UPDATE oneblock_waits SET phase = ?, until_millis = ? WHERE island_id = ?")) {
-                fill(ps, waiting, 1);
-                ps.setString(3, island);
-                if (ps.executeUpdate() == 1) {
+            for (int attempt = 0; attempt < 2; attempt++) {
+                try (PreparedStatement ps = conn.prepareStatement(
+                        "UPDATE oneblock_waits SET phase = ?, until_millis = ? WHERE island_id = ?")) {
+                    fill(ps, waiting, 1);
+                    ps.setString(3, island);
+                    if (ps.executeUpdate() == 1) {
+                        return;
+                    }
+                }
+                try (PreparedStatement ps = conn.prepareStatement(
+                        "INSERT INTO oneblock_waits (phase, until_millis, island_id) VALUES (?, ?, ?)")) {
+                    fill(ps, waiting, 1);
+                    ps.setString(3, island);
+                    ps.executeUpdate();
                     return;
+                } catch (SQLException taken) {
+                    if (!SqlConstraint.violated(taken)) {
+                        throw taken;
+                    }
+                    // Written between the two statements, or the island is gone: change it once more, then give up.
                 }
             }
-            try (PreparedStatement ps = conn.prepareStatement(
-                    "INSERT INTO oneblock_waits (phase, until_millis, island_id) VALUES (?, ?, ?)")) {
-                fill(ps, waiting, 1);
-                ps.setString(3, island);
-                ps.executeUpdate();
-            } catch (SQLException taken) {
-                if (!SqlConstraint.violated(taken)) {
-                    throw taken;
-                }
-                // Written between the two statements: change what was written.
-                set(waiting);
-            }
+            throw new IllegalStateException(
+                    "The wait of OneBlock island " + waiting.islandId() + " found no row twice");
         } catch (SQLException e) {
             throw new IllegalStateException("Could not record the wait of OneBlock island " + waiting.islandId(), e);
         }

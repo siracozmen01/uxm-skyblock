@@ -1,6 +1,7 @@
 package com.uxplima.uxmskyblock.persistence.oneblock;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.sql.Connection;
 import java.sql.PreparedStatement;
@@ -49,6 +50,9 @@ final class OneBlockWaitStorageScenario {
         assertThat(waits.findAll())
                 .describedAs("a deleted island's wait goes with it")
                 .isEmpty();
+        assertThatThrownBy(() -> waits.set(new Waiting(other, "cave", UNTIL)))
+                .describedAs("a wait of an island deleted meanwhile is refused, not tried for ever")
+                .isInstanceOf(IllegalStateException.class);
     }
 
     private static void seedIsland(Database database, IslandId island) throws SQLException {
