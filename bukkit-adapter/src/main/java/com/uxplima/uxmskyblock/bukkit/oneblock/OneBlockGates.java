@@ -14,6 +14,8 @@ import java.util.logging.Logger;
 
 import org.bukkit.entity.Player;
 
+import net.kyori.adventure.audience.Audience;
+import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.minimessage.tag.resolver.Placeholder;
 
 import com.uxplima.uxmskyblock.bukkit.chunkblock.ChunkPurse;
@@ -259,10 +261,18 @@ public final class OneBlockGates {
     }
 
     private void said(Player player, Requirement line) {
-        switch (line) {
+        Component said = lineOf(messages, player, line);
+        if (said != null) {
+            player.sendMessage(said);
+        }
+    }
+
+    /** One requirement line in the viewer's language, as the breaker is told it and the phases menu lists it. */
+    static @Nullable Component lineOf(Messages messages, Audience viewer, Requirement line) {
+        return switch (line) {
             case Requirement.Money money ->
-                messages.sendPlain(
-                        player,
+                messages.renderPlain(
+                        viewer,
                         money.from() == Requirement.Source.ISLAND
                                 ? "oneblock.requires.money_island"
                                 : "oneblock.requires.money",
@@ -273,29 +283,29 @@ public final class OneBlockGates {
                                         .stripTrailingZeros()
                                         .toPlainString()));
             case Requirement.Currency currency ->
-                messages.sendPlain(
-                        player,
+                messages.renderPlain(
+                        viewer,
                         currency.from() == Requirement.Source.ISLAND
                                 ? "oneblock.requires.currency_island"
                                 : "oneblock.requires.currency",
                         Placeholder.unparsed("amount", Long.toString(currency.amount())),
                         Placeholder.unparsed("currency", currency.id()));
             case Requirement.Items items ->
-                messages.sendPlain(
-                        player,
+                messages.renderPlain(
+                        viewer,
                         "oneblock.requires.items",
                         Placeholder.unparsed("amount", Long.toString(items.amount())),
                         Placeholder.unparsed("item", itemName(items.material())));
             case Requirement.Level level ->
-                messages.sendPlain(
-                        player,
+                messages.renderPlain(
+                        viewer,
                         "oneblock.requires.level",
                         Placeholder.unparsed("needed", Long.toString(level.level())));
             case Requirement.Permission permission ->
-                messages.sendPlain(
-                        player, "oneblock.requires.permission", Placeholder.unparsed("permission", permission.node()));
-            default -> {}
-        }
+                messages.renderPlain(
+                        viewer, "oneblock.requires.permission", Placeholder.unparsed("permission", permission.node()));
+            default -> null;
+        };
     }
 
     /** {@code minecraft:oak_log} as {@code oak log}. */

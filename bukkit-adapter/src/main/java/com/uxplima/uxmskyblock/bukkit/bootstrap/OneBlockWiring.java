@@ -25,6 +25,7 @@ public final class OneBlockWiring implements AutoCloseable {
     private final com.uxplima.uxmskyblock.bukkit.oneblock.OneBlockPanel panel;
     private final com.uxplima.uxmskyblock.bukkit.oneblock.OneBlockDraws draws;
     private final com.uxplima.uxmskyblock.bukkit.oneblock.OneBlockBranches branches;
+    private final com.uxplima.uxmskyblock.bukkit.oneblock.OneBlockPhasesMenu phasesMenu;
 
     public OneBlockWiring(
             ConfigurationWiring configuration,
@@ -68,6 +69,9 @@ public final class OneBlockWiring implements AutoCloseable {
         this.panel = new com.uxplima.uxmskyblock.bukkit.oneblock.OneBlockPanel(
                 service, persistence.islandStoragePort(), scheduler, configuration.messages(), activeProfile);
         panel.useConfiguration(() -> config);
+        this.phasesMenu =
+                new com.uxplima.uxmskyblock.bukkit.oneblock.OneBlockPhasesMenu(() -> config, configuration.messages());
+        panel.usePhasesMenu(phasesMenu);
         var bars = new com.uxplima.uxmskyblock.bukkit.oneblock.OneBlockProgressBars(
                 () -> config, scheduler, configuration.messages());
         panel.useBars(bars);
@@ -140,6 +144,7 @@ public final class OneBlockWiring implements AutoCloseable {
         }
         panel.useMenuEngine(engine);
         branches.useMenuEngine(engine);
+        phasesMenu.useMenuEngine(engine);
         return panel;
     }
 

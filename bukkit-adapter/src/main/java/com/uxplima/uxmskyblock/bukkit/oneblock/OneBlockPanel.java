@@ -48,9 +48,13 @@ public final class OneBlockPanel {
     private volatile java.util.function.@Nullable Supplier<com.uxplima.uxmskyblock.bukkit.config.OneBlockConfiguration>
             config;
     private volatile @Nullable OneBlockProgressBars bars;
+    private volatile @Nullable OneBlockPhasesMenu phasesMenu;
 
     /** The verb the panel's bar button runs to switch where the player's progress shows. */
     static final String SWITCH_BAR = "skyblock:oneblock-bar";
+
+    /** The verb the panel's phases button runs to list every phase. */
+    static final String PHASES = "skyblock:oneblock-phases";
 
     public OneBlockPanel(
             OneBlockService service,
@@ -76,6 +80,11 @@ public final class OneBlockPanel {
         this.bars = Objects.requireNonNull(bars, "bars must not be null");
     }
 
+    /** The window that lists every phase, which the panel's phases button opens. */
+    public void usePhasesMenu(OneBlockPhasesMenu phasesMenu) {
+        this.phasesMenu = Objects.requireNonNull(phasesMenu, "phasesMenu must not be null");
+    }
+
     /** The engine that draws the operator's menu file. Without one the standing is said in chat. */
     public void useMenuEngine(@Nullable SkyblockMenuEngine engine) {
         this.engine = engine;
@@ -87,11 +96,25 @@ public final class OneBlockPanel {
                     shown.switchFor(ctx.player());
                 }
             });
+            engine.action(PHASES, ctx -> {
+                OneBlockPhasesMenu listed = phasesMenu;
+                if (listed != null) {
+                    read(ctx.player(), (way, broken) -> listed.show(ctx.player(), way, broken));
+                }
+            });
         }
     }
 
     /** Shows the player where their island stands, or says why there is nothing to show. */
     public void open(Player player) {
+        read(player, (way, broken) -> show(player, way, broken));
+    }
+
+    /**
+     * Reads the player's island off their thread and hands its way and count to {@code shown} on it, or says why
+     * there is nothing to show.
+     */
+    private void read(Player player, java.util.function.ObjLongConsumer<OneBlockPhases> shown) {
         Objects.requireNonNull(player, "player must not be null");
         PlayerUuid playerUuid = new PlayerUuid(player.getUniqueId());
         Optional<ProfileId> profile = activeProfile.apply(player.getUniqueId());
@@ -112,7 +135,7 @@ public final class OneBlockPanel {
                 if (oneBlock.isEmpty()) {
                     messages.send(player, "oneblock.not_oneblock");
                 } else {
-                    show(player, way, oneBlock.get().blocksBroken());
+                    shown.accept(way, oneBlock.get().blocksBroken());
                 }
             });
         });

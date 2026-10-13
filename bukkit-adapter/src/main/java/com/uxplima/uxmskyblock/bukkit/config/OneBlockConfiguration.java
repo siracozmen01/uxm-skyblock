@@ -44,6 +44,8 @@ import org.spongepowered.configurate.ConfigurationNode;
  *     first is taken
  * @param creatureWarning how many breaks before a hostile creature comes its island is told, nothing for never
  * @param display how a player sees the island's progress: a bar they may switch, and a line over the block
+ * @param previews what each phase holds for an island, in the operator's words or a {@code @key} of the catalogue,
+ *     shown in the phases menu, by the phase's name, for a phase that writes one
  */
 public record OneBlockConfiguration(
         boolean enabled,
@@ -56,7 +58,8 @@ public record OneBlockConfiguration(
         Map<String, OneBlockGate> gates,
         Duration chooseWithin,
         int creatureWarning,
-        OneBlockDisplay display) {
+        OneBlockDisplay display,
+        Map<String, String> previews) {
 
     /** How many breaks ahead a hostile creature is told, when the file names no number. */
     public static final int DEFAULT_CREATURE_WARNING = 5;
@@ -183,7 +186,8 @@ public record OneBlockConfiguration(
                 Map.of(),
                 DEFAULT_CHOOSE_WITHIN,
                 0,
-                OneBlockDisplay.SHIPPED);
+                OneBlockDisplay.SHIPPED,
+                Map.of());
     }
 
     /** How often counted breaks are written, when the file names no interval. */
@@ -198,6 +202,7 @@ public record OneBlockConfiguration(
             throw new IllegalArgumentException("The save interval must be positive: " + saveInterval);
         }
         icons = Map.copyOf(icons);
+        previews = Map.copyOf(previews);
         Objects.requireNonNull(entries, "entries");
         Map<String, Map<Long, OneBlockMoment>> copied = new LinkedHashMap<>();
         moments.forEach((phase, at) -> copied.put(phase, Map.copyOf(at)));
@@ -228,6 +233,11 @@ public record OneBlockConfiguration(
     public java.util.Optional<OneBlockMoment> momentAt(String phase, long broken) {
         return java.util.Optional.ofNullable(
                 moments.getOrDefault(phase, Map.of()).get(broken));
+    }
+
+    /** What the phase called {@code key} holds, as its file writes it, if it writes anything. */
+    public java.util.Optional<String> previewOf(String key) {
+        return java.util.Optional.ofNullable(previews.get(key));
     }
 
     /** The icon of the phase called {@code key}. */
@@ -271,6 +281,7 @@ public record OneBlockConfiguration(
                 saveInterval(root.node("save-interval").getString());
         List<OneBlockPhase> phases = new ArrayList<>();
         Map<String, String> icons = new LinkedHashMap<>();
+        Map<String, String> previews = new LinkedHashMap<>();
         Map<String, OneBlockEntries.Block> blockEntries = new LinkedHashMap<>();
         Map<String, OneBlockEntries.Creature> creatureEntries = new LinkedHashMap<>();
         Map<String, String> tables = new LinkedHashMap<>();
@@ -286,6 +297,10 @@ public record OneBlockConfiguration(
             }
             String key = listed.isMap() ? phase.node("name").getString("") : listed.getString("");
             icons.put(key, icon(key, phase.node("icon").getString(DEFAULT_ICON)));
+            String preview = phase.node("preview").getString("").strip();
+            if (!preview.isEmpty()) {
+                previews.put(key, preview);
+            }
             Map<String, Double> blocks = blocks(key, phase.node("blocks"), blockEntries);
             if (blocks.isEmpty()) {
                 LOGGER.warning(() -> "OneBlock phase '" + key + "' has no block the server knows and is left out.");
@@ -372,7 +387,8 @@ public record OneBlockConfiguration(
                 gates,
                 chooseWithin,
                 creatureWarning,
-                display(root.node("progress")));
+                display(root.node("progress")),
+                previews);
     }
 
     /**
