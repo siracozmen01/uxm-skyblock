@@ -45,6 +45,8 @@ public final class OneBlockPanel {
     private final Messages messages;
     private final Function<UUID, Optional<ProfileId>> activeProfile;
     private @Nullable SkyblockMenuEngine engine;
+    private volatile java.util.function.@Nullable Supplier<com.uxplima.uxmskyblock.bukkit.config.OneBlockConfiguration>
+            config;
 
     public OneBlockPanel(
             OneBlockService service,
@@ -57,6 +59,12 @@ public final class OneBlockPanel {
         this.scheduler = Objects.requireNonNull(scheduler, "scheduler must not be null");
         this.messages = Objects.requireNonNull(messages, "messages must not be null");
         this.activeProfile = Objects.requireNonNull(activeProfile, "activeProfile must not be null");
+    }
+
+    /** The operator's phase files, which the next moment is read from. Without them there is none to tell. */
+    public void useConfiguration(
+            java.util.function.Supplier<com.uxplima.uxmskyblock.bukkit.config.OneBlockConfiguration> config) {
+        this.config = Objects.requireNonNull(config, "config must not be null");
     }
 
     /** The engine that draws the operator's menu file. Without one the standing is said in chat. */
@@ -116,6 +124,10 @@ public final class OneBlockPanel {
      *   <li>{@code phase_blocks}, {@code phase_length} and {@code phase_left}: breaks into the phase,
      *       how many it lasts and how many remain
      *   <li>{@code phase_percent}: how far through the phase, from 0 to 100
+     *   <li>{@code next_phase} and {@code next_phase_id}: the phase that follows, along the island's way, its title
+     *       and its name; empty after the last phase of an island that stays in it
+     *   <li>{@code next_moment}: how many breaks until the next moment the phase file writes, empty when none is left
+     *   <li>{@code cycle}: which pass through the phases the island is on, from 1
      * </ul>
      */
     public Map<String, String> values(@Nullable Audience viewer, long broken) {
@@ -129,7 +141,8 @@ public final class OneBlockPanel {
         long into = at.intoPhase();
         long length = at.phaseLength();
         Map<String, String> values = new LinkedHashMap<>();
-        values.put("phase", messages.named(viewer == null ? Audience.empty() : viewer, "oneblock.phases", key, key));
+        Audience audience = viewer == null ? Audience.empty() : viewer;
+        values.put("phase", messages.named(audience, "oneblock.phases", key, key));
         values.put("phase_id", key);
         values.put("phase_number", Integer.toString(at.index() + 1));
         values.put("phase_count", Integer.toString(phases.phases().size()));
@@ -139,7 +152,36 @@ public final class OneBlockPanel {
         // An island that stays in the last phase goes on past its length; nothing is left of it.
         values.put("phase_left", Long.toString(Math.max(0, length - into)));
         values.put("phase_percent", Long.toString(length <= 0 ? 100 : Math.min(100, into * 100 / length)));
+        String next = nextPhase(phases, at);
+        values.put("next_phase", next.isEmpty() ? "" : messages.named(audience, "oneblock.phases", next, next));
+        values.put("next_phase_id", next);
+        values.put("next_moment", nextMoment(key, into));
+        values.put("cycle", Long.toString(phases.cycleOf(broken) + 1));
         return values;
+    }
+
+    /** The phase after the one at {@code at}: the next along the way, the first again past the last when it repeats. */
+    private static String nextPhase(OneBlockPhases phases, OneBlockPhases.Position at) {
+        int after = at.index() + 1;
+        if (after < phases.phases().size()) {
+            return phases.phases().get(after).key();
+        }
+        return phases.afterTheLast() == OneBlockPhases.AfterTheLast.REPEAT
+                ? phases.phases().getFirst().key()
+                : "";
+    }
+
+    /** How many breaks until the next moment of {@code phase} after {@code into} of its blocks, or empty. */
+    private String nextMoment(String phase, long into) {
+        var files = config;
+        if (files == null) {
+            return "";
+        }
+        return files.get().moments().getOrDefault(phase, Map.of()).keySet().stream()
+                .filter(at -> at > into)
+                .min(Long::compare)
+                .map(at -> Long.toString(at - into))
+                .orElse("");
     }
 
     /**
