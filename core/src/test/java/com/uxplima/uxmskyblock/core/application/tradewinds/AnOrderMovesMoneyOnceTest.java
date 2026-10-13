@@ -140,17 +140,19 @@ class AnOrderMovesMoneyOnceTest {
         PortMarket market = market();
         market.usePrices(prices);
 
-        assertThat(market.sell(vessel, ada, BAY, WHEAT).orElseThrow().amount()).isEqualTo(200);
         assertThat(market.sell(vessel, ada, BAY, WHEAT).orElseThrow().amount())
-                .describedAs("ten sold: a tenth less for each of the next ten")
+                .describedAs("a lot is paid at the price it leaves: a tenth less for its ten")
                 .isEqualTo(180);
-        assertThat(market.asks(vessel, BAY, WHEAT)).isEqualTo(40);
+        assertThat(market.sell(vessel, ada, BAY, WHEAT).orElseThrow().amount())
+                .describedAs("ten sold: a tenth less again")
+                .isEqualTo(160);
+        assertThat(market.asks(vessel, BAY, WHEAT)).isEqualTo(45);
 
         bank.balance = 10_000;
-        assertThat(market.buy(vessel, ada, BAY, WHEAT).orElseThrow().amount()).isEqualTo(400);
+        assertThat(market.buy(vessel, ada, BAY, WHEAT).orElseThrow().amount()).isEqualTo(450);
         assertThat(market.asks(vessel, BAY, WHEAT))
                 .describedAs("ten bought back")
-                .isEqualTo(45);
+                .isEqualTo(50);
     }
 
     @Test

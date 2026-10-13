@@ -25,6 +25,7 @@ class APortsPricesMoveWithItsTradeTest {
     private static final Port.Good WHEAT = new Port.Good("WHEAT", 10, 100, 200);
     private static final Port BAY = new Port("bay", 0, List.of(WHEAT));
     private static final PriceDrift DRIFT = new PriceDrift(0.01, 0.5, 1.5, Duration.ofHours(1));
+    private static final Port.Good AT_REST = new Port.Good("WHEAT", 10, 90, 220);
 
     /** Storage in a map, which refuses a write over any version but the last, as the table does. */
     private static final class Kept implements MarketPricesPort {
@@ -79,9 +80,18 @@ class APortsPricesMoveWithItsTradeTest {
     @Test
     @DisplayName("Each item sold moves both prices down by its share, each bought up, within the floor and ceiling")
     void factor() {
-        assertThat(DRIFT.priced(WHEAT, 0)).isSameAs(WHEAT);
-        assertThat(DRIFT.priced(WHEAT, 20)).isEqualTo(new Port.Good("WHEAT", 10, 80, 160));
-        assertThat(DRIFT.priced(WHEAT, -20)).isEqualTo(new Port.Good("WHEAT", 10, 120, 240));
+        assertThat(DRIFT.priced(WHEAT, 0))
+                .describedAs(
+                        "a lot is paid at the price it leaves when sold, and asked at the one it leaves when bought")
+                .isEqualTo(AT_REST);
+        assertThat(DRIFT.priced(WHEAT, 20)).isEqualTo(new Port.Good("WHEAT", 10, 70, 180));
+        assertThat(DRIFT.priced(WHEAT, -20)).isEqualTo(new Port.Good("WHEAT", 10, 110, 260));
+        assertThat(DRIFT.priced(WHEAT, -10))
+                .describedAs("bought back to rest")
+                .isEqualTo(new Port.Good("WHEAT", 10, 100, 240));
+        assertThat(DRIFT.priced(new Port.Good("WHEAT", 10, 20, 50), 25).pays())
+                .describedAs("20 times 0.65 is 13, though the arithmetic makes it a hair less")
+                .isEqualTo(13);
         assertThat(DRIFT.priced(WHEAT, 1_000)).describedAs("the floor").isEqualTo(new Port.Good("WHEAT", 10, 50, 100));
         assertThat(DRIFT.priced(WHEAT, -1_000))
                 .describedAs("the ceiling")
@@ -105,22 +115,43 @@ class APortsPricesMoveWithItsTradeTest {
     }
 
     @Test
+    @DisplayName("A lot bought and sold straight back, or sold and bought straight back, never comes out ahead")
+    void noRoundTripPays() {
+        PriceDrift steep = new PriceDrift(0.01, 0.1, 10, Duration.ofHours(1));
+        for (int lot : new int[] {1, 10, 50, 100, 500}) {
+            Port.Good good = new Port.Good("WHEAT", lot, 100, 101);
+            for (double pressure = -1_000; pressure <= 1_000; pressure += 37) {
+                long bought = steep.priced(good, pressure).asks();
+                long soldBack = steep.priced(good, pressure - lot).pays();
+                assertThat(soldBack)
+                        .describedAs("bought at %s under %s, sold straight back", lot, pressure)
+                        .isLessThan(bought);
+                long sold = steep.priced(good, pressure).pays();
+                long boughtBack = steep.priced(good, pressure + lot).asks();
+                assertThat(boughtBack)
+                        .describedAs("sold at %s under %s, bought straight back", lot, pressure)
+                        .isGreaterThan(sold);
+            }
+        }
+    }
+
+    @Test
     @DisplayName("A trade is written at once, fades with time, and is read again by another node once stale")
     void trade() {
         Kept kept = new Kept();
         Ticking clock = new Ticking();
         MarketPrices prices = new MarketPrices(kept, DRIFT, clock, Duration.ofSeconds(5));
         MarketPrices other = new MarketPrices(kept, DRIFT, clock, Duration.ofSeconds(5));
-        assertThat(other.priced(BAY, WHEAT)).isEqualTo(WHEAT);
+        assertThat(other.priced(BAY, WHEAT)).isEqualTo(AT_REST);
 
         assertThat(prices.traded(BAY, WHEAT, 20)).isTrue();
-        assertThat(prices.priced(BAY, WHEAT)).isEqualTo(new Port.Good("WHEAT", 10, 80, 160));
+        assertThat(prices.priced(BAY, WHEAT)).isEqualTo(new Port.Good("WHEAT", 10, 70, 180));
         assertThat(other.priced(BAY, WHEAT))
                 .describedAs("another node keeps what it read until it is stale")
-                .isEqualTo(WHEAT);
+                .isEqualTo(AT_REST);
 
         clock.now = NOW.plus(Duration.ofHours(1));
-        assertThat(other.priced(BAY, WHEAT)).describedAs("half faded").isEqualTo(new Port.Good("WHEAT", 10, 90, 180));
+        assertThat(other.priced(BAY, WHEAT)).describedAs("half faded").isEqualTo(new Port.Good("WHEAT", 10, 80, 200));
         assertThat(prices.traded(BAY, WHEAT, -10)).isTrue();
         assertThat(kept.find("bay", "WHEAT").orElseThrow().pressure()).isEqualTo(0);
         assertThat(kept.find("bay", "WHEAT").orElseThrow().version()).isEqualTo(2);
