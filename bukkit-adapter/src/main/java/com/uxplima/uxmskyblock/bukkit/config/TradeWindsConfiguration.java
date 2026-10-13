@@ -11,6 +11,7 @@ import java.util.logging.Logger;
 import org.bukkit.Material;
 
 import com.uxplima.uxmskyblock.core.application.tradewinds.Port;
+import com.uxplima.uxmskyblock.core.application.tradewinds.PriceDrift;
 import com.uxplima.uxmskyblock.core.application.tradewinds.Ranks;
 import com.uxplima.uxmskyblock.core.application.tradewinds.Standing;
 import org.spongepowered.configurate.ConfigurationNode;
@@ -25,9 +26,22 @@ import org.spongepowered.configurate.ConfigurationNode;
  * @param ports the ports vessels sail between, in the order the file writes them
  * @param icons the item each port is shown as, by its key
  * @param standing how a vessel's standing in a port moves its prices there
+ * @param drift how a port's trade moves its prices, for every vessel alike
  */
 public record TradeWindsConfiguration(
-        boolean enabled, Sea sea, Ranks ranks, List<Port> ports, Map<String, String> icons, Standing standing) {
+        boolean enabled,
+        Sea sea,
+        Ranks ranks,
+        List<Port> ports,
+        Map<String, String> icons,
+        Standing standing,
+        PriceDrift drift) {
+
+    /**
+     * The drift a file that writes none has: a tenth of a percent for each item, from half to one and a half the
+     * written price, the push fading by half every six hours.
+     */
+    public static final PriceDrift SHIPPED_DRIFT = new PriceDrift(0.001, 0.5, 1.5, java.time.Duration.ofHours(6));
 
     /** The standing a file that writes none has: one percent for every 500.00 of trade, up to ten. */
     public static final Standing SHIPPED_STANDING = new Standing(50_000, 1, 10);
@@ -73,6 +87,7 @@ public record TradeWindsConfiguration(
     public TradeWindsConfiguration {
         Objects.requireNonNull(sea, "sea must not be null");
         Objects.requireNonNull(standing, "standing must not be null");
+        Objects.requireNonNull(drift, "drift must not be null");
         Objects.requireNonNull(ranks, "ranks must not be null");
         ports = List.copyOf(ports);
         icons = Map.copyOf(icons);
@@ -118,7 +133,7 @@ public record TradeWindsConfiguration(
 
     public static TradeWindsConfiguration defaultConfiguration() {
         return new TradeWindsConfiguration(
-                true, Sea.SHIPPED, SHIPPED_RANKS, SHIPPED_PORTS, SHIPPED_ICONS, SHIPPED_STANDING);
+                true, Sea.SHIPPED, SHIPPED_RANKS, SHIPPED_PORTS, SHIPPED_ICONS, SHIPPED_STANDING, SHIPPED_DRIFT);
     }
 
     public static TradeWindsConfiguration load(ConfigurationNode root) {
@@ -141,7 +156,41 @@ public record TradeWindsConfiguration(
                 ranks(root.node("ranks")),
                 ports,
                 icons,
-                standing(root.node("standing")));
+                standing(root.node("standing")),
+                drift(root.node("market-drift")));
+    }
+
+    /**
+     * How the ports' trade moves their prices, as {@code market-drift} writes it: {@code per-item}, {@code floor},
+     * {@code ceiling} and {@code half-life}. {@code enabled = false} keeps every price as written. A drift that
+     * cannot be is said, and the shipped one is used.
+     */
+    private static PriceDrift drift(ConfigurationNode node) {
+        if (!node.node("enabled").getBoolean(true)) {
+            return PriceDrift.NONE;
+        }
+        String written = node.node("half-life").getString("");
+        java.time.Duration halfLife = SHIPPED_DRIFT.halfLife();
+        if (!written.isBlank()) {
+            try {
+                halfLife = com.uxplima.uxmlib.common.Durations.parse(written.strip());
+            } catch (RuntimeException unreadable) {
+                LOGGER.warning(() -> "modules/tradewinds.conf market-drift.half-life is '" + written
+                        + "', which is no time, so the shipped "
+                        + SHIPPED_DRIFT.halfLife().toHours() + "h is used.");
+            }
+        }
+        try {
+            return new PriceDrift(
+                    node.node("per-item").getDouble(SHIPPED_DRIFT.perItem()),
+                    node.node("floor").getDouble(SHIPPED_DRIFT.floor()),
+                    node.node("ceiling").getDouble(SHIPPED_DRIFT.ceiling()),
+                    halfLife);
+        } catch (IllegalArgumentException e) {
+            LOGGER.warning(
+                    () -> "modules/tradewinds.conf market-drift: " + e.getMessage() + ". The shipped drift is used.");
+            return SHIPPED_DRIFT;
+        }
     }
 
     /**

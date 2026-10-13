@@ -110,6 +110,50 @@ class AnOrderMovesMoneyOnceTest {
     }
 
     @Test
+    @DisplayName("A sale pushes what the port pays down for the next, and a purchase pushes what it asks up")
+    void pricesMove() {
+        docked();
+        hold.items.put("WHEAT", 30);
+        MarketPrices prices = new MarketPrices(
+                new MarketPricesPort() {
+                    private final Map<String, Pressure> rows = new HashMap<>();
+
+                    @Override
+                    public Optional<Pressure> find(String portId, String item) {
+                        return Optional.ofNullable(rows.get(portId + item));
+                    }
+
+                    @Override
+                    public List<Pressure> findAll() {
+                        return List.copyOf(rows.values());
+                    }
+
+                    @Override
+                    public boolean keep(Pressure next) {
+                        rows.put(next.portId() + next.item(), next);
+                        return true;
+                    }
+                },
+                new PriceDrift(0.01, 0.5, 1.5, java.time.Duration.ofHours(1)),
+                Clock.fixed(now, ZoneOffset.UTC),
+                java.time.Duration.ZERO);
+        PortMarket market = market();
+        market.usePrices(prices);
+
+        assertThat(market.sell(vessel, ada, BAY, WHEAT).orElseThrow().amount()).isEqualTo(200);
+        assertThat(market.sell(vessel, ada, BAY, WHEAT).orElseThrow().amount())
+                .describedAs("ten sold: a tenth less for each of the next ten")
+                .isEqualTo(180);
+        assertThat(market.asks(vessel, BAY, WHEAT)).isEqualTo(40);
+
+        bank.balance = 10_000;
+        assertThat(market.buy(vessel, ada, BAY, WHEAT).orElseThrow().amount()).isEqualTo(400);
+        assertThat(market.asks(vessel, BAY, WHEAT))
+                .describedAs("ten bought back")
+                .isEqualTo(45);
+    }
+
+    @Test
     @DisplayName("A bank that refuses a sale leaves it owed, and recovery pays it once under a new key")
     void aRefusedSaleIsPaidLater() {
         docked();

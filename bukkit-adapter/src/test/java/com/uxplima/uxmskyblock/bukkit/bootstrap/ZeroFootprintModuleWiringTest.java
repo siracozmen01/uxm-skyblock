@@ -182,7 +182,13 @@ class ZeroFootprintModuleWiringTest {
                 com.uxplima.uxmskyblock.bukkit.config.TradeWindsConfiguration.defaultConfiguration();
         when(config.tradeWindsConfig())
                 .thenReturn(new com.uxplima.uxmskyblock.bukkit.config.TradeWindsConfiguration(
-                        false, shipped.sea(), shipped.ranks(), shipped.ports(), shipped.icons(), shipped.standing()));
+                        false,
+                        shipped.sea(),
+                        shipped.ranks(),
+                        shipped.ports(),
+                        shipped.icons(),
+                        shipped.standing(),
+                        shipped.drift()));
         try (PersistenceWiring persistenceWiring = PersistenceWiring.resolve(null, tempDir)) {
             PersistenceBootstrap persistence = persistenceWiring.bootstrap();
             AuthorityWiring authority = mock(AuthorityWiring.class);

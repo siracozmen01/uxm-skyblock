@@ -105,6 +105,7 @@ public final class PortMarket {
     private final ServerNodeId node;
     private final Clock clock;
     private final Map<IslandId, ReentrantLock> locks = new ConcurrentHashMap<>();
+    private volatile MarketPrices prices = MarketPrices.none();
 
     @SuppressWarnings("TooManyParameters")
     public PortMarket(
@@ -128,6 +129,11 @@ public final class PortMarket {
         this.ranks = Objects.requireNonNull(ranks, "ranks");
         this.node = Objects.requireNonNull(node, "node");
         this.clock = Objects.requireNonNull(clock, "clock");
+    }
+
+    /** How each port's trade moves its prices; without it, prices stay as written. */
+    public void usePrices(MarketPrices prices) {
+        this.prices = Objects.requireNonNull(prices, "prices");
     }
 
     /** Where {@code vessel} is now. */
@@ -202,12 +208,12 @@ public final class PortMarket {
 
     /** What {@code port} pays the crew of {@code vessel} for one {@code good}. */
     public long pays(IslandId vessel, Port port, Port.Good good) {
-        return standing.pays(good, orders.standing(vessel, port.id()));
+        return standing.pays(prices.priced(port, good), orders.standing(vessel, port.id()));
     }
 
     /** What {@code port} asks of the crew of {@code vessel} for one {@code good}. */
     public long asks(IslandId vessel, Port port, Port.Good good) {
-        return standing.asks(good, orders.standing(vessel, port.id()));
+        return standing.asks(prices.priced(port, good), orders.standing(vessel, port.id()));
     }
 
     /** Sells one lot of {@code good} from the hold of {@code vessel} to {@code port}. */
@@ -252,7 +258,8 @@ public final class PortMarket {
                             epoch.getAsLong(), node, cargo.get().version(), after.get()))) {
                 return Result.err("tradewinds.market.busy");
             }
-            // The goods are sold. The bank pays now, or recovery pays it soon.
+            // The goods are sold, and the port pays less for the next. The bank pays now, or recovery pays it soon.
+            prices.traded(port, good, good.lot());
             if (ask(order, amount, NEW_KEYS_PER_CALL) == Bank.Answer.LANDED) {
                 orders.settle(order.id(), MarketOrdersPort.State.OWED, MarketOrdersPort.State.DONE);
             }
@@ -299,7 +306,11 @@ public final class PortMarket {
                     0);
             orders.recordPurchase(order);
             return switch (ask(order, -amount, NEW_KEYS_PER_CALL)) {
-                case LANDED -> stow(order);
+                case LANDED -> {
+                    // Paid for: the port asks more for the next.
+                    prices.traded(port, good, -good.lot());
+                    yield stow(order);
+                }
                 case NO_FUNDS -> {
                     orders.settle(order.id(), MarketOrdersPort.State.PAYING, MarketOrdersPort.State.CANCELLED);
                     yield Result.err("tradewinds.market.no_funds");

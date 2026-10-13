@@ -62,6 +62,9 @@ public final class TradeWindsWiring {
                 config.ranks(),
                 authority.serverNodeId(),
                 clock);
+        // A price read is fresh for a few seconds, so a window of many goods asks storage once per good.
+        market.usePrices(new com.uxplima.uxmskyblock.core.application.tradewinds.MarketPrices(
+                persistence.marketPricesPort(), config.drift(), clock, java.time.Duration.ofSeconds(5)));
         this.holds = new CargoHolds(
                 service,
                 persistence.vesselsPort(),
