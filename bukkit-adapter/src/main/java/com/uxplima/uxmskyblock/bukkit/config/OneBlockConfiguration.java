@@ -46,6 +46,7 @@ import org.spongepowered.configurate.ConfigurationNode;
  * @param display how a player sees the island's progress: a bar they may switch, and a line over the block
  * @param previews what each phase holds for an island, in the operator's words or a {@code @key} of the catalogue,
  *     shown in the phases menu, by the phase's name, for a phase that writes one
+ * @param biomes the biome each phase gives its island when it begins, by the phase's name, for a phase that names one
  */
 public record OneBlockConfiguration(
         boolean enabled,
@@ -59,7 +60,8 @@ public record OneBlockConfiguration(
         Duration chooseWithin,
         int creatureWarning,
         OneBlockDisplay display,
-        Map<String, String> previews) {
+        Map<String, String> previews,
+        Map<String, OneBlockBiome> biomes) {
 
     /** How many breaks ahead a hostile creature is told, when the file names no number. */
     public static final int DEFAULT_CREATURE_WARNING = 5;
@@ -187,6 +189,7 @@ public record OneBlockConfiguration(
                 DEFAULT_CHOOSE_WITHIN,
                 0,
                 OneBlockDisplay.SHIPPED,
+                Map.of(),
                 Map.of());
     }
 
@@ -203,6 +206,7 @@ public record OneBlockConfiguration(
         }
         icons = Map.copyOf(icons);
         previews = Map.copyOf(previews);
+        biomes = Map.copyOf(biomes);
         Objects.requireNonNull(entries, "entries");
         Map<String, Map<Long, OneBlockMoment>> copied = new LinkedHashMap<>();
         moments.forEach((phase, at) -> copied.put(phase, Map.copyOf(at)));
@@ -233,6 +237,11 @@ public record OneBlockConfiguration(
     public java.util.Optional<OneBlockMoment> momentAt(String phase, long broken) {
         return java.util.Optional.ofNullable(
                 moments.getOrDefault(phase, Map.of()).get(broken));
+    }
+
+    /** The biome the phase called {@code key} gives its island when it begins, if its file names one. */
+    public java.util.Optional<OneBlockBiome> biomeOf(String key) {
+        return java.util.Optional.ofNullable(biomes.get(key));
     }
 
     /** What the phase called {@code key} holds, as its file writes it, if it writes anything. */
@@ -282,6 +291,7 @@ public record OneBlockConfiguration(
         List<OneBlockPhase> phases = new ArrayList<>();
         Map<String, String> icons = new LinkedHashMap<>();
         Map<String, String> previews = new LinkedHashMap<>();
+        Map<String, OneBlockBiome> biomes = new LinkedHashMap<>();
         Map<String, OneBlockEntries.Block> blockEntries = new LinkedHashMap<>();
         Map<String, OneBlockEntries.Creature> creatureEntries = new LinkedHashMap<>();
         Map<String, String> tables = new LinkedHashMap<>();
@@ -300,6 +310,13 @@ public record OneBlockConfiguration(
             String preview = phase.node("preview").getString("").strip();
             if (!preview.isEmpty()) {
                 previews.put(key, preview);
+            }
+            OneBlockBiome biome = biome(
+                    key,
+                    phase.node("biome").getString(""),
+                    phase.node("biome-area").getString(""));
+            if (biome != null) {
+                biomes.put(key, biome);
             }
             Map<String, Double> blocks = blocks(key, phase.node("blocks"), blockEntries);
             if (blocks.isEmpty()) {
@@ -388,7 +405,8 @@ public record OneBlockConfiguration(
                 chooseWithin,
                 creatureWarning,
                 display(root.node("progress")),
-                previews);
+                previews,
+                biomes);
     }
 
     /**
@@ -643,6 +661,43 @@ public record OneBlockConfiguration(
     private static @org.jspecify.annotations.Nullable String blockName(String written) {
         Material material = Material.matchMaterial(written);
         return material != null && material.isBlock() && !material.isAir() ? material.name() : null;
+    }
+
+    /**
+     * The biome a phase file names, over the area it names: {@code island}, or left out, for the whole island, or a
+     * number of blocks around the island's block. A biome the server does not know is left out with a warning, and
+     * an area that is neither is read as the whole island with one.
+     */
+    private static @org.jspecify.annotations.Nullable OneBlockBiome biome(String phase, String written, String area) {
+        if (written.isBlank()) {
+            return null;
+        }
+        NamespacedKey key = NamespacedKey.fromString(written.strip().toLowerCase(Locale.ROOT));
+        org.bukkit.block.Biome biome = key == null
+                ? null
+                : io.papermc.paper.registry.RegistryAccess.registryAccess()
+                        .getRegistry(io.papermc.paper.registry.RegistryKey.BIOME)
+                        .get(key);
+        if (biome == null) {
+            LOGGER.warning(() -> "OneBlock phase '" + phase + "' names the biome '" + written
+                    + "', which the server does not know, so the phase leaves the biome as it is.");
+            return null;
+        }
+        String around = area.strip().toLowerCase(Locale.ROOT);
+        if (around.isEmpty() || around.equals("island")) {
+            return new OneBlockBiome(biome, OneBlockBiome.ISLAND);
+        }
+        try {
+            int radius = Integer.parseInt(around);
+            if (radius >= 0) {
+                return new OneBlockBiome(biome, radius);
+            }
+        } catch (NumberFormatException notANumber) {
+            // Said below with the value that is no area.
+        }
+        LOGGER.warning(() -> "OneBlock phase '" + phase + "' has biome-area '" + area
+                + "', which is neither island nor a number of blocks, so the whole island takes the biome.");
+        return new OneBlockBiome(biome, OneBlockBiome.ISLAND);
     }
 
     private static @org.jspecify.annotations.Nullable String creatureName(String written) {

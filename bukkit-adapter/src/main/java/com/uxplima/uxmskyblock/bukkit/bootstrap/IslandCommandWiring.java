@@ -420,7 +420,8 @@ final class IslandCommandWiring {
         if (gameplay.oneBlockWiring().enabled()) {
             modes.add(new com.uxplima.uxmskyblock.bukkit.oneblock.OneBlockAdmin(
                     gameplay.oneBlockWiring().service(),
-                    gameplay.oneBlockWiring().draws()));
+                    gameplay.oneBlockWiring().draws(),
+                    gameplay.oneBlockWiring().biomes()));
         }
         if (gameplay.chunkBlockWiring().enabled()) {
             modes.add(new com.uxplima.uxmskyblock.bukkit.chunkblock.ChunkBlockAdmin(

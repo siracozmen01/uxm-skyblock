@@ -26,6 +26,7 @@ public final class OneBlockWiring implements AutoCloseable {
     private final com.uxplima.uxmskyblock.bukkit.oneblock.OneBlockDraws draws;
     private final com.uxplima.uxmskyblock.bukkit.oneblock.OneBlockBranches branches;
     private final com.uxplima.uxmskyblock.bukkit.oneblock.OneBlockPhasesMenu phasesMenu;
+    private final com.uxplima.uxmskyblock.bukkit.oneblock.OneBlockBiomes biomes;
 
     public OneBlockWiring(
             ConfigurationWiring configuration,
@@ -78,6 +79,9 @@ public final class OneBlockWiring implements AutoCloseable {
         listener.useBars(bars);
         listener.useBlockLines(new com.uxplima.uxmskyblock.bukkit.oneblock.OneBlockBlockLines(
                 () -> config, configuration.messages(), bedrockPlayer()));
+        this.biomes = new com.uxplima.uxmskyblock.bukkit.oneblock.OneBlockBiomes(
+                () -> config, scheduler, persistence.islandStoragePort()::findIslandById);
+        listener.useBiomes(biomes);
         // Every OneBlock island into memory before players break anything, so no break is a query on
         // the region's thread. A break before it finishes reads its island once.
         scheduler.async(() -> {
@@ -109,6 +113,11 @@ public final class OneBlockWiring implements AutoCloseable {
         return service;
     }
 
+    /** How a phase gives its island its biome. */
+    public com.uxplima.uxmskyblock.bukkit.oneblock.OneBlockBiomes biomes() {
+        return biomes;
+    }
+
     /** How the operator's pool entries are put into the world. */
     public com.uxplima.uxmskyblock.bukkit.oneblock.OneBlockDraws draws() {
         return draws;
@@ -130,7 +139,7 @@ public final class OneBlockWiring implements AutoCloseable {
         if (!config.enabled()) {
             return java.util.List.of();
         }
-        return java.util.List.of(new com.uxplima.uxmskyblock.bukkit.oneblock.OneBlockStart(service, draws));
+        return java.util.List.of(new com.uxplima.uxmskyblock.bukkit.oneblock.OneBlockStart(service, draws, biomes));
     }
 
     /**

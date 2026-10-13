@@ -7,6 +7,7 @@ import org.bukkit.Material;
 import com.uxplima.uxmskyblock.bukkit.schematic.IslandStart;
 import com.uxplima.uxmskyblock.core.application.gamemode.CreationActionProvider;
 import com.uxplima.uxmskyblock.core.application.oneblock.OneBlockService;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Builds a OneBlock island: one block, where the island's players arrive standing, drawn from the first
@@ -22,14 +23,17 @@ public final class OneBlockStart implements CreationActionProvider<IslandStart> 
 
     private final OneBlockService service;
     private final OneBlockDraws draws;
+    private final @Nullable OneBlockBiomes biomes;
 
     public OneBlockStart(OneBlockService service) {
-        this(service, OneBlockDraws.PLAIN);
+        this(service, OneBlockDraws.PLAIN, null);
     }
 
-    public OneBlockStart(OneBlockService service, OneBlockDraws draws) {
+    /** With the biome of the first phase given to the island, when its file names one. */
+    public OneBlockStart(OneBlockService service, OneBlockDraws draws, @Nullable OneBlockBiomes biomes) {
         this.service = Objects.requireNonNull(service, "service must not be null");
         this.draws = Objects.requireNonNull(draws, "draws must not be null");
+        this.biomes = biomes;
     }
 
     @Override
@@ -49,6 +53,14 @@ public final class OneBlockStart implements CreationActionProvider<IslandStart> 
                 start.centerZ(),
                 first,
                 service.phases().phases().getFirst().key());
+        if (biomes != null) {
+            biomes.paint(
+                    start.islandId(),
+                    start.world(),
+                    start.centerX(),
+                    start.centerZ(),
+                    service.phases().phases().getFirst().key());
+        }
     }
 
     /** The block a phase drew, or dirt when the operator wrote something that is not a block. */

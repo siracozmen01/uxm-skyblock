@@ -57,6 +57,7 @@ public final class OneBlockListener implements Listener {
     private volatile @org.jspecify.annotations.Nullable OneBlockBranches branches;
     private volatile @org.jspecify.annotations.Nullable OneBlockProgressBars bars;
     private volatile @org.jspecify.annotations.Nullable OneBlockBlockLines blockLines;
+    private volatile @org.jspecify.annotations.Nullable OneBlockBiomes biomes;
 
     public OneBlockListener(
             OneBlockService service,
@@ -85,6 +86,11 @@ public final class OneBlockListener implements Listener {
     /** Tells it how a breaker sees their island's progress. */
     public void useBars(OneBlockProgressBars bars) {
         this.bars = Objects.requireNonNull(bars, "bars must not be null");
+    }
+
+    /** Tells it how a phase gives its island its biome. */
+    public void useBiomes(OneBlockBiomes biomes) {
+        this.biomes = Objects.requireNonNull(biomes, "biomes must not be null");
     }
 
     /** Tells it how the line over an island's block is drawn. */
@@ -249,6 +255,10 @@ public final class OneBlockListener implements Listener {
         IslandId islandId = owner.id();
         String phase = next.position().phase().key();
         java.time.Duration pause = waits != null && next.phaseBegan() ? waits.pauseOf(phase) : java.time.Duration.ZERO;
+        OneBlockBiomes painted = biomes;
+        if (painted != null && next.phaseBegan()) {
+            painted.began(owner, world, x, z, phase);
+        }
         String momentKey = "moment:" + next.position().intoPhase();
         // A moment the island was paid in this pass, before a crash or an operator set its count back, is not had.
         // A phase that waits begins with bedrock, so nothing is laid at its first break but that.

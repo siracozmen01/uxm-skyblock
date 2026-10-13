@@ -34,14 +34,18 @@ public final class OneBlockAdmin implements ModeAdminCommands.Mode {
 
     private final OneBlockService service;
     private final OneBlockDraws draws;
+    private final @org.jspecify.annotations.Nullable OneBlockBiomes biomes;
 
     public OneBlockAdmin(OneBlockService service) {
-        this(service, OneBlockDraws.PLAIN);
+        this(service, OneBlockDraws.PLAIN, null);
     }
 
-    public OneBlockAdmin(OneBlockService service, OneBlockDraws draws) {
+    /** With the biome of the phase an operator moves an island into given to it, when its file names one. */
+    public OneBlockAdmin(
+            OneBlockService service, OneBlockDraws draws, @org.jspecify.annotations.Nullable OneBlockBiomes biomes) {
         this.service = Objects.requireNonNull(service, "service must not be null");
         this.draws = Objects.requireNonNull(draws, "draws must not be null");
+        this.biomes = biomes;
     }
 
     @Override
@@ -142,9 +146,8 @@ public final class OneBlockAdmin implements ModeAdminCommands.Mode {
             notOneBlock(admin, source.getSender(), target);
             return;
         }
-        OneBlockPhases.Position now = service.phasesOf(island)
-                .orElse(service.phases())
-                .positionAt(changed.get().now());
+        OneBlockPhases way = service.phasesOf(island).orElse(service.phases());
+        OneBlockPhases.Position now = way.positionAt(changed.get().now());
         admin.send(
                 source.getSender(),
                 "isadmin.oneblock.set",
@@ -153,6 +156,19 @@ public final class OneBlockAdmin implements ModeAdminCommands.Mode {
                 Placeholder.unparsed("now", Long.toString(changed.get().now())),
                 Placeholder.unparsed("phase", title(admin, source.getSender(), now.phase())));
         layAgain(admin, source.getSender(), target, island, false);
+        OneBlockBiomes painted = biomes;
+        Optional<String> world = admin.locations().findLocation(island).map(found -> found.worldName());
+        World loaded = world.map(Bukkit::getWorld).orElse(null);
+        if (painted != null
+                && loaded != null
+                && !way.positionAt(changed.get().was())
+                        .phase()
+                        .key()
+                        .equals(now.phase().key())) {
+            service.island(island)
+                    .ifPresent(read -> painted.paint(
+                            island, loaded, read.x(), read.z(), now.phase().key()));
+        }
     }
 
     private int check(ModeAdminCommands admin, CommandContext<CommandSourceStack> ctx) {
