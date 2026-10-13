@@ -62,16 +62,22 @@ public final class ParkourWiring implements AutoCloseable {
                 configuration.effectsConfig(),
                 new InteractionEffectPlayer(scheduler, configuration.messages()));
         runs.whenStarted(modes::startRun);
-        runs.rewards(new com.uxplima.uxmskyblock.bukkit.effect.InteractionEffects(Map.of(
-                ParkourRuns.FIRST_FINISH,
-                com.uxplima.uxmskyblock.bukkit.config.EffectsConfiguration.parseAll(
-                        "the Parkour first-finish rewards", config.rewards().firstFinish()),
-                ParkourRuns.PERSONAL_BEST,
-                com.uxplima.uxmskyblock.bukkit.config.EffectsConfiguration.parseAll(
-                        "the Parkour personal-best rewards", config.rewards().personalBest()),
-                ParkourRuns.COURSE_RECORD,
-                com.uxplima.uxmskyblock.bukkit.config.EffectsConfiguration.parseAll(
-                        "the Parkour course-record rewards", config.rewards().courseRecord()))));
+        runs.rewards(
+                new com.uxplima.uxmskyblock.bukkit.effect.InteractionEffects(Map.of(
+                        ParkourRuns.FIRST_FINISH,
+                        com.uxplima.uxmskyblock.bukkit.config.EffectsConfiguration.parseAll(
+                                "the Parkour first-finish rewards",
+                                config.rewards().firstFinish()),
+                        ParkourRuns.PERSONAL_BEST,
+                        com.uxplima.uxmskyblock.bukkit.config.EffectsConfiguration.parseAll(
+                                "the Parkour personal-best rewards",
+                                config.rewards().personalBest()),
+                        ParkourRuns.COURSE_RECORD,
+                        com.uxplima.uxmskyblock.bukkit.config.EffectsConfiguration.parseAll(
+                                "the Parkour course-record rewards",
+                                config.rewards().courseRecord()))),
+                persistence.parkourRewardsPort(),
+                config.rewards());
         runs.splits(new com.uxplima.uxmskyblock.bukkit.parkour.ParkourSplits(
                 persistence.parkourSplitsPort(), scheduler, config.runs().splits()));
         runs.ghosts(new com.uxplima.uxmskyblock.bukkit.parkour.ParkourGhosts(

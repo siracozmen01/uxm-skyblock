@@ -92,6 +92,9 @@ class AFinishPaysItsListsTest extends MockBukkitHarness {
 
     private final List<String> fired = new ArrayList<>();
     private boolean recordsDown;
+    private boolean ledgerDown;
+    private Runnable duringFinish = () -> {};
+    private final Map<String, Long> paidAt = new HashMap<>();
 
     @BeforeEach
     void setUpCourse() {
@@ -130,6 +133,8 @@ class AFinishPaysItsListsTest extends MockBukkitHarness {
                         islandId + "/" + who,
                         new ParkourPort.Best(who, millis, 1),
                         (was, now) -> new ParkourPort.Best(who, Math.min(was.millis(), millis), was.runs() + 1));
+                duringFinish.run();
+                duringFinish = () -> {};
             }
 
             @Override
@@ -149,7 +154,9 @@ class AFinishPaysItsListsTest extends MockBukkitHarness {
                     throw new IllegalStateException("the database is gone");
                 }
                 List<ParkourPort.Best> all = new ArrayList<>(bests.values());
-                all.sort(Comparator.comparingLong(ParkourPort.Best::millis));
+                // As the database orders it: the fastest first, a tie by the runner's id.
+                all.sort(Comparator.comparingLong(ParkourPort.Best::millis)
+                        .thenComparing(best -> best.runner().value().toString()));
                 return all;
             }
         });
@@ -189,16 +196,30 @@ class AFinishPaysItsListsTest extends MockBukkitHarness {
                                 List.of("[console] probe record %time% %millis% %was%")))),
                 new InteractionEffectPlayer(),
                 clock);
-        runs.rewards(new InteractionEffects(Map.of(
-                "first-finish",
-                com.uxplima.uxmlib.condition.action.ActionList.parse(
-                        List.of("[console] probe first %player_name% %time% %millis% %was%")),
-                "personal-best",
-                com.uxplima.uxmlib.condition.action.ActionList.parse(
-                        List.of("[console] probe best %player_name% %time% %millis% %was%")),
-                "course-record",
-                com.uxplima.uxmlib.condition.action.ActionList.parse(
-                        List.of("[console] probe course %player_name% %time% %millis% %was%")))));
+        runs.rewards(
+                new InteractionEffects(Map.of(
+                        "first-finish",
+                        com.uxplima.uxmlib.condition.action.ActionList.parse(
+                                List.of("[console] probe first %player_name% %time% %millis% %was%")),
+                        "personal-best",
+                        com.uxplima.uxmlib.condition.action.ActionList.parse(
+                                List.of("[console] probe best %player_name% %time% %millis% %was%")),
+                        "course-record",
+                        com.uxplima.uxmlib.condition.action.ActionList.parse(
+                                List.of("[console] probe course %player_name% %time% %millis% %was%")))),
+                (on, who, list, now, paidBefore) -> {
+                    if (ledgerDown) {
+                        throw new IllegalStateException("the database is gone");
+                    }
+                    Long last = paidAt.get(on + "/" + who + "/" + list);
+                    if (last != null && last > paidBefore) {
+                        return false;
+                    }
+                    paidAt.put(on + "/" + who + "/" + list, now);
+                    return true;
+                },
+                new ParkourConfiguration.Rewards(
+                        List.of(), List.of(), List.of(), Duration.ofHours(24), Duration.ofSeconds(5)));
         runnerMock = createPlayer("Runner");
         runnerMock.teleport(new Location(world, 8.5, Y + 1, 8.5));
         runner = spy(runnerMock);
@@ -227,10 +248,11 @@ class AFinishPaysItsListsTest extends MockBukkitHarness {
         fired.clear();
         run(runner, 25_000);
         assertThat(paid())
-                .containsExactly("best Runner 0:25.000 25000 0:30.000", "course Runner 0:25.000 25000 0:30.000");
+                .describedAs("a record a day after the first is not paid again")
+                .containsExactly("best Runner 0:25.000 25000 0:30.000");
+        assertThat(said()).contains("A course record").contains("0:25.000");
 
         fired.clear();
-        said();
         run(runner, 40_000);
         assertThat(paid()).describedAs("a slower run pays nothing").isEmpty();
         assertThat(said()).doesNotContain("course record");
@@ -249,7 +271,95 @@ class AFinishPaysItsListsTest extends MockBukkitHarness {
         fired.clear();
         run(second, 20_000);
         assertThat(paid())
-                .containsExactly("best Second 0:20.000 20000 0:25.000", "course Second 0:20.000 20000 0:25.000");
+                .describedAs("their best already paid today, their first record is")
+                .containsExactly("course Second 0:20.000 20000 0:25.000");
+    }
+
+    @Test
+    @DisplayName("A new best or a record pays once in its period, and again once it has passed")
+    void onceInItsPeriod() {
+        run(runner, 60_000);
+        fired.clear();
+        run(runner, 59_000);
+        run(runner, 58_000);
+        assertThat(paid())
+                .describedAs("a best shaved by a second at a time is paid once a day, the record already paid today")
+                .containsExactly("best Runner 0:59.000 59000 1:00.000");
+        fired.clear();
+        clock.advance(Duration.ofHours(24));
+        run(runner, 57_000);
+        assertThat(paid())
+                .containsExactly("best Runner 0:57.000 57000 0:58.000", "course Runner 0:57.000 57000 0:58.000");
+    }
+
+    @Test
+    @DisplayName("The course's own team, a run quicker than the shortest, and a claim that fails are paid nothing")
+    void nothingIsPaid() {
+        PlayerUuid owner = course.members().values().iterator().next().playerUuid();
+        PlayerMock builder = new PlayerMock(server, "Builder", owner.value());
+        server.addPlayer(builder);
+        builder.teleport(new Location(world, 8.5, Y + 1, 8.5));
+        fired.clear();
+        run(builder, 30_000);
+        assertThat(paid()).describedAs("the team builds the course").isEmpty();
+        assertThat(builder.nextComponentMessage()).isNotNull();
+
+        run(runner, 4_999);
+        assertThat(paid()).describedAs("quicker than five seconds").isEmpty();
+
+        ledgerDown = true;
+        run(runner, 3_000);
+        assertThat(paid()).isEmpty();
+        ledgerDown = false;
+        run(runner, 6_000);
+        assertThat(paid())
+                .describedAs("the first finish on record was quicker than the shortest, and paid nothing")
+                .isEmpty();
+    }
+
+    @Test
+    @DisplayName("Of two finishes at once, the slower that no longer leads is no record")
+    void theSlowerOfTwoIsNoRecord() {
+        run(runner, 30_000);
+        fired.clear();
+        said();
+        PlayerUuid other = PlayerUuid.of(UUID.randomUUID());
+        duringFinish = () -> bests.put(course.id() + "/" + other, new ParkourPort.Best(other, 10_000, 1));
+        run(runner, 20_000);
+        assertThat(paid()).containsExactly("best Runner 0:20.000 20000 0:30.000");
+        assertThat(said()).doesNotContain("course record");
+
+        // Another finishes in the same time at once, and leads the tie by their id.
+        fired.clear();
+        bests.remove(course.id() + "/" + other);
+        PlayerUuid first = PlayerUuid.of(new UUID(0, 0));
+        duringFinish = () -> bests.put(course.id() + "/" + first, new ParkourPort.Best(first, 19_000, 1));
+        run(runner, 19_000);
+        assertThat(said()).doesNotContain("course record");
+        assertThat(paid()).doesNotContain("course Runner 0:19.000 19000 0:30.000");
+    }
+
+    @Test
+    @DisplayName(
+            "A time equal to the record is no record, whoever leads the tie, and a first finish is paid once for good")
+    void aTieAndAFirstFinishAgain() {
+        run(runner, 30_000);
+        fired.clear();
+        PlayerMock tie = new PlayerMock(server, "Tie", new UUID(0, 0));
+        server.addPlayer(tie);
+        tie.teleport(new Location(world, 8.5, Y + 1, 8.5));
+        run(tie, 30_000);
+        assertThat(paid())
+                .describedAs("as fast as the record, and first on the board by its id")
+                .containsExactly("first Tie 0:30.000 30000");
+
+        fired.clear();
+        bests.clear();
+        clock.advance(Duration.ofDays(30));
+        run(runner, 40_000);
+        assertThat(paid())
+                .describedAs("the runs forgotten, the first finish again is not paid again; the record is")
+                .containsExactly("course Runner 0:40.000 40000");
     }
 
     @Test
@@ -275,7 +385,22 @@ class AFinishPaysItsListsTest extends MockBukkitHarness {
                                         + " course-record = [\"[console] d\"] }"))
                         .rewards())
                 .isEqualTo(new ParkourConfiguration.Rewards(
-                        List.of("[console] a"), List.of("[console] b", "[console] c"), List.of("[console] d")));
+                        List.of("[console] a"),
+                        List.of("[console] b", "[console] c"),
+                        List.of("[console] d"),
+                        Duration.ofDays(1),
+                        Duration.ofSeconds(5)));
+        assertThat(ParkourConfiguration.load(HoconConfigurationLoader.builder()
+                                .buildAndLoadString("rewards { again-after = 2h, shortest-run = 30s }"))
+                        .rewards())
+                .extracting(ParkourConfiguration.Rewards::againAfter, ParkourConfiguration.Rewards::shortestRun)
+                .containsExactly(Duration.ofHours(2), Duration.ofSeconds(30));
+        assertThat(ParkourConfiguration.load(
+                                HoconConfigurationLoader.builder().buildAndLoadString("rewards { again-after = -2h }"))
+                        .rewards()
+                        .againAfter())
+                .describedAs("a negative period")
+                .isEqualTo(Duration.ofDays(1));
     }
 
     /** What the reward lists fired, leaving the effects. */

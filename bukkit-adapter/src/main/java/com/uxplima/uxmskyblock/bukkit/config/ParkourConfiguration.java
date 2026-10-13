@@ -142,12 +142,26 @@ public record ParkourConfiguration(
      * @param personalBest run each time a runner beats their own best on a course
      * @param courseRecord run each time a runner finishes a course faster than anybody has, the first finish on a
      *     course included
+     * @param againAfter how long after paying a runner a new best or a record on a course the same list pays them
+     *     again there; a first finish is paid once for good
+     * @param shortestRun a run quicker than this pays nothing, so a course of a step or two earns no reward
      */
-    public record Rewards(List<String> firstFinish, List<String> personalBest, List<String> courseRecord) {
+    public record Rewards(
+            List<String> firstFinish,
+            List<String> personalBest,
+            List<String> courseRecord,
+            Duration againAfter,
+            Duration shortestRun) {
 
-        public static final Rewards SHIPPED = new Rewards(List.of(), List.of(), List.of());
+        public static final Rewards SHIPPED =
+                new Rewards(List.of(), List.of(), List.of(), Duration.ofDays(1), Duration.ofSeconds(5));
 
         public Rewards {
+            Objects.requireNonNull(againAfter, "againAfter must not be null");
+            Objects.requireNonNull(shortestRun, "shortestRun must not be null");
+            if (againAfter.isNegative() || shortestRun.isNegative()) {
+                throw new IllegalArgumentException("the periods must not be negative");
+            }
             firstFinish = List.copyOf(firstFinish);
             personalBest = List.copyOf(personalBest);
             courseRecord = List.copyOf(courseRecord);
@@ -206,10 +220,20 @@ public record ParkourConfiguration(
             modes = Modes.SHIPPED;
         }
         ConfigurationNode paid = root.node("rewards");
-        Rewards rewards = new Rewards(
-                AcidIslandConfiguration.strings(paid.node("first-finish"), Rewards.SHIPPED.firstFinish()),
-                AcidIslandConfiguration.strings(paid.node("personal-best"), Rewards.SHIPPED.personalBest()),
-                AcidIslandConfiguration.strings(paid.node("course-record"), Rewards.SHIPPED.courseRecord()));
+        Rewards rewards;
+        try {
+            rewards = new Rewards(
+                    AcidIslandConfiguration.strings(paid.node("first-finish"), Rewards.SHIPPED.firstFinish()),
+                    AcidIslandConfiguration.strings(paid.node("personal-best"), Rewards.SHIPPED.personalBest()),
+                    AcidIslandConfiguration.strings(paid.node("course-record"), Rewards.SHIPPED.courseRecord()),
+                    AcidIslandConfiguration.durationOf(
+                            paid.node("again-after").getString(""), Rewards.SHIPPED.againAfter()),
+                    AcidIslandConfiguration.durationOf(
+                            paid.node("shortest-run").getString(""), Rewards.SHIPPED.shortestRun()));
+        } catch (IllegalArgumentException e) {
+            LOGGER.warning(() -> "modules/parkour.conf rewards: " + e.getMessage() + ". The shipped rewards are used.");
+            rewards = Rewards.SHIPPED;
+        }
         return new ParkourConfiguration(
                 root.node("enabled").getBoolean(true), markers, runs, modes, ghost(root), rewards);
     }

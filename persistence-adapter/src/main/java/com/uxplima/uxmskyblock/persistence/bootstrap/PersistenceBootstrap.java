@@ -158,6 +158,7 @@ public final class PersistenceBootstrap implements AutoCloseable {
     private final com.uxplima.uxmskyblock.persistence.session.SqlNetworkPresenceAdapter networkPresenceAdapter;
     private final com.uxplima.uxmskyblock.persistence.parkour.SqlParkourGhostsAdapter parkourGhostsAdapter;
     private final com.uxplima.uxmskyblock.persistence.parkour.SqlParkourSplitsAdapter parkourSplitsAdapter;
+    private final com.uxplima.uxmskyblock.persistence.parkour.SqlParkourRewardsAdapter parkourRewardsAdapter;
     private final com.uxplima.uxmskyblock.persistence.parkour.SqlParkourAdapter parkourAdapter;
     private final com.uxplima.uxmskyblock.persistence.leaderboard.SqlModeStandingsAdapter modeStandingsAdapter;
     private final com.uxplima.uxmskyblock.persistence.brix.SqlBrixPlotsAdapter brixPlotsAdapter;
@@ -269,6 +270,8 @@ public final class PersistenceBootstrap implements AutoCloseable {
                 new com.uxplima.uxmskyblock.persistence.parkour.SqlParkourGhostsAdapter(database.dataSource());
         this.parkourSplitsAdapter =
                 new com.uxplima.uxmskyblock.persistence.parkour.SqlParkourSplitsAdapter(database.dataSource());
+        this.parkourRewardsAdapter =
+                new com.uxplima.uxmskyblock.persistence.parkour.SqlParkourRewardsAdapter(database.dataSource());
         this.modeStandingsAdapter =
                 new com.uxplima.uxmskyblock.persistence.leaderboard.SqlModeStandingsAdapter(database.dataSource());
         this.brixPlotsAdapter = new com.uxplima.uxmskyblock.persistence.brix.SqlBrixPlotsAdapter(database.dataSource());
@@ -538,6 +541,11 @@ public final class PersistenceBootstrap implements AutoCloseable {
 
     public com.uxplima.uxmskyblock.core.application.parkour.ParkourPort parkourPort() {
         return parkourAdapter;
+    }
+
+    /** When each runner was last paid each reward list of each course. */
+    public com.uxplima.uxmskyblock.core.application.parkour.ParkourRewardsPort parkourRewardsPort() {
+        return parkourRewardsAdapter;
     }
 
     /** The split times of each runner's best run on each course. */
