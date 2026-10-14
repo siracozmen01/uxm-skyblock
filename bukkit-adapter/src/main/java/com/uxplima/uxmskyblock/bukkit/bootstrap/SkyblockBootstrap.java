@@ -2,12 +2,9 @@ package com.uxplima.uxmskyblock.bukkit.bootstrap;
 
 import java.time.Duration;
 import java.util.Objects;
-import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicReference;
 
 import org.bukkit.Bukkit;
-import org.bukkit.Location;
-import org.bukkit.World;
 import org.bukkit.plugin.java.JavaPlugin;
 
 import com.uxplima.uxmskyblock.bukkit.command.IslandCommandTree;
@@ -54,11 +51,14 @@ import org.jspecify.annotations.Nullable;
  */
 public final class SkyblockBootstrap implements AutoCloseable {
 
-    private final JavaPlugin plugin;
-    private final ConfigurationWiring configWiring;
+    /** What the modes lay in their worlds at start: spawns set on ground, the shipped platforms written, and the wreck templates read. */
+    private final ModeWorldSetup worlds = new ModeWorldSetup(this);
+
+    final JavaPlugin plugin;
+    final ConfigurationWiring configWiring;
     private final PersistenceWiring persistenceWiring;
     private final AuthorityWiring authorityWiring;
-    private final GameplayWiring gameplayWiring;
+    final GameplayWiring gameplayWiring;
     private final IntegrationWiring integrationWiring;
     private @Nullable RestServer restServer;
     private final FeatureModuleWiring featureModuleWiring;
@@ -194,9 +194,9 @@ public final class SkyblockBootstrap implements AutoCloseable {
     public void whenServerIsUp() {
         integrationWiring.whenServerIsUp();
         drawIslandsOnTheWebMap();
-        writeShippedPlatforms();
-        readWreckTemplates();
-        groundTheSpawns();
+        worlds.writeShippedPlatforms();
+        worlds.readWreckTemplates();
+        worlds.groundTheSpawns();
         noteKindsThatCannotBeMade();
     }
 
@@ -212,104 +212,6 @@ public final class SkyblockBootstrap implements AutoCloseable {
                         .filter(choices::offers)
                         .toList())
                 .forEach(plugin.getLogger()::warning);
-    }
-
-    /** Writes the shipped temple and reads the schematics the Poseidon wreck groups name. */
-    @SuppressWarnings("deprecation") // UnsafeValues is where the server says which version its names are of
-    private void readWreckTemplates() {
-        com.uxplima.uxmskyblock.bukkit.schematic.IslandSchematics files = gameplayWiring.islandSchematics();
-        if (files == null) {
-            return;
-        }
-        var unused = gameplayWiring
-                .poseidonWiring()
-                .primeTemplates(files, Bukkit.getUnsafe().getDataVersion())
-                .thenCompose(read -> gameplayWiring.primeCaveTemplates(
-                        files, Bukkit.getUnsafe().getDataVersion()))
-                .whenComplete((read, failure) -> {
-                    if (failure != null) {
-                        plugin.getLogger()
-                                .log(
-                                        java.util.logging.Level.WARNING,
-                                        "The Poseidon templates could not be read.",
-                                        failure);
-                    }
-                });
-    }
-
-    /**
-     * Lays ground under every island world's spawn that has none, so a player with no island, one who has
-     * just reset theirs, has somewhere to stand. The ground is the file schematics/world_spawn.schem,
-     * written plain on the first start for an operator to replace with a lobby.
-     */
-    @SuppressWarnings("deprecation") // UnsafeValues is where the server says which version its names are of
-    private void groundTheSpawns() {
-        com.uxplima.uxmskyblock.bukkit.schematic.IslandSchematics files = gameplayWiring.islandSchematics();
-        com.uxplima.uxmskyblock.bukkit.schematic.SpawnGround ground =
-                new com.uxplima.uxmskyblock.bukkit.schematic.SpawnGround(files);
-        CompletableFuture<Boolean> written = files == null
-                ? CompletableFuture.completedFuture(false)
-                : files.writeIfMissing(
-                        com.uxplima.uxmskyblock.bukkit.schematic.SpawnGround.FILE,
-                        com.uxplima.uxmskyblock.bukkit.schematic.SpawnGround.shipped(
-                                Bukkit.getUnsafe().getDataVersion()));
-        SchedulerPort scheduler = gameplayWiring.scheduler();
-        var unused = written.handle((done, failure) -> {
-            for (String name : configWiring.islandWorlds()) {
-                World world = Bukkit.getWorld(name);
-                if (world == null) {
-                    continue;
-                }
-                Location spawn = world.getSpawnLocation();
-                int chunkX = spawn.getBlockX() >> 4;
-                int chunkZ = spawn.getBlockZ() >> 4;
-                scheduler.onRegion(name, chunkX, chunkZ, () -> {
-                    var unusedLaid = ground.ensure(world, task -> scheduler.onRegion(name, chunkX, chunkZ, task))
-                            .thenAccept(any -> {
-                                if (any) {
-                                    plugin.getLogger()
-                                            .info("Laid ground under the spawn of " + name
-                                                    + ", where a player with no island stands.");
-                                }
-                            });
-                });
-            }
-            return null;
-        });
-    }
-
-    /**
-     * Writes the platform each preset and each dimension lays as the schematic file it names, where none
-     * stands yet, so the island a server ships is a file an operator can change.
-     */
-    @SuppressWarnings("deprecation") // UnsafeValues is where the server says which version its names are of
-    private void writeShippedPlatforms() {
-        java.util.Map<com.uxplima.uxmskyblock.core.domain.dimension.IslandDimensionType, String> dimensions =
-                new java.util.EnumMap<>(com.uxplima.uxmskyblock.core.domain.dimension.IslandDimensionType.class);
-        configWiring.dimensionConfig().mappings().forEach((type, mapping) -> {
-            String schematic = mapping.schematic();
-            if (schematic != null && !schematic.isBlank()) {
-                dimensions.put(type, schematic);
-            }
-        });
-        var unused = gameplayWiring
-                .schematicEngine()
-                .writeShippedPlatforms(
-                        configWiring.presetConfig().presets(),
-                        dimensions,
-                        Bukkit.getUnsafe().getDataVersion())
-                .whenComplete((written, failure) -> {
-                    if (failure != null) {
-                        plugin.getLogger()
-                                .log(
-                                        java.util.logging.Level.WARNING,
-                                        "The shipped platforms could not be written as schematics.",
-                                        failure);
-                    } else if (!written.isEmpty()) {
-                        plugin.getLogger()
-                                .info("Wrote the shipped platforms as schematics: " + String.join(", ", written));
-                    }
-                });
     }
 
     /**
