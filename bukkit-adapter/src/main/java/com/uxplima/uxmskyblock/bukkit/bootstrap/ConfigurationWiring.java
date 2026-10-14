@@ -640,6 +640,19 @@ public final class ConfigurationWiring {
         this.stackingConfig = Objects.requireNonNull(config, "config must not be null");
     }
 
+    /** Sign warps, {@code warps.sign} in {@code modules/warps.conf}, the shipped one until the loader reads it. */
+    private volatile com.uxplima.uxmskyblock.bukkit.config.SignWarpsConfiguration signWarpsConfig =
+            com.uxplima.uxmskyblock.bukkit.config.SignWarpsConfiguration.defaultConfiguration();
+
+    public com.uxplima.uxmskyblock.bukkit.config.SignWarpsConfiguration signWarpsConfig() {
+        return signWarpsConfig;
+    }
+
+    /** Hands over {@code warps.sign} as the server read it. */
+    public void useSignWarpsConfig(com.uxplima.uxmskyblock.bukkit.config.SignWarpsConfiguration config) {
+        this.signWarpsConfig = Objects.requireNonNull(config, "config must not be null");
+    }
+
     /** What visitors may not do, {@code modules/visitors.conf}, the shipped one until the loader reads it. */
     private volatile com.uxplima.uxmskyblock.bukkit.config.VisitorsConfiguration visitorsConfig =
             com.uxplima.uxmskyblock.bukkit.config.VisitorsConfiguration.defaultConfiguration();

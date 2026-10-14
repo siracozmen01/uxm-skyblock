@@ -200,6 +200,17 @@ public final class BootstrapEventRegistrar {
         if (featureModuleWiring.moduleRegistry().isModuleEnabled("worth") && gameplayWiring.worthListener() != null) {
             pm.registerEvents(gameplayWiring.worthListener(), plugin);
         }
+        // A sign headed as a warp makes one, while warps are on; the sign's own switch is read as it is written.
+        if (configWiring.warpConfig().enabled()) {
+            pm.registerEvents(
+                    new com.uxplima.uxmskyblock.bukkit.warp.SignWarps(
+                            configWiring::signWarpsConfig,
+                            gameplayWiring.protectionListener(),
+                            gameplayWiring.warpService(),
+                            scheduler,
+                            configWiring.messages()),
+                    plugin);
+        }
         // The commands the operator listed are refused a visitor on an island they are no member of.
         pm.registerEvents(
                 new com.uxplima.uxmskyblock.bukkit.visitor.VisitorCommandGuard(

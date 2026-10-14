@@ -489,6 +489,12 @@ public final class ConfigurationLoader {
                 "stacking.conf",
                 com.uxplima.uxmskyblock.bukkit.config.StackingConfiguration::load,
                 com.uxplima.uxmskyblock.bukkit.config.StackingConfiguration.defaultConfiguration()));
+        wiring.useSignWarpsConfig(loadConfig(
+                plugin,
+                dataDir,
+                "warps.conf",
+                com.uxplima.uxmskyblock.bukkit.config.SignWarpsConfiguration::load,
+                com.uxplima.uxmskyblock.bukkit.config.SignWarpsConfiguration.defaultConfiguration()));
         wiring.useVisitorsConfig(loadConfig(
                 plugin,
                 dataDir,
