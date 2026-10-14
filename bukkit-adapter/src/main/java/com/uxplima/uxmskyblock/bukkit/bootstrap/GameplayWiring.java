@@ -116,13 +116,15 @@ public final class GameplayWiring {
     private final com.uxplima.uxmskyblock.bukkit.boundary.IslandEdgeWalls islandEdgeWalls;
     private final AcidIslandWiring acidIslandWiring;
     private final BoxedWiring boxedWiring;
-    /** The schematics the CaveBlock structures lay, read once the server is up. */
+    /** The schematics the CaveBlock structures and the SkyGrid's small structures lay, read once the server is up. */
     private final com.uxplima.uxmskyblock.bukkit.poseidon.SchematicWreckTemplates caveTemplates =
             new com.uxplima.uxmskyblock.bukkit.poseidon.SchematicWreckTemplates(
                     new com.uxplima.uxmskyblock.bukkit.poseidon.ServerWreckTemplates(),
                     com.uxplima.uxmskyblock.bukkit.poseidon.SchematicWreckTemplates::parseQuietly);
 
     private com.uxplima.uxmskyblock.bukkit.cave.@org.jspecify.annotations.Nullable CaveStructures caveStructures;
+
+    private com.uxplima.uxmskyblock.bukkit.grid.@org.jspecify.annotations.Nullable SkyGridStart gridStart;
 
     private final PoseidonWiring poseidonWiring;
     private final StrangerRealmsWiring strangerRealmsWiring;
@@ -556,15 +558,27 @@ public final class GameplayWiring {
                 scheduler);
         com.uxplima.uxmskyblock.bukkit.config.CaveBlockConfiguration cave = config.caveBlockConfig();
         com.uxplima.uxmskyblock.bukkit.config.SkyGridConfiguration grid = config.skyGridConfig();
+        com.uxplima.uxmskyblock.bukkit.loot.LootFiller filler = new com.uxplima.uxmskyblock.bukkit.loot.LootFiller(
+                new com.uxplima.uxmskyblock.bukkit.effect.InteractionEffectPlayer(scheduler, config.messages()),
+                config::effectsConfig,
+                com.uxplima.uxmskyblock.bukkit.loot.LootFiller.SERVER);
+        this.gridStart = new com.uxplima.uxmskyblock.bukkit.grid.SkyGridStart(
+                scheduler,
+                grid,
+                caveTemplates,
+                (inventory, table, random, at) -> config.lootTables()
+                        .named(table)
+                        .map(found -> {
+                            filler.fill(inventory, found, random, at, null);
+                            return true;
+                        })
+                        .orElse(false));
         return java.util.stream.Stream.concat(
                 cave.enabled()
                         ? java.util.stream.Stream.of(
                                 new com.uxplima.uxmskyblock.bukkit.cave.CavernStart(scheduler, cave, caveStructures))
                         : java.util.stream.Stream.empty(),
-                grid.enabled()
-                        ? java.util.stream.Stream.of(
-                                new com.uxplima.uxmskyblock.bukkit.grid.SkyGridStart(scheduler, grid))
-                        : java.util.stream.Stream.empty());
+                grid.enabled() ? java.util.stream.Stream.of(gridStart) : java.util.stream.Stream.empty());
     }
 
     /** Every creation action the game modes bring, each while its mode is enabled. */
@@ -618,18 +632,22 @@ public final class GameplayWiring {
     public java.util.concurrent.CompletableFuture<Integer> primeCaveTemplates(
             com.uxplima.uxmskyblock.bukkit.schematic.IslandSchematics files, int dataVersion) {
         com.uxplima.uxmskyblock.bukkit.cave.CaveStructures laid = caveStructures;
-        if (laid == null) {
+        com.uxplima.uxmskyblock.bukkit.grid.SkyGridStart grid = gridStart;
+        if (laid == null || grid == null) {
             return java.util.concurrent.CompletableFuture.completedFuture(0);
         }
         java.util.List<java.util.concurrent.CompletableFuture<Boolean>> writes = new java.util.ArrayList<>();
-        com.uxplima.uxmskyblock.bukkit.cave.CaveLayouts.SHIPPED.forEach(
-                (name, layout) -> writes.add(files.writeIfMissing(
-                        com.uxplima.uxmskyblock.bukkit.schematic.IslandSchematics.pathOf(name),
-                        layout.apply(dataVersion))));
+        java.util.Map<String, java.util.function.IntFunction<com.uxplima.uxmlib.schematic.Schematic>> shipped =
+                new java.util.LinkedHashMap<>(com.uxplima.uxmskyblock.bukkit.cave.CaveLayouts.SHIPPED);
+        shipped.putAll(com.uxplima.uxmskyblock.bukkit.grid.GridLayouts.SHIPPED);
+        shipped.forEach((name, layout) -> writes.add(files.writeIfMissing(
+                com.uxplima.uxmskyblock.bukkit.schematic.IslandSchematics.pathOf(name), layout.apply(dataVersion))));
+        java.util.List<String> keys = new java.util.ArrayList<>(laid.templateKeys());
+        keys.addAll(grid.templateKeys());
         return java.util.concurrent.CompletableFuture.allOf(
                         writes.toArray(java.util.concurrent.CompletableFuture[]::new))
                 .handle((done, failure) -> null)
-                .thenCompose(done -> caveTemplates.prime(files, laid.templateKeys()));
+                .thenCompose(done -> caveTemplates.prime(files, keys));
     }
 
     public PoseidonWiring poseidonWiring() {

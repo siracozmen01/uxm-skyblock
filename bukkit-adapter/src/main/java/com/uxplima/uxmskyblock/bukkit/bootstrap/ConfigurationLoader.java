@@ -75,7 +75,8 @@ public final class ConfigurationLoader {
     private static final Logger LOGGER = Logger.getLogger(ConfigurationLoader.class.getName());
 
     /** The loot tables a server is shipped with, under {@code loot/}. */
-    private static final List<String> SHIPPED_LOOT = List.of("treasure.conf", "deep_boss.conf");
+    private static final List<String> SHIPPED_LOOT =
+            List.of("treasure.conf", "deep_boss.conf", "skygrid.conf", "skygrid_nether.conf", "skygrid_end.conf");
 
     /**
      * The menu files this plugin ships, written next to the server once and never over an edit.
