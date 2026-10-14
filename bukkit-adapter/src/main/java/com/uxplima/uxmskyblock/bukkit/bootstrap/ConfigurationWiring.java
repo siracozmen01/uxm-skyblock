@@ -1,10 +1,7 @@
 package com.uxplima.uxmskyblock.bukkit.bootstrap;
 
-import java.io.IOException;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Objects;
-import java.util.logging.Logger;
 
 import com.uxplima.uxmskyblock.bukkit.config.AllianceConfiguration;
 import com.uxplima.uxmskyblock.bukkit.config.AntiAbuseConfiguration;
@@ -19,7 +16,6 @@ import com.uxplima.uxmskyblock.bukkit.config.GeneratorsConfiguration;
 import com.uxplima.uxmskyblock.bukkit.config.HomeConfiguration;
 import com.uxplima.uxmskyblock.bukkit.config.InactivityConfiguration;
 import com.uxplima.uxmskyblock.bukkit.config.InteractablesConfiguration;
-import com.uxplima.uxmskyblock.bukkit.config.LanguageConfiguration;
 import com.uxplima.uxmskyblock.bukkit.config.LevelConfiguration;
 import com.uxplima.uxmskyblock.bukkit.config.LimitConfiguration;
 import com.uxplima.uxmskyblock.bukkit.config.MissionConfiguration;
@@ -40,9 +36,7 @@ import com.uxplima.uxmskyblock.bukkit.config.VaultConfiguration;
 import com.uxplima.uxmskyblock.bukkit.config.WarpConfiguration;
 import com.uxplima.uxmskyblock.bukkit.config.WorldConfiguration;
 import com.uxplima.uxmskyblock.bukkit.effect.InteractionEffects;
-import com.uxplima.uxmskyblock.bukkit.i18n.MessageProvider;
 import com.uxplima.uxmskyblock.bukkit.i18n.Messages;
-import com.uxplima.uxmskyblock.bukkit.i18n.ThemeSource;
 import com.uxplima.uxmskyblock.core.domain.durability.PlayerStateDurabilityConfig;
 import org.jspecify.annotations.Nullable;
 import org.spongepowered.configurate.CommentedConfigurationNode;
@@ -65,9 +59,7 @@ import org.spongepowered.configurate.CommentedConfigurationNode;
  *     └── messages_tr.conf
  * </pre>
  */
-public final class ConfigurationWiring {
-
-    private static final Logger LOGGER = Logger.getLogger(ConfigurationWiring.class.getName());
+public final class ConfigurationWiring extends ModeConfigurations {
 
     private final Path dataDir;
     private final @Nullable CommentedConfigurationNode rootNode;
@@ -101,57 +93,11 @@ public final class ConfigurationWiring {
     private final WorldConfiguration worldConfig;
     private final UpgradesConfiguration upgradesConfig;
     private final GeneratorsConfiguration generatorsConfig;
-    private final com.uxplima.uxmskyblock.bukkit.config.OneBlockConfiguration oneBlockConfig;
-    private final com.uxplima.uxmskyblock.bukkit.config.LifecycleConfiguration lifecycleConfig;
-    private final com.uxplima.uxmskyblock.bukkit.config.ChunkBlockConfiguration chunkBlockConfig;
-    private final com.uxplima.uxmskyblock.bukkit.config.AcidIslandConfiguration acidIslandConfig;
-    private final com.uxplima.uxmskyblock.bukkit.config.CaveBlockConfiguration caveBlockConfig;
-    private final com.uxplima.uxmskyblock.bukkit.config.SkyGridConfiguration skyGridConfig;
-    private final com.uxplima.uxmskyblock.bukkit.config.BoxedConfiguration boxedConfig;
-    private final com.uxplima.uxmskyblock.bukkit.config.PoseidonConfiguration poseidonConfig;
-    private final com.uxplima.uxmskyblock.bukkit.config.StrangerRealmsConfiguration strangerRealmsConfig;
-    private final com.uxplima.uxmskyblock.bukkit.config.ParkourConfiguration parkourConfig;
-    private final com.uxplima.uxmskyblock.bukkit.config.BrixConfiguration brixConfig;
-    private final com.uxplima.uxmskyblock.bukkit.config.TradeConfiguration tradeConfig;
-    private final com.uxplima.uxmskyblock.bukkit.config.TradeWindsConfiguration tradeWindsConfig;
-    private final com.uxplima.uxmskyblock.bukkit.config.WebMapConfiguration webMapConfig;
     private final PresetConfiguration presetConfig;
-    private final Messages messages;
+    final Messages messages;
     private final HomeConfiguration homeConfig;
     private final com.uxplima.uxmskyblock.bukkit.config.RoleConfiguration roleConfig;
     private final NotificationConfiguration notificationConfig;
-
-    /**
-     * The catalog is configuration, so it is built here rather than in a later wiring step. The
-     * listeners are constructed before the integration layer exists, and they answer a player too.
-     */
-    private static Messages buildMessages(@Nullable CommentedConfigurationNode rootNode, Path dataDir) {
-        LanguageConfiguration language = LanguageConfiguration.load(rootNode);
-        MessageProvider provider = new MessageProvider(language.defaultLanguage());
-        provider.loadBundledDefaults(ConfigurationWiring.class.getClassLoader());
-
-        Path messagesDir = dataDir.resolve("messages");
-        if (Files.isDirectory(messagesDir)) {
-            try (java.util.stream.Stream<Path> files = Files.list(messagesDir)) {
-                for (Path file : files.toList()) {
-                    String name = file.getFileName().toString();
-                    if (!name.startsWith("messages_") || !name.endsWith(".conf")) {
-                        continue;
-                    }
-                    String locale = name.substring("messages_".length(), name.length() - ".conf".length());
-                    try {
-                        provider.loadFromFile(locale, file);
-                    } catch (IOException e) {
-                        LOGGER.warning("Failed loading the message catalog " + file + ": " + e.getMessage());
-                    }
-                }
-            } catch (IOException e) {
-                LOGGER.warning("Failed listing the messages folder " + messagesDir + ": " + e.getMessage());
-            }
-        }
-        // The same theme the menus read, so every line and every tile is painted from one file.
-        return Messages.of(provider, language, ThemeSource.load(dataDir));
-    }
 
     ConfigurationWiring(
             Path dataDir,
@@ -201,6 +147,21 @@ public final class ConfigurationWiring {
             com.uxplima.uxmskyblock.bukkit.config.TradeWindsConfiguration tradeWindsConfig,
             com.uxplima.uxmskyblock.bukkit.config.WebMapConfiguration webMapConfig,
             PresetConfiguration presetConfig) {
+        super(
+                oneBlockConfig,
+                lifecycleConfig,
+                chunkBlockConfig,
+                acidIslandConfig,
+                caveBlockConfig,
+                skyGridConfig,
+                boxedConfig,
+                poseidonConfig,
+                strangerRealmsConfig,
+                parkourConfig,
+                brixConfig,
+                tradeConfig,
+                tradeWindsConfig,
+                webMapConfig);
         this.dataDir = Objects.requireNonNull(dataDir, "dataDir must not be null");
         this.rootNode = rootNode;
         this.nodeConfig = Objects.requireNonNull(nodeConfig, "nodeConfig must not be null");
@@ -234,23 +195,8 @@ public final class ConfigurationWiring {
         this.worldConfig = Objects.requireNonNull(worldConfig, "worldConfig must not be null");
         this.upgradesConfig = Objects.requireNonNull(upgradesConfig, "upgradesConfig must not be null");
         this.generatorsConfig = Objects.requireNonNull(generatorsConfig, "generatorsConfig must not be null");
-        this.oneBlockConfig = Objects.requireNonNull(oneBlockConfig, "oneBlockConfig must not be null");
-        this.lifecycleConfig = Objects.requireNonNull(lifecycleConfig, "lifecycleConfig must not be null");
-        this.chunkBlockConfig = Objects.requireNonNull(chunkBlockConfig, "chunkBlockConfig must not be null");
-        this.acidIslandConfig = Objects.requireNonNull(acidIslandConfig, "acidIslandConfig must not be null");
-        this.caveBlockConfig = Objects.requireNonNull(caveBlockConfig, "caveBlockConfig must not be null");
-        this.skyGridConfig = Objects.requireNonNull(skyGridConfig, "skyGridConfig must not be null");
-        this.boxedConfig = Objects.requireNonNull(boxedConfig, "boxedConfig must not be null");
-        this.poseidonConfig = Objects.requireNonNull(poseidonConfig, "poseidonConfig must not be null");
-        this.strangerRealmsConfig =
-                Objects.requireNonNull(strangerRealmsConfig, "strangerRealmsConfig must not be null");
-        this.parkourConfig = Objects.requireNonNull(parkourConfig, "parkourConfig must not be null");
-        this.brixConfig = Objects.requireNonNull(brixConfig, "brixConfig must not be null");
-        this.tradeConfig = Objects.requireNonNull(tradeConfig, "tradeConfig must not be null");
-        this.tradeWindsConfig = Objects.requireNonNull(tradeWindsConfig, "tradeWindsConfig must not be null");
-        this.webMapConfig = Objects.requireNonNull(webMapConfig, "webMapConfig must not be null");
         this.presetConfig = Objects.requireNonNull(presetConfig, "presetConfig must not be null");
-        this.messages = buildMessages(rootNode, dataDir);
+        this.messages = ConfigurationSupport.buildMessages(rootNode, dataDir);
         this.homeConfig = HomeConfiguration.load(rootNode);
         this.roleConfig = com.uxplima.uxmskyblock.bukkit.config.RoleConfiguration.load(rootNode);
         this.notificationConfig = rootNode != null
@@ -345,43 +291,9 @@ public final class ConfigurationWiring {
         return wiring;
     }
 
-    /**
-     * Fail-closed schema and constraint validation.
-     */
+    /** Fail-closed schema and constraint validation; see {@link ConfigurationSupport#validate}. */
     public void validate() {
-        // 1. Server node validation
-        if (nodeConfig.nodeId() == null || nodeConfig.nodeId().value().isBlank()) {
-            throw new IllegalStateException(
-                    "Fail-closed configuration error: ServerNodeConfiguration nodeId must not be blank.");
-        }
-        if (nodeConfig.worldName() == null || nodeConfig.worldName().isBlank()) {
-            throw new IllegalStateException(
-                    "Fail-closed configuration error: ServerNodeConfiguration worldName must not be blank.");
-        }
-
-        // 2. Durability checkpoint interval validation
-        if (playerStateConfig.ambientCheckpointInterval().isNegative()
-                || playerStateConfig.ambientCheckpointInterval().isZero()) {
-            throw new IllegalStateException(
-                    "Fail-closed configuration error: PlayerStateDurabilityConfig ambientCheckpointInterval must be strictly positive: "
-                            + playerStateConfig.ambientCheckpointInterval());
-        }
-
-        // 3. Hardware limit bounds validation
-        for (com.uxplima.uxmskyblock.core.domain.limit.LimitQuota quota :
-                limitConfig.quotas().values()) {
-            if (quota.baseLimit() < 0 || quota.perTierBonus() < 0) {
-                throw new IllegalStateException(
-                        "Fail-closed configuration error: Limit quota cannot have negative base or tier bonus: "
-                                + quota);
-            }
-        }
-
-        // 4. Performance throttle validation
-        if (performanceConfig.normalBlocksPerTick() <= 0 || performanceConfig.normalChunksPerSec() <= 0) {
-            throw new IllegalStateException(
-                    "Fail-closed configuration error: Performance block/chunk quotas must be strictly positive.");
-        }
+        ConfigurationSupport.validate(this);
     }
 
     public Path dataDir() {
@@ -545,191 +457,5 @@ public final class ConfigurationWiring {
      */
     public java.util.List<String> islandWorlds() {
         return presetConfig.worlds(nodeConfig.worldName());
-    }
-
-    /** Whether islands can be Brix plots, and the ground a plot is laid on. */
-    public com.uxplima.uxmskyblock.bukkit.config.BrixConfiguration brixConfig() {
-        return brixConfig;
-    }
-
-    /** Whether islands can be TradeWinds vessels, and the sea a vessel is launched on. */
-    public com.uxplima.uxmskyblock.bukkit.config.TradeWindsConfiguration tradeWindsConfig() {
-        return tradeWindsConfig;
-    }
-
-    public com.uxplima.uxmskyblock.bukkit.config.WebMapConfiguration webMapConfig() {
-        return webMapConfig;
-    }
-
-    /** Whether players may trade, and how a trade window looks. */
-    public com.uxplima.uxmskyblock.bukkit.config.TradeConfiguration tradeConfig() {
-        return tradeConfig;
-    }
-
-    /** Whether islands can be Parkour courses, what marks a course and how a run is kept. */
-    public com.uxplima.uxmskyblock.bukkit.config.ParkourConfiguration parkourConfig() {
-        return parkourConfig;
-    }
-
-    /** Whether islands can be StrangerRealms islands, and how the Upside Down mirrors them. */
-    public com.uxplima.uxmskyblock.bukkit.config.StrangerRealmsConfiguration strangerRealmsConfig() {
-        return strangerRealmsConfig;
-    }
-
-    /** Whether islands can be Poseidon islands, and the ocean they lie at the bottom of. */
-    public com.uxplima.uxmskyblock.bukkit.config.PoseidonConfiguration poseidonConfig() {
-        return poseidonConfig;
-    }
-
-    /** Whether islands can be Boxed islands, how big a box starts and what each advancement is worth. */
-    public com.uxplima.uxmskyblock.bukkit.config.BoxedConfiguration boxedConfig() {
-        return boxedConfig;
-    }
-
-    /** Whether islands can be SkyGrid islands, where the grid's blocks stand and which blocks they are. */
-    public com.uxplima.uxmskyblock.bukkit.config.SkyGridConfiguration skyGridConfig() {
-        return skyGridConfig;
-    }
-
-    /** Whether islands can be CaveBlock islands, the shape of their rock and the rock of each dimension. */
-    public com.uxplima.uxmskyblock.bukkit.config.CaveBlockConfiguration caveBlockConfig() {
-        return caveBlockConfig;
-    }
-
-    /** Whether islands can be AcidIsland islands, their sea, the hazard and clean water. */
-    public com.uxplima.uxmskyblock.bukkit.config.AcidIslandConfiguration acidIslandConfig() {
-        return acidIslandConfig;
-    }
-
-    /** The islands' potion effects, {@code modules/island-effects.conf}, shipped until the loader hands it over. */
-    private volatile com.uxplima.uxmskyblock.bukkit.config.IslandEffectsConfiguration islandEffectsConfig =
-            com.uxplima.uxmskyblock.bukkit.config.IslandEffectsConfiguration.defaultConfiguration();
-
-    public com.uxplima.uxmskyblock.bukkit.config.IslandEffectsConfiguration islandEffectsConfig() {
-        return islandEffectsConfig;
-    }
-
-    /** Hands over {@code modules/island-effects.conf} as the server read it. */
-    public void useIslandEffectsConfig(com.uxplima.uxmskyblock.bukkit.config.IslandEffectsConfiguration config) {
-        this.islandEffectsConfig = Objects.requireNonNull(config, "config must not be null");
-    }
-
-    /** What an island bank pays out, from {@code modules/bank.conf}, the shipped one until the loader reads it. */
-    private volatile com.uxplima.uxmskyblock.bukkit.config.BankPayoutsConfiguration bankPayoutsConfig =
-            com.uxplima.uxmskyblock.bukkit.config.BankPayoutsConfiguration.defaultConfiguration();
-
-    public com.uxplima.uxmskyblock.bukkit.config.BankPayoutsConfiguration bankPayoutsConfig() {
-        return bankPayoutsConfig;
-    }
-
-    /** Hands over the interest and delete refund of {@code modules/bank.conf} as the server read them. */
-    public void useBankPayoutsConfig(com.uxplima.uxmskyblock.bukkit.config.BankPayoutsConfiguration config) {
-        this.bankPayoutsConfig = Objects.requireNonNull(config, "config must not be null");
-    }
-
-    /** Block stacking, {@code modules/stacking.conf}, the shipped one until the loader hands the file over. */
-    private volatile com.uxplima.uxmskyblock.bukkit.config.StackingConfiguration stackingConfig =
-            com.uxplima.uxmskyblock.bukkit.config.StackingConfiguration.defaultConfiguration();
-
-    public com.uxplima.uxmskyblock.bukkit.config.StackingConfiguration stackingConfig() {
-        return stackingConfig;
-    }
-
-    /** Hands over {@code modules/stacking.conf} as the server read it. */
-    public void useStackingConfig(com.uxplima.uxmskyblock.bukkit.config.StackingConfiguration config) {
-        this.stackingConfig = Objects.requireNonNull(config, "config must not be null");
-    }
-
-    /** Sign warps, {@code warps.sign} in {@code modules/warps.conf}, the shipped one until the loader reads it. */
-    private volatile com.uxplima.uxmskyblock.bukkit.config.SignWarpsConfiguration signWarpsConfig =
-            com.uxplima.uxmskyblock.bukkit.config.SignWarpsConfiguration.defaultConfiguration();
-
-    public com.uxplima.uxmskyblock.bukkit.config.SignWarpsConfiguration signWarpsConfig() {
-        return signWarpsConfig;
-    }
-
-    /** Hands over {@code warps.sign} as the server read it. */
-    public void useSignWarpsConfig(com.uxplima.uxmskyblock.bukkit.config.SignWarpsConfiguration config) {
-        this.signWarpsConfig = Objects.requireNonNull(config, "config must not be null");
-    }
-
-    /** What visitors may not do, {@code modules/visitors.conf}, the shipped one until the loader reads it. */
-    private volatile com.uxplima.uxmskyblock.bukkit.config.VisitorsConfiguration visitorsConfig =
-            com.uxplima.uxmskyblock.bukkit.config.VisitorsConfiguration.defaultConfiguration();
-
-    public com.uxplima.uxmskyblock.bukkit.config.VisitorsConfiguration visitorsConfig() {
-        return visitorsConfig;
-    }
-
-    /** Hands over {@code modules/visitors.conf} as the server read it. */
-    public void useVisitorsConfig(com.uxplima.uxmskyblock.bukkit.config.VisitorsConfiguration config) {
-        this.visitorsConfig = Objects.requireNonNull(config, "config must not be null");
-    }
-
-    /** Flight on islands, {@code modules/fly.conf}, the shipped one until the loader hands the file over. */
-    private volatile com.uxplima.uxmskyblock.bukkit.config.IslandFlyConfiguration flyConfig =
-            com.uxplima.uxmskyblock.bukkit.config.IslandFlyConfiguration.defaultConfiguration();
-
-    public com.uxplima.uxmskyblock.bukkit.config.IslandFlyConfiguration flyConfig() {
-        return flyConfig;
-    }
-
-    /** Hands over {@code modules/fly.conf} as the server read it. */
-    public void useFlyConfig(com.uxplima.uxmskyblock.bukkit.config.IslandFlyConfiguration config) {
-        this.flyConfig = Objects.requireNonNull(config, "config must not be null");
-    }
-
-    /** The walls, {@code modules/walls.conf}, the shipped ones until the loader hands the file over. */
-    private volatile com.uxplima.uxmskyblock.bukkit.wall.WallConfiguration wallConfig =
-            com.uxplima.uxmskyblock.bukkit.wall.WallConfiguration.defaultConfiguration();
-
-    public com.uxplima.uxmskyblock.bukkit.wall.WallConfiguration wallConfig() {
-        return wallConfig;
-    }
-
-    /** Hands over {@code modules/walls.conf} as the server read it. */
-    public void useWallConfig(com.uxplima.uxmskyblock.bukkit.wall.WallConfiguration config) {
-        this.wallConfig = Objects.requireNonNull(config, "config must not be null");
-    }
-
-    /** What a player carries in each group of worlds, {@code modules/player-state.conf}, shipped until handed over. */
-    private volatile com.uxplima.uxmskyblock.bukkit.config.CarriedStateConfiguration carriedStateConfig =
-            com.uxplima.uxmskyblock.bukkit.config.CarriedStateConfiguration.defaultConfiguration();
-
-    public com.uxplima.uxmskyblock.bukkit.config.CarriedStateConfiguration carriedStateConfig() {
-        return carriedStateConfig;
-    }
-
-    /** Hands over {@code modules/player-state.conf} as the server read it. */
-    public void useCarriedStateConfig(com.uxplima.uxmskyblock.bukkit.config.CarriedStateConfiguration config) {
-        this.carriedStateConfig = Objects.requireNonNull(config, "config must not be null");
-    }
-
-    /** The loot tables under {@code loot/}, none until handed over. */
-    private volatile com.uxplima.uxmskyblock.bukkit.loot.LootTables lootTables =
-            com.uxplima.uxmskyblock.bukkit.loot.LootTables.none();
-
-    public com.uxplima.uxmskyblock.bukkit.loot.LootTables lootTables() {
-        return lootTables;
-    }
-
-    /** Hands over the loot tables as the server read them. */
-    public void useLootTables(com.uxplima.uxmskyblock.bukkit.loot.LootTables tables) {
-        this.lootTables = Objects.requireNonNull(tables, "tables must not be null");
-    }
-
-    /** Whether islands can be ChunkBlock islands, and what each chunk costs in level. */
-    public com.uxplima.uxmskyblock.bukkit.config.ChunkBlockConfiguration chunkBlockConfig() {
-        return chunkBlockConfig;
-    }
-
-    /** What a leave, a kick, a death and a reset do, as {@code modules/lifecycle.conf} writes it. */
-    public com.uxplima.uxmskyblock.bukkit.config.LifecycleConfiguration lifecycleConfig() {
-        return lifecycleConfig;
-    }
-
-    /** The OneBlock game mode's phases, as {@code modules/oneblock.conf} writes them. */
-    public com.uxplima.uxmskyblock.bukkit.config.OneBlockConfiguration oneBlockConfig() {
-        return oneBlockConfig;
     }
 }
