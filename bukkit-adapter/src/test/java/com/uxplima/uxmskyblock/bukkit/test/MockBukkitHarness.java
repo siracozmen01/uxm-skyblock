@@ -35,6 +35,7 @@ public abstract class MockBukkitHarness {
         if (MockBukkit.isMocked()) {
             MockBukkit.unmock();
         }
+        org.mockito.Mockito.framework().clearInlineMocks();
     }
 
     protected PlayerMock createPlayer(String name) {
