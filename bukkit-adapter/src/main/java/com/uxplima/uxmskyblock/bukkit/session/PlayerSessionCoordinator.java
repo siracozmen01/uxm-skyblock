@@ -27,8 +27,6 @@ import com.uxplima.uxmskyblock.core.domain.inventory.ProfileInventoryRecord;
 import com.uxplima.uxmskyblock.core.domain.session.PlayerSessionRecord;
 import com.uxplima.uxmskyblock.core.domain.session.ServerNodeId;
 import com.uxplima.uxmskyblock.core.domain.session.SessionAuthorityOutcome;
-import com.uxplima.uxmskyblock.core.domain.session.SessionLease;
-import com.uxplima.uxmskyblock.core.domain.session.SessionState;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -37,27 +35,30 @@ import org.jspecify.annotations.Nullable;
  */
 public final class PlayerSessionCoordinator {
 
+    /** A player's join: the session claimed, their profile's inventory loaded and written, retried while another server still holds them. */
+    private final SessionJoins joins = new SessionJoins(this);
+
     private static final Logger LOGGER = Logger.getLogger(PlayerSessionCoordinator.class.getName());
 
-    private final ServerNodeId nodeId;
-    private final PlayerSessionAuthorityPort sessionAuthorityPort;
-    private final ProfileInventoryCheckpointPort inventoryCheckpointPort;
+    final ServerNodeId nodeId;
+    final PlayerSessionAuthorityPort sessionAuthorityPort;
+    final ProfileInventoryCheckpointPort inventoryCheckpointPort;
     private final ProfileHandoffFinalizationPort handoffFinalizationPort;
-    private final SwitchProfileUseCase switchProfileUseCase;
-    private final CutShortOperations cutShort;
-    private final SchedulerPort schedulerPort;
-    private final IslandProtectionListener protectionListener;
-    private final Duration heartbeatInterval;
-    private final Duration checkpointInterval;
+    final SwitchProfileUseCase switchProfileUseCase;
+    final CutShortOperations cutShort;
+    final SchedulerPort schedulerPort;
+    final IslandProtectionListener protectionListener;
+    final Duration heartbeatInterval;
+    final Duration checkpointInterval;
 
-    private final ConcurrentMap<UUID, ActiveSession> activeSessions = new ConcurrentHashMap<>();
-    private final Messages messages;
-    private final java.util.function.LongSupplier nanoClock;
+    final ConcurrentMap<UUID, ActiveSession> activeSessions = new ConcurrentHashMap<>();
+    final Messages messages;
+    final java.util.function.LongSupplier nanoClock;
     private final ProfileSwitchFlow switchFlow;
     private final SessionShutdown shutdownFlow;
     private final ServerHandoff serverHandoff;
     private final SessionHooks hooks = new SessionHooks();
-    private final LoginQueue loginQueue;
+    final LoginQueue loginQueue;
 
     public PlayerSessionCoordinator(
             ServerNodeId nodeId,
@@ -128,7 +129,7 @@ public final class PlayerSessionCoordinator {
                 this.nanoClock);
         this.shutdownFlow = new SessionShutdown(
                 this.nodeId, this.sessionAuthorityPort, this.handoffFinalizationPort, this.schedulerPort, hooks);
-        this.loginQueue = new LoginQueue(this.schedulerPort, this.messages, this.nanoClock, this::attemptJoin);
+        this.loginQueue = new LoginQueue(this.schedulerPort, this.messages, this.nanoClock, joins::attemptJoin);
         this.serverHandoff = new ServerHandoff(
                 this.nodeId,
                 this.sessionAuthorityPort,
@@ -138,7 +139,7 @@ public final class PlayerSessionCoordinator {
                 this.nanoClock,
                 activeSessions,
                 this::selfFencePlayer,
-                player -> attemptJoin(player, this.nanoClock.getAsLong(), true));
+                player -> joins.attemptJoin(player, this.nanoClock.getAsLong(), true));
     }
 
     /** The node this coordinator holds sessions for. */
@@ -237,7 +238,7 @@ public final class PlayerSessionCoordinator {
         hooks.whenStopping(hook);
     }
 
-    private void runActiveHooks(Player player) {
+    void runActiveHooks(Player player) {
         hooks.runActive(player);
     }
 
@@ -250,116 +251,11 @@ public final class PlayerSessionCoordinator {
      */
     public void handlePlayerJoin(Player player) {
         Objects.requireNonNull(player, "player");
-        attemptJoin(player, nanoClock.getAsLong(), false);
+        joins.attemptJoin(player, nanoClock.getAsLong(), false);
     }
 
     /** How long a player may wait for their session to leave another server; see {@link LoginQueue}. */
     static final Duration LOGIN_WAIT = LoginQueue.LOGIN_WAIT;
-
-    private void attemptJoin(Player player, long queuedAt, boolean told) {
-        UUID rawUuid = player.getUniqueId();
-        PlayerUuid playerUuid = new PlayerUuid(rawUuid);
-        ProfileId defaultProfileId = new ProfileId(rawUuid);
-
-        schedulerPort.async(() -> {
-            try {
-                long asked = nanoClock.getAsLong();
-                SessionAuthorityOutcome outcome =
-                        sessionAuthorityPort.ensureSession(playerUuid, defaultProfileId, nodeId);
-
-                if (!outcome.isSuccess()) {
-                    loginQueue.waitOrRefuse(player, queuedAt, told);
-                    return;
-                }
-
-                SessionAuthorityOutcome.Success success = (SessionAuthorityOutcome.Success) outcome;
-                long epoch = success.epoch();
-
-                // If node took over an expired lease or crash occurred, reconcile in-flight profile switch operations
-                switchProfileUseCase.recoverInFlightSwitch(playerUuid, nodeId, epoch);
-
-                if (success.isRecovering()) {
-                    sessionAuthorityPort.markRecoveredActive(playerUuid, nodeId, epoch);
-                }
-
-                Optional<PlayerSessionRecord> sessionOpt = sessionAuthorityPort.findSession(playerUuid);
-                ProfileId activeProfile =
-                        sessionOpt.map(PlayerSessionRecord::activeProfileId).orElse(defaultProfileId);
-
-                cutShort.settle(playerUuid, activeProfile, epoch);
-
-                Optional<ProfileInventoryRecord> invOpt = inventoryCheckpointPort.loadInventory(activeProfile);
-                long initialVersion =
-                        invOpt.map(ProfileInventoryRecord::version).orElse(1L);
-
-                ActiveSession session =
-                        new ActiveSession(playerUuid, activeProfile, epoch, initialVersion, SessionState.ACTIVE);
-                session.holdUntil(asked + SessionLease.locallyHeld().toNanos());
-                activeSessions.put(rawUuid, session);
-
-                // Apply inventory and bind protection profile on entity thread
-                schedulerPort.onEntity(playerUuid, () -> {
-                    if (!player.isOnline() || session.isFenced()) {
-                        return;
-                    }
-                    if (invOpt.isPresent()) {
-                        BukkitInventorySerializer.applyToPlayer(player, invOpt.get());
-                    }
-                    session.enterPlay();
-                    protectionListener.setActiveProfile(playerUuid, activeProfile);
-                    runActiveHooks(player);
-                });
-
-                // Start async heartbeat task with fail-closed self-fencing
-                AutoCloseable hbTask = schedulerPort.repeatAsync(
-                        () -> {
-                            if (session.isFenced()) {
-                                return;
-                            }
-                            // The deadline counts from the moment the renewal was asked for, not from
-                            // its answer: the database extended the lease no earlier than that.
-                            long renewAsked = nanoClock.getAsLong();
-                            SessionAuthorityOutcome renewOutcome;
-                            try {
-                                renewOutcome = sessionAuthorityPort.renew(playerUuid, nodeId, session.sessionEpoch());
-                            } catch (RuntimeException unreachable) {
-                                // A renewal the database never answered is a failed one. Thrown out of
-                                // the task, it left the session standing until its deadline ran out.
-                                LOGGER.log(Level.WARNING, "Lease renewal for " + playerUuid + " failed", unreachable);
-                                selfFencePlayer(playerUuid, "Lease renewal could not reach the database");
-                                return;
-                            }
-                            long deadline =
-                                    renewAsked + SessionLease.locallyHeld().toNanos();
-                            if (!renewOutcome.isSuccess()) {
-                                selfFencePlayer(playerUuid, "Lease renewal failed or rejected: " + renewOutcome);
-                            } else if (nanoClock.getAsLong() - deadline >= 0) {
-                                // An answer later than the deadline it would set: this node stopped
-                                // acting on the lease while it waited, and the player is safer moved on.
-                                selfFencePlayer(playerUuid, "Lease renewal answered after the local deadline");
-                            } else {
-                                session.holdUntil(deadline);
-                            }
-                        },
-                        heartbeatInterval,
-                        heartbeatInterval);
-
-                // Start async periodic checkpoint task
-                AutoCloseable cpTask = schedulerPort.repeatAsync(
-                        () -> checkpointPlayer(playerUuid), checkpointInterval, checkpointInterval);
-
-                session.attachTasks(hbTask, cpTask);
-
-            } catch (Exception e) {
-                LOGGER.log(Level.SEVERE, "Unexpected error during player join for " + playerUuid, e);
-                schedulerPort.onEntity(playerUuid, () -> {
-                    if (player.isOnline()) {
-                        player.kick(messages.render(player, "session.init_error"));
-                    }
-                });
-            }
-        });
-    }
 
     /**
      * Ambient checkpoint of player inventory.
