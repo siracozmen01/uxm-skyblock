@@ -5,13 +5,11 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
-import java.util.EnumSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
-import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.ToIntFunction;
 
@@ -44,6 +42,12 @@ import com.uxplima.uxmskyblock.core.domain.island.IslandRole;
  * with three roles and one with nine behave the same.
  */
 public final class IslandMembershipService {
+
+    /** Asking a player onto an island and their answer: the invite held until it runs out, and the join under the island's member cap. */
+    private final MembershipInvites invitesFlow = new MembershipInvites(this);
+
+    /** The roles of an island's members: one member's role changed, and what a role may do, each under the rules of who may change whom. */
+    private final MembershipRoles roles = new MembershipRoles(this);
 
     /** How long an unanswered invite stands. */
     public static final Duration DEFAULT_INVITE_TIMEOUT = Duration.ofMinutes(5);
@@ -150,14 +154,14 @@ public final class IslandMembershipService {
         record OutOfReach() implements RoleOutcome {}
     }
 
-    private final IslandStoragePort islandStoragePort;
-    private final IslandMutationLock mutationLock;
-    private final ToIntFunction<IslandId> memberAllowance;
-    private final Duration inviteTimeout;
-    private final Clock clock;
+    final IslandStoragePort islandStoragePort;
+    final IslandMutationLock mutationLock;
+    final ToIntFunction<IslandId> memberAllowance;
+    final Duration inviteTimeout;
+    final Clock clock;
 
     /** Invitations waiting for an answer, keyed by who has to answer. */
-    private final Map<ProfileId, PendingInvite> invites = new ConcurrentHashMap<>();
+    final Map<ProfileId, PendingInvite> invites = new ConcurrentHashMap<>();
 
     private volatile KeyedMutationLock<ProfileId> profileLock = new KeyedMutationLock<>();
 
@@ -192,49 +196,6 @@ public final class IslandMembershipService {
         this(islandStoragePort, mutationLock, memberAllowance, DEFAULT_INVITE_TIMEOUT, Clock.systemUTC());
     }
 
-    /** Invites {@code target} to the island {@code actor} belongs to. */
-    public InviteOutcome invite(ProfileId actor, ProfileId target) {
-        Objects.requireNonNull(actor, "actor must not be null");
-        Objects.requireNonNull(target, "target must not be null");
-
-        Optional<Island> optIsland = islandOf(actor);
-        if (optIsland.isEmpty()) {
-            return new InviteOutcome.NoIsland();
-        }
-        Island island = optIsland.get();
-        if (!may(island, actor, IslandPermission.MEMBER_INVITE)) {
-            return new InviteOutcome.NotAllowed();
-        }
-        if (island.isMember(target)) {
-            return new InviteOutcome.AlreadyAMember();
-        }
-        if (islandStoragePort.findIslandIdByProfileId(target).isPresent()) {
-            return new InviteOutcome.AlreadyOnAnotherIsland();
-        }
-        int allowed = memberAllowance.applyAsInt(island.id());
-        if (island.members().size() >= allowed) {
-            return new InviteOutcome.IslandFull(allowed);
-        }
-
-        Instant expiresAt = clock.instant().plus(inviteTimeout);
-        invites.put(target, new PendingInvite(island.id(), actor, target, expiresAt));
-        return new InviteOutcome.Sent(target, expiresAt);
-    }
-
-    /** The invite {@code target} has been asked to answer, if one still stands. */
-    public Optional<PendingInvite> pendingInvite(ProfileId target) {
-        Objects.requireNonNull(target, "target must not be null");
-        PendingInvite invite = invites.get(target);
-        if (invite == null) {
-            return Optional.empty();
-        }
-        if (!invite.expiresAt().isAfter(clock.instant())) {
-            invites.remove(target, invite);
-            return Optional.empty();
-        }
-        return Optional.of(invite);
-    }
-
     /**
      * The lock island creation holds per profile, so joining and creating wait for each other.
      *
@@ -252,7 +213,7 @@ public final class IslandMembershipService {
     public JoinOutcome accept(ProfileId target, PlayerUuid targetPlayerUuid) {
         Objects.requireNonNull(target, "target must not be null");
         Objects.requireNonNull(targetPlayerUuid, "targetPlayerUuid must not be null");
-        JoinOutcome outcome = profileLock.inside(target, () -> acceptInside(target, targetPlayerUuid));
+        JoinOutcome outcome = profileLock.inside(target, () -> invitesFlow.acceptInside(target, targetPlayerUuid));
         if (outcome instanceof JoinOutcome.Joined joined) {
             tellMembersChanged(joined.islandId());
         }
@@ -276,7 +237,7 @@ public final class IslandMembershipService {
         rolesChanged.add(Objects.requireNonNull(listener, "listener must not be null"));
     }
 
-    private void tellRolesChanged(IslandId islandId) {
+    void tellRolesChanged(IslandId islandId) {
         tell(rolesChanged, islandId);
     }
 
@@ -300,44 +261,11 @@ public final class IslandMembershipService {
         }
     }
 
-    private JoinOutcome acceptInside(ProfileId target, PlayerUuid targetPlayerUuid) {
-        Optional<PendingInvite> optInvite = pendingInvite(target);
-        if (optInvite.isEmpty()) {
-            return new JoinOutcome.NoInvite();
-        }
-        if (islandStoragePort.findIslandIdByProfileId(target).isPresent()) {
-            return new JoinOutcome.AlreadyOnAnIsland();
-        }
-
-        PendingInvite invite = optInvite.get();
-        // The island is read inside the lock, so two players answering at the same moment do not
-        // both read it as it was and both write themselves in, losing one of the two.
-        return mutationLock.inside(invite.islandId(), () -> {
-            Optional<Island> optIsland = islandStoragePort.findIslandById(invite.islandId());
-            Optional<IslandLocation> optLocation = islandStoragePort.findLocationByIslandId(invite.islandId());
-            if (optIsland.isEmpty() || optLocation.isEmpty()) {
-                invites.remove(target, invite);
-                return new JoinOutcome.IslandMissing();
-            }
-
-            Island island = optIsland.get();
-            int allowed = memberAllowance.applyAsInt(island.id());
-            if (island.members().size() >= allowed) {
-                return new JoinOutcome.IslandFull(allowed);
-            }
-
-            IslandRole memberRole = island.roles().getOrDefault(IslandRole.MEMBER.id(), IslandRole.MEMBER);
-            Island joined = island.addMember(new IslandMember(targetPlayerUuid, target, memberRole, clock.instant()));
-            islandStoragePort.saveIsland(joined, optLocation.get());
-            invites.remove(target, invite);
-            return new JoinOutcome.Joined(island.id());
-        });
-    }
-
     /** Throws the invite away without joining. Returns whether there was one to throw away. */
     public boolean decline(ProfileId target) {
         Objects.requireNonNull(target, "target must not be null");
-        return pendingInvite(target)
+        return invitesFlow
+                .pendingInvite(target)
                 .map(invite -> invites.remove(target, invite))
                 .orElse(false);
     }
@@ -388,72 +316,6 @@ public final class IslandMembershipService {
         return told(remove(optIsland.get(), profileId));
     }
 
-    /** Puts {@code target} into {@code rawRoleId}, if the caller's role may. */
-    public RoleOutcome setRole(ProfileId actor, ProfileId target, String rawRoleId) {
-        Objects.requireNonNull(actor, "actor must not be null");
-        Objects.requireNonNull(target, "target must not be null");
-        Objects.requireNonNull(rawRoleId, "rawRoleId must not be null");
-
-        Optional<Island> optIsland = islandOf(actor);
-        if (optIsland.isEmpty()) {
-            return new RoleOutcome.NoIsland();
-        }
-        Island island = optIsland.get();
-        if (island.ownerProfileId().equals(target)) {
-            return new RoleOutcome.CannotChangeOwner();
-        }
-        IslandMember member = island.members().get(target);
-        if (member == null) {
-            return new RoleOutcome.NotAMember();
-        }
-
-        String roleId = rawRoleId.toUpperCase(Locale.ROOT);
-        IslandRole role = island.roles().get(roleId);
-        if (role == null) {
-            return new RoleOutcome.UnknownRole(rawRoleId.toLowerCase(Locale.ROOT), assignableRoleNames(island));
-        }
-        if (role.isSystem()) {
-            return new RoleOutcome.NotAssignable(rawRoleId.toLowerCase(Locale.ROOT), assignableRoleNames(island));
-        }
-
-        // Moving somebody up and moving them down are two permissions, and which one this is is
-        // the weight of the role they are going to against the weight of the one they hold. There
-        // is no ROLE_MANAGE: the roles carry MEMBER_PROMOTE and MEMBER_DEMOTE separately, so an
-        // island can let a moderator demote without letting them promote.
-        IslandPermission needed = role.weight() >= member.role().weight()
-                ? IslandPermission.MEMBER_PROMOTE
-                : IslandPermission.MEMBER_DEMOTE;
-        if (!may(island, actor, needed)) {
-            return new RoleOutcome.NotAllowed();
-        }
-        // The permission says whether the caller moves people at all; the ranks say whom and where to.
-        // Without them a co-owner could hand out the owner's role, and a moderator allowed to demote
-        // could demote the co-owner above them.
-        if (!outranks(island, actor, member.role().weight()) || !outranks(island, actor, role.weight())) {
-            return new RoleOutcome.OutOfReach();
-        }
-
-        RoleOutcome outcome = mutationLock.inside(island.id(), () -> {
-            Optional<Island> optFresh = islandStoragePort.findIslandById(island.id());
-            Optional<IslandLocation> optLocation = islandStoragePort.findLocationByIslandId(island.id());
-            if (optFresh.isEmpty() || optLocation.isEmpty()) {
-                return new RoleOutcome.NoIsland();
-            }
-            Island fresh = optFresh.get();
-            IslandMember current = fresh.members().get(target);
-            if (current == null) {
-                return new RoleOutcome.NotAMember();
-            }
-            Island updated = fresh.addMember(new IslandMember(current.playerUuid(), target, role, current.joinedAt()));
-            islandStoragePort.saveIsland(updated, optLocation.get());
-            return new RoleOutcome.Changed(target, roleId.toLowerCase(Locale.ROOT));
-        });
-        if (outcome instanceof RoleOutcome.Changed) {
-            tellRolesChanged(island.id());
-        }
-        return outcome;
-    }
-
     /** What a request to move a permission on a role came back with. */
     public sealed interface PermissionOutcome {
 
@@ -479,77 +341,6 @@ public final class IslandMembershipService {
         record OutOfReach() implements PermissionOutcome {}
     }
 
-    /**
-     * Turns one permission on or off for one role on the caller's island.
-     *
-     * <p>The design document publishes {@code /is permissions} for exactly this, and the table that
-     * holds it has been written on every save since the island writer was written. Nothing could
-     * move one: the roles an island was created with were the roles it died with.
-     *
-     * <p>The owner's role is left alone. An owner who can take a permission off their own role can
-     * lock themselves out of their own island, and no message would bring it back.
-     */
-    public PermissionOutcome setRolePermission(
-            ProfileId actor, String rawRoleId, String rawPermission, boolean allowed) {
-        Objects.requireNonNull(actor, "actor must not be null");
-        Objects.requireNonNull(rawRoleId, "rawRoleId must not be null");
-        Objects.requireNonNull(rawPermission, "rawPermission must not be null");
-
-        Optional<Island> optIsland = islandOf(actor);
-        if (optIsland.isEmpty()) {
-            return new PermissionOutcome.NoIsland();
-        }
-        Island island = optIsland.get();
-        if (!may(island, actor, IslandPermission.MEMBER_PROMOTE)) {
-            return new PermissionOutcome.NotAllowed();
-        }
-
-        String roleId = rawRoleId.toUpperCase(Locale.ROOT);
-        IslandRole role = island.roles().get(roleId);
-        if (role == null) {
-            return new PermissionOutcome.UnknownRole(rawRoleId.toLowerCase(Locale.ROOT), roleNames(island));
-        }
-        if (roleId.equals(IslandRole.OWNER.id())) {
-            return new PermissionOutcome.CannotChangeOwnerRole();
-        }
-        if (!outranks(island, actor, role.weight())) {
-            // A caller who could edit their own role, or one above it, could grant themselves anything.
-            return new PermissionOutcome.OutOfReach();
-        }
-
-        IslandPermission permission;
-        try {
-            permission = IslandPermission.valueOf(rawPermission.toUpperCase(Locale.ROOT));
-        } catch (IllegalArgumentException unknown) {
-            return new PermissionOutcome.UnknownPermission(rawPermission.toLowerCase(Locale.ROOT), permissionNames());
-        }
-
-        Set<IslandPermission> permissions = EnumSet.noneOf(IslandPermission.class);
-        permissions.addAll(role.permissions());
-        if (allowed) {
-            permissions.add(permission);
-        } else {
-            permissions.remove(permission);
-        }
-
-        PermissionOutcome outcome = mutationLock.inside(island.id(), () -> {
-            Optional<Island> optFresh = islandStoragePort.findIslandById(island.id());
-            Optional<IslandLocation> optLocation = islandStoragePort.findLocationByIslandId(island.id());
-            if (optFresh.isEmpty() || optLocation.isEmpty()) {
-                return new PermissionOutcome.NoIsland();
-            }
-            IslandRole updated =
-                    new IslandRole(role.id(), role.weight(), role.displayName(), permissions, role.isSystem());
-            islandStoragePort.saveIsland(withRole(optFresh.get(), updated), optLocation.get());
-            return new PermissionOutcome.Changed(
-                    roleId.toLowerCase(Locale.ROOT), permission.name().toLowerCase(Locale.ROOT), allowed);
-        });
-        if (outcome instanceof PermissionOutcome.Changed) {
-            tellRolesChanged(island.id());
-        }
-        return outcome;
-    }
-
     /** Every permission a caller may name, lower case and comma separated. */
     public static String permissionNames() {
         return java.util.Arrays.stream(IslandPermission.values())
@@ -566,7 +357,7 @@ public final class IslandMembershipService {
      * without walking the members leaves everybody on the old permissions until they next log in
      * and the island is read fresh. That is a rule that applies at a time nobody can predict.
      */
-    private static Island withRole(Island island, IslandRole role) {
+    static Island withRole(Island island, IslandRole role) {
         Island updated = island.withRole(role);
         for (IslandMember member : island.members().values()) {
             if (member.role().id().equals(role.id())) {
@@ -646,12 +437,12 @@ public final class IslandMembershipService {
         });
     }
 
-    private Optional<Island> islandOf(ProfileId profileId) {
+    Optional<Island> islandOf(ProfileId profileId) {
         return islandStoragePort.findIslandIdByProfileId(profileId).flatMap(islandStoragePort::findIslandById);
     }
 
     /** Whether {@code actor} stands above {@code weight}: the owner above all, anybody else strictly. */
-    private static boolean outranks(Island island, ProfileId actor, int weight) {
+    static boolean outranks(Island island, ProfileId actor, int weight) {
         if (island.ownerProfileId().equals(actor)) {
             return true;
         }
@@ -659,11 +450,41 @@ public final class IslandMembershipService {
         return member != null && member.role().weight() > weight;
     }
 
-    private static boolean may(Island island, ProfileId profileId, IslandPermission permission) {
+    static boolean may(Island island, ProfileId profileId, IslandPermission permission) {
         if (island.ownerProfileId().equals(profileId)) {
             return true;
         }
         IslandMember member = island.members().get(profileId);
         return member != null && member.role().permissions().contains(permission);
+    }
+
+    /** Puts {@code target} into {@code rawRoleId}, if the caller's role may. */
+    public RoleOutcome setRole(ProfileId actor, ProfileId target, String rawRoleId) {
+        return roles.setRole(actor, target, rawRoleId);
+    }
+
+    /**
+     * Turns one permission on or off for one role on the caller's island.
+     *
+     * <p>The design document publishes {@code /is permissions} for exactly this, and the table that
+     * holds it has been written on every save since the island writer was written. Nothing could
+     * move one: the roles an island was created with were the roles it died with.
+     *
+     * <p>The owner's role is left alone. An owner who can take a permission off their own role can
+     * lock themselves out of their own island, and no message would bring it back.
+     */
+    public PermissionOutcome setRolePermission(
+            ProfileId actor, String rawRoleId, String rawPermission, boolean allowed) {
+        return roles.setRolePermission(actor, rawRoleId, rawPermission, allowed);
+    }
+
+    /** Invites {@code target} to the island {@code actor} belongs to. */
+    public InviteOutcome invite(ProfileId actor, ProfileId target) {
+        return invitesFlow.invite(actor, target);
+    }
+
+    /** The invite {@code target} has been asked to answer, if one still stands. */
+    public Optional<PendingInvite> pendingInvite(ProfileId target) {
+        return invitesFlow.pendingInvite(target);
     }
 }
