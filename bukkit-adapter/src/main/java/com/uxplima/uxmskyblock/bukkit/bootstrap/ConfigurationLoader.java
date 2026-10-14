@@ -1,7 +1,6 @@
 package com.uxplima.uxmskyblock.bukkit.bootstrap;
 
 import java.io.IOException;
-import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
@@ -10,24 +9,38 @@ import java.util.logging.Logger;
 
 import org.bukkit.plugin.java.JavaPlugin;
 
+import com.uxplima.uxmskyblock.bukkit.config.AcidIslandConfiguration;
 import com.uxplima.uxmskyblock.bukkit.config.AllianceConfiguration;
 import com.uxplima.uxmskyblock.bukkit.config.AntiAbuseConfiguration;
 import com.uxplima.uxmskyblock.bukkit.config.BankConfiguration;
+import com.uxplima.uxmskyblock.bukkit.config.BankPayoutsConfiguration;
 import com.uxplima.uxmskyblock.bukkit.config.BiomeConfiguration;
 import com.uxplima.uxmskyblock.bukkit.config.BoosterConfiguration;
+import com.uxplima.uxmskyblock.bukkit.config.BoxedConfiguration;
+import com.uxplima.uxmskyblock.bukkit.config.BrixConfiguration;
+import com.uxplima.uxmskyblock.bukkit.config.CarriedStateConfiguration;
+import com.uxplima.uxmskyblock.bukkit.config.CaveBlockConfiguration;
 import com.uxplima.uxmskyblock.bukkit.config.ChatConfiguration;
+import com.uxplima.uxmskyblock.bukkit.config.ChunkBlockConfiguration;
 import com.uxplima.uxmskyblock.bukkit.config.DimensionConfiguration;
 import com.uxplima.uxmskyblock.bukkit.config.DiscordConfiguration;
 import com.uxplima.uxmskyblock.bukkit.config.EffectsConfiguration;
 import com.uxplima.uxmskyblock.bukkit.config.GeneratorsConfiguration;
 import com.uxplima.uxmskyblock.bukkit.config.InactivityConfiguration;
 import com.uxplima.uxmskyblock.bukkit.config.InteractablesConfiguration;
+import com.uxplima.uxmskyblock.bukkit.config.IslandEffectsConfiguration;
+import com.uxplima.uxmskyblock.bukkit.config.IslandFlyConfiguration;
 import com.uxplima.uxmskyblock.bukkit.config.LevelConfiguration;
+import com.uxplima.uxmskyblock.bukkit.config.LifecycleConfiguration;
 import com.uxplima.uxmskyblock.bukkit.config.LimitConfiguration;
 import com.uxplima.uxmskyblock.bukkit.config.MissionConfiguration;
 import com.uxplima.uxmskyblock.bukkit.config.ModuleSettingsConfiguration;
+import com.uxplima.uxmskyblock.bukkit.config.OneBlockConfiguration;
+import com.uxplima.uxmskyblock.bukkit.config.OneBlockLoadReport;
+import com.uxplima.uxmskyblock.bukkit.config.ParkourConfiguration;
 import com.uxplima.uxmskyblock.bukkit.config.PerformanceConfiguration;
 import com.uxplima.uxmskyblock.bukkit.config.PlayerStateConfigurationAdapter;
+import com.uxplima.uxmskyblock.bukkit.config.PoseidonConfiguration;
 import com.uxplima.uxmskyblock.bukkit.config.PresetConfiguration;
 import com.uxplima.uxmskyblock.bukkit.config.ProtectionConfiguration;
 import com.uxplima.uxmskyblock.bukkit.config.RewardInboxConfiguration;
@@ -35,18 +48,26 @@ import com.uxplima.uxmskyblock.bukkit.config.SeasonConfiguration;
 import com.uxplima.uxmskyblock.bukkit.config.ServerNodeConfiguration;
 import com.uxplima.uxmskyblock.bukkit.config.SettingsConfiguration;
 import com.uxplima.uxmskyblock.bukkit.config.ShopConfiguration;
+import com.uxplima.uxmskyblock.bukkit.config.SignWarpsConfiguration;
+import com.uxplima.uxmskyblock.bukkit.config.SkyGridConfiguration;
 import com.uxplima.uxmskyblock.bukkit.config.SocialConfiguration;
+import com.uxplima.uxmskyblock.bukkit.config.StackingConfiguration;
+import com.uxplima.uxmskyblock.bukkit.config.StrangerRealmsConfiguration;
 import com.uxplima.uxmskyblock.bukkit.config.TemporaryAccessConfiguration;
+import com.uxplima.uxmskyblock.bukkit.config.TradeConfiguration;
+import com.uxplima.uxmskyblock.bukkit.config.TradeWindsConfiguration;
 import com.uxplima.uxmskyblock.bukkit.config.UpgradesConfiguration;
 import com.uxplima.uxmskyblock.bukkit.config.VaultConfiguration;
+import com.uxplima.uxmskyblock.bukkit.config.VisitorsConfiguration;
 import com.uxplima.uxmskyblock.bukkit.config.WarpConfiguration;
+import com.uxplima.uxmskyblock.bukkit.config.WebMapConfiguration;
 import com.uxplima.uxmskyblock.bukkit.config.WorldConfiguration;
 import com.uxplima.uxmskyblock.bukkit.effect.InteractionEffects;
 import com.uxplima.uxmskyblock.bukkit.i18n.ThemeSource;
+import com.uxplima.uxmskyblock.bukkit.loot.LootTables;
+import com.uxplima.uxmskyblock.bukkit.wall.WallConfiguration;
 import com.uxplima.uxmskyblock.core.domain.durability.PlayerStateDurabilityConfig;
-import org.jspecify.annotations.Nullable;
 import org.spongepowered.configurate.CommentedConfigurationNode;
-import org.spongepowered.configurate.hocon.HoconConfigurationLoader;
 
 /**
  * Reads the configuration off disk and hands back a validated {@link ConfigurationWiring}.
@@ -151,35 +172,36 @@ public final class ConfigurationLoader {
             throw new IllegalStateException("Failed to initialize plugin directories at: " + dataDir, e);
         }
 
+        ModuleFiles files = new ModuleFiles(plugin, dataDir);
         // 1. Unpack the shared theme, the messages catalog and the menus templates
         ThemeSource.saveShared(dataDir, ConfigurationLoader.class.getClassLoader());
         // A catalogue or a menu a release restyles reaches the server that already has a copy: what the
         // operator never edited takes this release's words and layout, and what they edited stays theirs.
         for (String language : new String[] {"messages_en.conf", "messages_tr.conf"}) {
             Path catalogue = dataDir.resolve("messages").resolve(language);
-            unpackResource(plugin, "messages/" + language, catalogue);
-            bringUpToDate(plugin, dataDir, catalogue, "messages/" + language);
+            ConfigurationFiles.unpackResource(plugin, "messages/" + language, catalogue);
+            ConfigurationFiles.bringUpToDate(plugin, dataDir, catalogue, "messages/" + language);
         }
         for (String menu : SHIPPED_MENUS) {
             Path file = dataDir.resolve("menus").resolve(menu);
-            unpackResource(plugin, "menus/" + menu, file);
-            bringUpToDate(plugin, dataDir, file, "menus/" + menu);
+            ConfigurationFiles.unpackResource(plugin, "menus/" + menu, file);
+            ConfigurationFiles.bringUpToDate(plugin, dataDir, file, "menus/" + menu);
         }
 
         // 2. Load root config.conf
         Path configFile = dataDir.resolve("config.conf");
-        unpackResource(plugin, "config.conf", configFile);
-        bringUpToDate(plugin, dataDir, configFile, "config.conf");
+        ConfigurationFiles.unpackResource(plugin, "config.conf", configFile);
+        ConfigurationFiles.bringUpToDate(plugin, dataDir, configFile, "config.conf");
         // The command tree reads this file later in the boot, and gets the release's new words from here.
         Path commandsFile = dataDir.resolve("commands.conf");
-        unpackResource(plugin, "commands.conf", commandsFile);
-        bringUpToDate(plugin, dataDir, commandsFile, "commands.conf");
+        ConfigurationFiles.unpackResource(plugin, "commands.conf", commandsFile);
+        ConfigurationFiles.bringUpToDate(plugin, dataDir, commandsFile, "commands.conf");
         // How every menu asks for a word, read when the menu engine is built: an anvil, a chat line, a
         // sign or a dialog, chosen for each place. It was read and never written, so no operator found it.
         Path textInputFile = dataDir.resolve("text-input.conf");
-        unpackResource(plugin, "text-input.conf", textInputFile);
-        bringUpToDate(plugin, dataDir, textInputFile, "text-input.conf");
-        CommentedConfigurationNode root = loadHocon(configFile);
+        ConfigurationFiles.unpackResource(plugin, "text-input.conf", textInputFile);
+        ConfigurationFiles.bringUpToDate(plugin, dataDir, textInputFile, "text-input.conf");
+        CommentedConfigurationNode root = ConfigurationFiles.loadHocon(configFile);
 
         ServerNodeConfiguration nodeConfig;
         PlayerStateDurabilityConfig playerStateConfig;
@@ -195,227 +217,114 @@ public final class ConfigurationLoader {
 
         // 3. Load modules.conf
         Path modulesFile = dataDir.resolve("modules.conf");
-        unpackResource(plugin, "modules.conf", modulesFile);
-        bringUpToDate(plugin, dataDir, modulesFile, "modules.conf");
-        CommentedConfigurationNode modulesRoot = loadHocon(modulesFile);
+        ConfigurationFiles.unpackResource(plugin, "modules.conf", modulesFile);
+        ConfigurationFiles.bringUpToDate(plugin, dataDir, modulesFile, "modules.conf");
+        CommentedConfigurationNode modulesRoot = ConfigurationFiles.loadHocon(modulesFile);
         ModuleSettingsConfiguration moduleSettings = modulesRoot != null
                 ? ModuleSettingsConfiguration.load(modulesRoot)
                 : ModuleSettingsConfiguration.empty();
 
         // 4. Load modular subsystem configurations
-        SeasonConfiguration seasonConfig = loadConfig(
-                plugin, dataDir, "seasons.conf", SeasonConfiguration::load, SeasonConfiguration.defaultConfiguration());
-        SocialConfiguration socialConfig = loadConfig(
-                plugin, dataDir, "social.conf", SocialConfiguration::load, SocialConfiguration.defaultConfiguration());
-        DiscordConfiguration discordConfig = loadConfig(
-                plugin,
-                dataDir,
-                "discord.conf",
-                DiscordConfiguration::load,
-                DiscordConfiguration.defaultConfiguration());
-        AllianceConfiguration allianceConfig = loadConfig(
-                plugin,
-                dataDir,
-                "alliances.conf",
-                AllianceConfiguration::load,
-                AllianceConfiguration.defaultConfiguration());
-        ShopConfiguration shopConfig = loadConfig(
-                plugin, dataDir, "shop.conf", ShopConfiguration::load, ShopConfiguration.defaultConfiguration());
-        TemporaryAccessConfiguration temporaryAccessConfig = loadConfig(
-                plugin,
-                dataDir,
+        SeasonConfiguration seasonConfig =
+                files.read("seasons.conf", SeasonConfiguration::load, SeasonConfiguration.defaultConfiguration());
+        SocialConfiguration socialConfig =
+                files.read("social.conf", SocialConfiguration::load, SocialConfiguration.defaultConfiguration());
+        DiscordConfiguration discordConfig =
+                files.read("discord.conf", DiscordConfiguration::load, DiscordConfiguration.defaultConfiguration());
+        AllianceConfiguration allianceConfig =
+                files.read("alliances.conf", AllianceConfiguration::load, AllianceConfiguration.defaultConfiguration());
+        ShopConfiguration shopConfig =
+                files.read("shop.conf", ShopConfiguration::load, ShopConfiguration.defaultConfiguration());
+        TemporaryAccessConfiguration temporaryAccessConfig = files.read(
                 "temporary-access.conf",
                 TemporaryAccessConfiguration::load,
                 TemporaryAccessConfiguration.defaultConfiguration());
-        RewardInboxConfiguration rewardConfig = loadConfig(
-                plugin,
-                dataDir,
-                "rewards.conf",
-                RewardInboxConfiguration::load,
-                RewardInboxConfiguration.defaultConfiguration());
-        WarpConfiguration warpConfig = loadConfig(
-                plugin, dataDir, "warps.conf", WarpConfiguration::load, WarpConfiguration.defaultConfiguration());
-        VaultConfiguration vaultConfig = loadConfig(
-                plugin, dataDir, "vault.conf", VaultConfiguration::load, VaultConfiguration.defaultConfiguration());
-        ChatConfiguration chatConfig = loadConfig(
-                plugin, dataDir, "chat.conf", ChatConfiguration::load, ChatConfiguration.defaultConfiguration());
-        InactivityConfiguration inactivityConfig = loadConfig(
-                plugin,
-                dataDir,
-                "inactivity.conf",
-                InactivityConfiguration::load,
-                InactivityConfiguration.defaultConfiguration());
-        MissionConfiguration missionConfig = loadConfig(
-                plugin,
-                dataDir,
-                "missions.conf",
-                MissionConfiguration::load,
-                MissionConfiguration.defaultConfiguration());
-        LevelConfiguration levelConfig = loadConfig(
-                plugin, dataDir, "levels.conf", LevelConfiguration::load, LevelConfiguration.defaultConfiguration());
-        BiomeConfiguration biomeConfig = loadConfig(
-                plugin, dataDir, "biomes.conf", BiomeConfiguration::load, BiomeConfiguration.defaultConfiguration());
-        InteractionEffects effectsConfig = loadConfig(
-                plugin,
-                dataDir,
-                "effects.conf",
-                EffectsConfiguration::load,
-                EffectsConfiguration.defaultConfiguration());
-        DimensionConfiguration dimensionConfig = loadConfig(
-                plugin,
-                dataDir,
-                "dimensions.conf",
-                DimensionConfiguration::load,
-                DimensionConfiguration.defaultConfiguration());
-        LimitConfiguration limitConfig = loadConfig(
-                plugin, dataDir, "limits.conf", LimitConfiguration::load, LimitConfiguration.defaultConfiguration());
-        AntiAbuseConfiguration antiAbuseConfig = loadConfig(
-                plugin,
-                dataDir,
-                "anti_abuse.conf",
-                AntiAbuseConfiguration::load,
-                AntiAbuseConfiguration.defaultConfiguration());
-        BoosterConfiguration boosterConfig = loadConfig(
-                plugin,
-                dataDir,
-                "boosters.conf",
-                BoosterConfiguration::load,
-                BoosterConfiguration.defaultConfiguration());
-        BankConfiguration bankConfig = loadConfig(
-                plugin, dataDir, "bank.conf", BankConfiguration::load, BankConfiguration.defaultConfiguration());
-        SettingsConfiguration settingsConfig = loadConfig(
-                plugin,
-                dataDir,
-                "settings.conf",
-                SettingsConfiguration::load,
-                SettingsConfiguration.defaultConfiguration());
-        ProtectionConfiguration protectionConfig = loadConfig(
-                plugin,
-                dataDir,
-                "protection.conf",
-                ProtectionConfiguration::load,
-                ProtectionConfiguration.defaultConfiguration());
-        PerformanceConfiguration performanceConfig = loadConfig(
-                plugin,
-                dataDir,
-                "performance.conf",
-                PerformanceConfiguration::load,
-                PerformanceConfiguration.defaultConfiguration());
-        InteractablesConfiguration interactablesConfig = loadConfig(
-                plugin,
-                dataDir,
+        RewardInboxConfiguration rewardConfig = files.read(
+                "rewards.conf", RewardInboxConfiguration::load, RewardInboxConfiguration.defaultConfiguration());
+        WarpConfiguration warpConfig =
+                files.read("warps.conf", WarpConfiguration::load, WarpConfiguration.defaultConfiguration());
+        VaultConfiguration vaultConfig =
+                files.read("vault.conf", VaultConfiguration::load, VaultConfiguration.defaultConfiguration());
+        ChatConfiguration chatConfig =
+                files.read("chat.conf", ChatConfiguration::load, ChatConfiguration.defaultConfiguration());
+        InactivityConfiguration inactivityConfig = files.read(
+                "inactivity.conf", InactivityConfiguration::load, InactivityConfiguration.defaultConfiguration());
+        MissionConfiguration missionConfig =
+                files.read("missions.conf", MissionConfiguration::load, MissionConfiguration.defaultConfiguration());
+        LevelConfiguration levelConfig =
+                files.read("levels.conf", LevelConfiguration::load, LevelConfiguration.defaultConfiguration());
+        BiomeConfiguration biomeConfig =
+                files.read("biomes.conf", BiomeConfiguration::load, BiomeConfiguration.defaultConfiguration());
+        InteractionEffects effectsConfig =
+                files.read("effects.conf", EffectsConfiguration::load, EffectsConfiguration.defaultConfiguration());
+        DimensionConfiguration dimensionConfig = files.read(
+                "dimensions.conf", DimensionConfiguration::load, DimensionConfiguration.defaultConfiguration());
+        LimitConfiguration limitConfig =
+                files.read("limits.conf", LimitConfiguration::load, LimitConfiguration.defaultConfiguration());
+        AntiAbuseConfiguration antiAbuseConfig = files.read(
+                "anti_abuse.conf", AntiAbuseConfiguration::load, AntiAbuseConfiguration.defaultConfiguration());
+        BoosterConfiguration boosterConfig =
+                files.read("boosters.conf", BoosterConfiguration::load, BoosterConfiguration.defaultConfiguration());
+        BankConfiguration bankConfig =
+                files.read("bank.conf", BankConfiguration::load, BankConfiguration.defaultConfiguration());
+        SettingsConfiguration settingsConfig =
+                files.read("settings.conf", SettingsConfiguration::load, SettingsConfiguration.defaultConfiguration());
+        ProtectionConfiguration protectionConfig = files.read(
+                "protection.conf", ProtectionConfiguration::load, ProtectionConfiguration.defaultConfiguration());
+        PerformanceConfiguration performanceConfig = files.read(
+                "performance.conf", PerformanceConfiguration::load, PerformanceConfiguration.defaultConfiguration());
+        InteractablesConfiguration interactablesConfig = files.read(
                 "interactables.conf",
                 InteractablesConfiguration::load,
                 InteractablesConfiguration.defaultConfiguration());
-        WorldConfiguration worldConfig = loadConfig(
-                plugin, dataDir, "world.conf", WorldConfiguration::load, WorldConfiguration.defaultConfiguration());
-        UpgradesConfiguration upgradesConfig = loadConfig(
-                plugin,
-                dataDir,
-                "upgrades.conf",
-                UpgradesConfiguration::load,
-                UpgradesConfiguration.defaultConfiguration());
-        PresetConfiguration presetConfig = loadConfig(
-                plugin, dataDir, "presets.conf", PresetConfiguration::load, PresetConfiguration.defaultConfiguration());
-        GeneratorsConfiguration generatorsConfig = loadConfig(
-                plugin,
-                dataDir,
-                "generators.conf",
-                GeneratorsConfiguration::load,
-                GeneratorsConfiguration.defaultConfiguration());
+        WorldConfiguration worldConfig =
+                files.read("world.conf", WorldConfiguration::load, WorldConfiguration.defaultConfiguration());
+        UpgradesConfiguration upgradesConfig =
+                files.read("upgrades.conf", UpgradesConfiguration::load, UpgradesConfiguration.defaultConfiguration());
+        PresetConfiguration presetConfig =
+                files.read("presets.conf", PresetConfiguration::load, PresetConfiguration.defaultConfiguration());
+        GeneratorsConfiguration generatorsConfig = files.read(
+                "generators.conf", GeneratorsConfiguration::load, GeneratorsConfiguration.defaultConfiguration());
 
         Path phasesFolder = dataDir.resolve("oneblock").resolve("phases");
-        oneBlockPhaseFiles(plugin, dataDir, phasesFolder);
-        com.uxplima.uxmskyblock.bukkit.config.OneBlockConfiguration oneBlockConfig = loadConfig(
-                plugin,
-                dataDir,
+        ConfigurationFiles.oneBlockPhaseFiles(plugin, dataDir, phasesFolder);
+        OneBlockConfiguration oneBlockConfig = files.read(
                 "oneblock.conf",
                 node -> {
                     // Each line that cannot be read as written is said with its file and line.
-                    var loaded = com.uxplima.uxmskyblock.bukkit.config.OneBlockConfiguration.loadReporting(
-                            node, phasesFolder);
-                    var unused = com.uxplima.uxmskyblock.bukkit.config.OneBlockLoadReport.say(dataDir, loaded);
+                    var loaded = OneBlockConfiguration.loadReporting(node, phasesFolder);
+                    var unused = OneBlockLoadReport.say(dataDir, loaded);
                     return loaded.config();
                 },
-                com.uxplima.uxmskyblock.bukkit.config.OneBlockConfiguration.defaultConfiguration());
-        com.uxplima.uxmskyblock.bukkit.config.LifecycleConfiguration lifecycleConfig = loadConfig(
-                plugin,
-                dataDir,
-                "lifecycle.conf",
-                com.uxplima.uxmskyblock.bukkit.config.LifecycleConfiguration::load,
-                com.uxplima.uxmskyblock.bukkit.config.LifecycleConfiguration.defaultConfiguration());
-        com.uxplima.uxmskyblock.bukkit.config.ChunkBlockConfiguration chunkBlockConfig = loadConfig(
-                plugin,
-                dataDir,
-                "chunkblock.conf",
-                com.uxplima.uxmskyblock.bukkit.config.ChunkBlockConfiguration::load,
-                com.uxplima.uxmskyblock.bukkit.config.ChunkBlockConfiguration.defaultConfiguration());
-        com.uxplima.uxmskyblock.bukkit.config.AcidIslandConfiguration acidIslandConfig = loadConfig(
-                plugin,
-                dataDir,
-                "acidisland.conf",
-                com.uxplima.uxmskyblock.bukkit.config.AcidIslandConfiguration::load,
-                com.uxplima.uxmskyblock.bukkit.config.AcidIslandConfiguration.defaultConfiguration());
-        com.uxplima.uxmskyblock.bukkit.config.CaveBlockConfiguration caveBlockConfig = loadConfig(
-                plugin,
-                dataDir,
-                "caveblock.conf",
-                com.uxplima.uxmskyblock.bukkit.config.CaveBlockConfiguration::load,
-                com.uxplima.uxmskyblock.bukkit.config.CaveBlockConfiguration.defaultConfiguration());
-        com.uxplima.uxmskyblock.bukkit.config.SkyGridConfiguration skyGridConfig = loadConfig(
-                plugin,
-                dataDir,
-                "skygrid.conf",
-                com.uxplima.uxmskyblock.bukkit.config.SkyGridConfiguration::load,
-                com.uxplima.uxmskyblock.bukkit.config.SkyGridConfiguration.defaultConfiguration());
-        com.uxplima.uxmskyblock.bukkit.config.BoxedConfiguration boxedConfig = loadConfig(
-                plugin,
-                dataDir,
-                "boxed.conf",
-                com.uxplima.uxmskyblock.bukkit.config.BoxedConfiguration::load,
-                com.uxplima.uxmskyblock.bukkit.config.BoxedConfiguration.defaultConfiguration());
-        com.uxplima.uxmskyblock.bukkit.config.PoseidonConfiguration poseidonConfig = loadConfig(
-                plugin,
-                dataDir,
-                "poseidon.conf",
-                com.uxplima.uxmskyblock.bukkit.config.PoseidonConfiguration::load,
-                com.uxplima.uxmskyblock.bukkit.config.PoseidonConfiguration.defaultConfiguration());
-        com.uxplima.uxmskyblock.bukkit.config.StrangerRealmsConfiguration strangerRealmsConfig = loadConfig(
-                plugin,
-                dataDir,
+                OneBlockConfiguration.defaultConfiguration());
+        LifecycleConfiguration lifecycleConfig = files.read(
+                "lifecycle.conf", LifecycleConfiguration::load, LifecycleConfiguration.defaultConfiguration());
+        ChunkBlockConfiguration chunkBlockConfig = files.read(
+                "chunkblock.conf", ChunkBlockConfiguration::load, ChunkBlockConfiguration.defaultConfiguration());
+        AcidIslandConfiguration acidIslandConfig = files.read(
+                "acidisland.conf", AcidIslandConfiguration::load, AcidIslandConfiguration.defaultConfiguration());
+        CaveBlockConfiguration caveBlockConfig = files.read(
+                "caveblock.conf", CaveBlockConfiguration::load, CaveBlockConfiguration.defaultConfiguration());
+        SkyGridConfiguration skyGridConfig =
+                files.read("skygrid.conf", SkyGridConfiguration::load, SkyGridConfiguration.defaultConfiguration());
+        BoxedConfiguration boxedConfig =
+                files.read("boxed.conf", BoxedConfiguration::load, BoxedConfiguration.defaultConfiguration());
+        PoseidonConfiguration poseidonConfig =
+                files.read("poseidon.conf", PoseidonConfiguration::load, PoseidonConfiguration.defaultConfiguration());
+        StrangerRealmsConfiguration strangerRealmsConfig = files.read(
                 "strangerrealms.conf",
-                com.uxplima.uxmskyblock.bukkit.config.StrangerRealmsConfiguration::load,
-                com.uxplima.uxmskyblock.bukkit.config.StrangerRealmsConfiguration.defaultConfiguration());
-        com.uxplima.uxmskyblock.bukkit.config.ParkourConfiguration parkourConfig = loadConfig(
-                plugin,
-                dataDir,
-                "parkour.conf",
-                com.uxplima.uxmskyblock.bukkit.config.ParkourConfiguration::load,
-                com.uxplima.uxmskyblock.bukkit.config.ParkourConfiguration.defaultConfiguration());
-        com.uxplima.uxmskyblock.bukkit.config.BrixConfiguration brixConfig = loadConfig(
-                plugin,
-                dataDir,
-                "brix.conf",
-                com.uxplima.uxmskyblock.bukkit.config.BrixConfiguration::load,
-                com.uxplima.uxmskyblock.bukkit.config.BrixConfiguration.defaultConfiguration());
-        com.uxplima.uxmskyblock.bukkit.config.TradeConfiguration tradeConfig = loadConfig(
-                plugin,
-                dataDir,
-                "trade.conf",
-                com.uxplima.uxmskyblock.bukkit.config.TradeConfiguration::load,
-                com.uxplima.uxmskyblock.bukkit.config.TradeConfiguration.defaultConfiguration());
-        com.uxplima.uxmskyblock.bukkit.config.TradeWindsConfiguration tradeWindsConfig = loadConfig(
-                plugin,
-                dataDir,
-                "tradewinds.conf",
-                com.uxplima.uxmskyblock.bukkit.config.TradeWindsConfiguration::load,
-                com.uxplima.uxmskyblock.bukkit.config.TradeWindsConfiguration.defaultConfiguration());
-        com.uxplima.uxmskyblock.bukkit.config.WebMapConfiguration webMapConfig = loadConfig(
-                plugin,
-                dataDir,
-                "webmap.conf",
-                com.uxplima.uxmskyblock.bukkit.config.WebMapConfiguration::load,
-                com.uxplima.uxmskyblock.bukkit.config.WebMapConfiguration.defaultConfiguration());
+                StrangerRealmsConfiguration::load,
+                StrangerRealmsConfiguration.defaultConfiguration());
+        ParkourConfiguration parkourConfig =
+                files.read("parkour.conf", ParkourConfiguration::load, ParkourConfiguration.defaultConfiguration());
+        BrixConfiguration brixConfig =
+                files.read("brix.conf", BrixConfiguration::load, BrixConfiguration.defaultConfiguration());
+        TradeConfiguration tradeConfig =
+                files.read("trade.conf", TradeConfiguration::load, TradeConfiguration.defaultConfiguration());
+        TradeWindsConfiguration tradeWindsConfig = files.read(
+                "tradewinds.conf", TradeWindsConfiguration::load, TradeWindsConfiguration.defaultConfiguration());
+        WebMapConfiguration webMapConfig =
+                files.read("webmap.conf", WebMapConfiguration::load, WebMapConfiguration.defaultConfiguration());
 
         ConfigurationWiring wiring = new ConfigurationWiring(
                 dataDir,
@@ -466,184 +375,47 @@ public final class ConfigurationLoader {
                 webMapConfig,
                 presetConfig);
 
-        wiring.useWallConfig(loadConfig(
-                plugin,
-                dataDir,
-                "walls.conf",
-                com.uxplima.uxmskyblock.bukkit.wall.WallConfiguration::load,
-                com.uxplima.uxmskyblock.bukkit.wall.WallConfiguration.defaultConfiguration()));
-        wiring.useIslandEffectsConfig(loadConfig(
-                plugin,
-                dataDir,
+        wiring.useWallConfig(
+                files.read("walls.conf", WallConfiguration::load, WallConfiguration.defaultConfiguration()));
+        wiring.useIslandEffectsConfig(files.read(
                 "island-effects.conf",
-                com.uxplima.uxmskyblock.bukkit.config.IslandEffectsConfiguration::load,
-                com.uxplima.uxmskyblock.bukkit.config.IslandEffectsConfiguration.defaultConfiguration()));
-        wiring.useBankPayoutsConfig(loadConfig(
-                plugin,
-                dataDir,
-                "bank.conf",
-                com.uxplima.uxmskyblock.bukkit.config.BankPayoutsConfiguration::load,
-                com.uxplima.uxmskyblock.bukkit.config.BankPayoutsConfiguration.defaultConfiguration()));
-        wiring.useStackingConfig(loadConfig(
-                plugin,
-                dataDir,
-                "stacking.conf",
-                com.uxplima.uxmskyblock.bukkit.config.StackingConfiguration::load,
-                com.uxplima.uxmskyblock.bukkit.config.StackingConfiguration.defaultConfiguration()));
-        wiring.useSignWarpsConfig(loadConfig(
-                plugin,
-                dataDir,
-                "warps.conf",
-                com.uxplima.uxmskyblock.bukkit.config.SignWarpsConfiguration::load,
-                com.uxplima.uxmskyblock.bukkit.config.SignWarpsConfiguration.defaultConfiguration()));
-        wiring.useVisitorsConfig(loadConfig(
-                plugin,
-                dataDir,
-                "visitors.conf",
-                com.uxplima.uxmskyblock.bukkit.config.VisitorsConfiguration::load,
-                com.uxplima.uxmskyblock.bukkit.config.VisitorsConfiguration.defaultConfiguration()));
-        wiring.useFlyConfig(loadConfig(
-                plugin,
-                dataDir,
-                "fly.conf",
-                com.uxplima.uxmskyblock.bukkit.config.IslandFlyConfiguration::load,
-                com.uxplima.uxmskyblock.bukkit.config.IslandFlyConfiguration.defaultConfiguration()));
-        wiring.useCarriedStateConfig(loadConfig(
-                plugin,
-                dataDir,
+                IslandEffectsConfiguration::load,
+                IslandEffectsConfiguration.defaultConfiguration()));
+        wiring.useBankPayoutsConfig(files.read(
+                "bank.conf", BankPayoutsConfiguration::load, BankPayoutsConfiguration.defaultConfiguration()));
+        wiring.useStackingConfig(
+                files.read("stacking.conf", StackingConfiguration::load, StackingConfiguration.defaultConfiguration()));
+        wiring.useSignWarpsConfig(
+                files.read("warps.conf", SignWarpsConfiguration::load, SignWarpsConfiguration.defaultConfiguration()));
+        wiring.useVisitorsConfig(
+                files.read("visitors.conf", VisitorsConfiguration::load, VisitorsConfiguration.defaultConfiguration()));
+        wiring.useFlyConfig(
+                files.read("fly.conf", IslandFlyConfiguration::load, IslandFlyConfiguration.defaultConfiguration()));
+        wiring.useCarriedStateConfig(files.read(
                 "player-state.conf",
-                com.uxplima.uxmskyblock.bukkit.config.CarriedStateConfiguration::load,
-                com.uxplima.uxmskyblock.bukkit.config.CarriedStateConfiguration.defaultConfiguration()));
+                CarriedStateConfiguration::load,
+                CarriedStateConfiguration.defaultConfiguration()));
         // A loot table is the operator's once written: shipped once, never brought up to date over their edits.
         for (String table : SHIPPED_LOOT) {
-            unpackResource(plugin, "loot/" + table, dataDir.resolve("loot").resolve(table));
+            ConfigurationFiles.unpackResource(
+                    plugin, "loot/" + table, dataDir.resolve("loot").resolve(table));
         }
-        com.uxplima.uxmskyblock.bukkit.loot.LootTables loot =
-                com.uxplima.uxmskyblock.bukkit.loot.LootTables.read(dataDir.resolve("loot"));
+        LootTables loot = LootTables.read(dataDir.resolve("loot"));
         loot.problems().forEach(LOGGER::warning);
         wiring.useLootTables(loot);
         wiring.validate();
         return wiring;
     }
 
+    /** Reads one module file of this server: unpacked, brought up to date and parsed, or the shipped value. */
+    private record ModuleFiles(JavaPlugin plugin, Path dataDir) {
+        <T> T read(String name, ConfigParser<T> parser, T fallback) {
+            return ConfigurationFiles.loadConfig(plugin, dataDir, name, parser, fallback);
+        }
+    }
+
     @FunctionalInterface
     public interface ConfigParser<T> {
         T parse(CommentedConfigurationNode node);
-    }
-
-    private static <T> T loadConfig(
-            JavaPlugin plugin, Path dataDir, String configName, ConfigParser<T> parser, T defaultVal) {
-        Path moduleFile = dataDir.resolve("modules").resolve(configName);
-        Path rootFile = dataDir.resolve(configName);
-
-        Path targetFile;
-        if (Files.exists(moduleFile)) {
-            targetFile = moduleFile;
-        } else if (Files.exists(rootFile)) {
-            targetFile = rootFile;
-        } else {
-            unpackResource(plugin, "modules/" + configName, moduleFile);
-            if (!Files.exists(moduleFile)) {
-                unpackResource(plugin, configName, moduleFile);
-            }
-            targetFile = moduleFile;
-        }
-        if (!bringUpToDate(plugin, dataDir, targetFile, "modules/" + configName)) {
-            bringUpToDate(plugin, dataDir, targetFile, configName);
-        }
-
-        if (Files.exists(targetFile)) {
-            try {
-                CommentedConfigurationNode node = HoconConfigurationLoader.builder()
-                        .path(targetFile)
-                        .build()
-                        .load();
-                return parser.parse(node);
-            } catch (Exception e) {
-                throw new IllegalStateException("Failed to parse configuration from " + targetFile, e);
-            }
-        }
-        return defaultVal;
-    }
-
-    /**
-     * Adds to the operator's {@code file} what this release ships in {@code resource} and the file lacks,
-     * and says so in one line. See {@link PluginSettings#bringUpToDate}.
-     *
-     * <p>A file that cannot be brought up to date still loads as it is: the server starts with the keys
-     * the operator has, and the line says which file and why.
-     */
-    private static boolean bringUpToDate(JavaPlugin plugin, Path dataDir, Path file, String resource) {
-        try {
-            if (PluginSettings.bringUpToDate(
-                    dataDir, file, resource, plugin.getClass().getClassLoader())) {
-                LOGGER.info("Added what this release brings to " + dataDir.relativize(file)
-                        + ". The file as it was is beside it as " + file.getFileName() + ".bak.");
-                return true;
-            }
-        } catch (RuntimeException failed) {
-            LOGGER.warning("Could not bring " + file + " up to date with this release: " + failed.getMessage()
-                    + ". It loads as it is.");
-        }
-        return false;
-    }
-
-    /**
-     * Moves phases still written inside the OneBlock file into a file each, then ships the phase files a fresh
-     * server lacks. Moved first, so a phase the operator wrote is never shadowed by the shipped file of its name.
-     */
-    private static void oneBlockPhaseFiles(JavaPlugin plugin, Path dataDir, Path phasesFolder) {
-        for (Path file :
-                List.of(dataDir.resolve("modules").resolve("oneblock.conf"), dataDir.resolve("oneblock.conf"))) {
-            if (!Files.exists(file)) {
-                continue;
-            }
-            try {
-                com.uxplima.uxmskyblock.bukkit.config.OneBlockPhaseFiles.moveIntoFiles(file, phasesFolder);
-            } catch (java.io.IOException | RuntimeException e) {
-                LOGGER.warning("The OneBlock phases written in " + file + " could not be moved into files ("
-                        + e.getMessage() + "). They are read from the list as they stand.");
-            }
-        }
-        for (String phase : com.uxplima.uxmskyblock.bukkit.config.OneBlockPhaseFiles.SHIPPED) {
-            unpackResource(plugin, "oneblock/phases/" + phase + ".conf", phasesFolder.resolve(phase + ".conf"));
-        }
-    }
-
-    /**
-     * Writes a shipped default next to the server, once, and never over an operator's edit.
-     *
-     * <p>A failure here is not fatal: the subsystem falls back to its own defaults and the server
-     * starts. It is not silent either. An operator whose disk was full or whose folder was read only
-     * would otherwise edit a file the plugin never wrote and wonder why nothing changed.
-     */
-    private static void unpackResource(JavaPlugin plugin, String resourcePath, Path targetPath) {
-        if (Files.exists(targetPath)) {
-            return;
-        }
-        try {
-            if (targetPath.getParent() != null) {
-                Files.createDirectories(targetPath.getParent());
-            }
-            try (InputStream in = plugin.getResource(resourcePath)) {
-                if (in != null) {
-                    Files.copy(in, targetPath);
-                }
-            }
-        } catch (Exception e) {
-            LOGGER.warning("Could not write the shipped default " + resourcePath + " to " + targetPath + ": "
-                    + e.getMessage() + ". The subsystem will use its built in defaults instead.");
-        }
-    }
-
-    private static @Nullable CommentedConfigurationNode loadHocon(Path file) {
-        if (!Files.exists(file)) {
-            return null;
-        }
-        try {
-            return HoconConfigurationLoader.builder().path(file).build().load();
-        } catch (Exception e) {
-            throw new IllegalStateException("Failed to load configuration file: " + file, e);
-        }
     }
 }
