@@ -550,6 +550,11 @@ final class IslandCommandWiring {
             modes.add(new com.uxplima.uxmskyblock.bukkit.brix.BrixAdmin(
                     gameplay.brixWiring().contests()));
         }
+        // Leaderboard displays serve every mode, as the boards do.
+        if (gameplay.topDisplays() != null) {
+            modes.add(new com.uxplima.uxmskyblock.bukkit.top.TopAdmin(
+                    java.util.Objects.requireNonNull(gameplay.topDisplays())));
+        }
         // Loot tables serve every mode, so their branch is always there.
         modes.add(new com.uxplima.uxmskyblock.bukkit.loot.LootAdmin(config::lootTables));
         if (gameplay.boxedWiring().enabled()) {

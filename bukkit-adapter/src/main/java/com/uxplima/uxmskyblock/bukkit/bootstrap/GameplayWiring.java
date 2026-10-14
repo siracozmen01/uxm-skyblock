@@ -868,6 +868,43 @@ public final class GameplayWiring {
         return creationWiring.leaderboardService();
     }
 
+    /** The leaderboard displays operators place, drawn once a minute; nothing with the leaderboards turned off. */
+    private com.uxplima.uxmskyblock.bukkit.top.@org.jspecify.annotations.Nullable TopDisplayBeat topDisplays;
+
+    public com.uxplima.uxmskyblock.bukkit.top.@org.jspecify.annotations.Nullable TopDisplayBeat topDisplays() {
+        return topDisplays;
+    }
+
+    /** Reads the displays placed and starts drawing them, when the leaderboards are on. */
+    void startTopDisplays(ConfigurationWiring config) {
+        if (!config.moduleSettings().isModuleEnabled("leaderboards") || topDisplays != null) {
+            return;
+        }
+        IslandLeaderboardService boards = leaderboardService();
+        IslandLocationService locations = locationService();
+        this.topDisplays = new com.uxplima.uxmskyblock.bukkit.top.TopDisplayBeat(
+                com.uxplima.uxmskyblock.bukkit.top.TopDisplays.read(
+                        config.dataDir().resolve("data").resolve("top-displays.conf")),
+                boards::getTop,
+                island -> locations
+                        .findIsland(island)
+                        .map(found -> found.ownerPlayerUuid().value()),
+                player -> java.util.Optional.ofNullable(
+                        org.bukkit.Bukkit.getOfflinePlayer(player).getName()),
+                config.messages(),
+                scheduler,
+                new com.uxplima.uxmskyblock.bukkit.top.BukkitTopPainter(config.messages()));
+        this.topDisplays.start();
+    }
+
+    /** Stops drawing the displays. */
+    public void stopTopDisplays() {
+        var running = topDisplays;
+        if (running != null) {
+            running.close();
+        }
+    }
+
     public IslandSeasonService seasonService() {
         return creationWiring.seasonService();
     }

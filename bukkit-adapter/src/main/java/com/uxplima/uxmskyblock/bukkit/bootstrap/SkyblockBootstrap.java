@@ -147,6 +147,8 @@ public final class SkyblockBootstrap implements AutoCloseable {
                 clusterTransportWiring.chatTransport(),
                 persistenceWiring.objectStoragePort(),
                 persistenceWiring.backupBucket());
+        // Before the commands are built, so /isadmin top has the displays to place.
+        this.gameplayWiring.startTopDisplays(configWiring);
 
         this.integrationWiring = new IntegrationWiring(
                 plugin,
@@ -493,6 +495,7 @@ public final class SkyblockBootstrap implements AutoCloseable {
             this.restServer = null;
         }
         featureModuleWiring.close();
+        gameplayWiring.stopTopDisplays();
         gameplayWiring.stopArrivals();
         gameplayWiring.missionService().flushDirtyProgress();
         gameplayWiring.oneBlockWiring().close();

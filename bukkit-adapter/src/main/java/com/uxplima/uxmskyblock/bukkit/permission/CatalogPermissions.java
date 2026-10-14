@@ -75,6 +75,12 @@ public enum CatalogPermissions {
             "uxmskyblock.admin.loot.mark",
             "Give a container a loot table, filled when it is first opened",
             PermissionDefault.OP),
+    ADMIN_TOP_ADD(
+            "uxmskyblock.admin.top.add",
+            "Make the sign, head or spot looked at show an island of a leaderboard",
+            PermissionDefault.OP),
+    ADMIN_TOP_REMOVE("uxmskyblock.admin.top.remove", "Take a leaderboard display away", PermissionDefault.OP),
+    ADMIN_TOP_LIST("uxmskyblock.admin.top.list", "List the leaderboard displays", PermissionDefault.OP),
     ADMIN_ONEBLOCK_RESPAWN(
             "uxmskyblock.admin.oneblock.respawn", "Lay a OneBlock island's block again", PermissionDefault.OP),
 
