@@ -92,7 +92,7 @@ class AContestIsBuiltVotedAndPlacedTest {
         assertThat(kept.votes).describedAs("voted again, kept once").containsEntry(List.of(1, first, ann), 5);
 
         now = START.plus(Duration.ofHours(3)).minusMillis(1);
-        assertThat(contests.settleIfDue(3, plot -> Set.of()))
+        assertThat(contests.settleIfDue(3, 0, plot -> Map.of()))
                 .describedAs("the votes' last moment")
                 .isEmpty();
         now = START.plus(Duration.ofHours(3));
@@ -117,18 +117,27 @@ class AContestIsBuiltVotedAndPlacedTest {
         contests.vote(second, ann, 5, 5);
         contests.vote(third, cem, 4, 5);
 
-        Map<IslandId, Set<PlayerUuid>> teams = Map.of(first, Set.of(ann), second, Set.of(bob, cem), third, Set.of(cem));
-        assertThat(contests.settleIfDue(2, plot -> teams.getOrDefault(plot, Set.of())))
+        // Dan joined the second plot's team once the votes had begun: he is paid nothing.
+        PlayerUuid dan = player();
+        Instant before = START.plus(Duration.ofHours(1));
+        Map<IslandId, Map<PlayerUuid, Instant>> teams = Map.of(
+                first, Map.of(ann, START),
+                second, Map.of(bob, START, cem, before, dan, before.plusMillis(1)),
+                third, Map.of(cem, START),
+                fourth, Map.of(dan, START));
+        assertThat(contests.settleIfDue(2, 1, plot -> teams.getOrDefault(plot, Map.of())))
                 .describedAs("not before the votes end")
                 .isEmpty();
         now = START.plus(Duration.ofHours(2));
-        Optional<BrixContests.Settled> settled = contests.settleIfDue(2, plot -> teams.getOrDefault(plot, Set.of()));
+        Optional<BrixContests.Settled> settled = contests.settleIfDue(2, 1, plot -> teams.getOrDefault(plot, Map.of()));
 
         assertThat(settled).isPresent();
         assertThat(settled.get().contest().settled()).isTrue();
         assertThat(settled.get().standings())
                 .extracting(ContestStanding::island)
-                .containsExactly(second, first, third, fourth);
+                .describedAs("the fourth drew no vote: not placed")
+                .containsExactly(second, first, third);
+        assertThat(settled.get().entered()).isEqualTo(4);
         assertThat(contests.current()).describedAs("settled, none under way").isEmpty();
         assertThat(contests.latest()).get().extracting(Contest::settled).isEqualTo(true);
         assertThat(contests.find(1)).get().extracting(Contest::theme).isEqualTo("A lighthouse");
@@ -141,7 +150,7 @@ class AContestIsBuiltVotedAndPlacedTest {
                         new ContestPayout(1, first, ann, ContestPayout.ENTERED),
                         new ContestPayout(1, first, ann, 2),
                         new ContestPayout(1, third, cem, ContestPayout.ENTERED));
-        assertThat(contests.settleIfDue(2, plot -> Set.of()))
+        assertThat(contests.settleIfDue(2, 0, plot -> Map.of()))
                 .describedAs("settled once")
                 .isEmpty();
 
@@ -155,6 +164,30 @@ class AContestIsBuiltVotedAndPlacedTest {
         assertThat(contests.current()).get().extracting(Contest::number).isEqualTo(2);
         assertThat(contests.close()).isEqualTo(BrixContests.Outcome.DONE);
         assertThat(kept.closed).containsExactly(2);
+    }
+
+    @Test
+    @DisplayName("A plot needs the fewest votes written to be placed; a plot alone without them wins nothing")
+    void fewVotesPlaceNothing() {
+        contests.open("A lighthouse", Duration.ofHours(1), Duration.ofHours(1));
+        contests.enter(first);
+        contests.enter(second);
+        now = START.plus(Duration.ofHours(1));
+        contests.vote(first, ann, 5, 5);
+        contests.vote(first, bob, 5, 5);
+        contests.vote(second, ann, 1, 5);
+        contests.vote(second, bob, 1, 5);
+        contests.vote(second, cem, 1, 5);
+        now = START.plus(Duration.ofHours(2));
+        Optional<BrixContests.Settled> settled =
+                contests.settleIfDue(3, 3, plot -> Map.of(new PlayerUuid(UUID.randomUUID()), START));
+        assertThat(settled).isPresent();
+        assertThat(settled.get().standings())
+                .describedAs("two votes are fewer than three, however many stars")
+                .extracting(ContestStanding::island)
+                .containsExactly(second);
+        assertThat(kept.payouts).extracting(ContestPayout::island).containsOnly(second);
+        assertThat(kept.payouts).extracting(ContestPayout::place).containsExactlyInAnyOrder(0, 1);
     }
 
     @Test

@@ -6,13 +6,11 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
-import java.util.Set;
 import java.util.UUID;
 import java.util.function.Function;
 import java.util.function.IntUnaryOperator;
@@ -321,7 +319,7 @@ public final class BrixContestPlay implements Listener {
                         player, "brix.contest.votes_open", resolvers(player, contest.theme(), left, entered)));
             }
             Optional<BrixContests.Settled> settled =
-                    contests.settleIfDue(config.places().size(), this::membersOf);
+                    contests.settleIfDue(config.places().size(), config.minVotes(), this::membersOf);
             if (settled.isPresent()) {
                 announce(settled.get());
                 everyone(player -> scheduler.async(() -> pay(player)));
@@ -336,7 +334,10 @@ public final class BrixContestPlay implements Listener {
         List<ContestStanding> standings = settled.standings();
         if (standings.isEmpty()) {
             everyone(player -> messages.send(
-                    player, "brix.contest.ended_empty", Placeholder.unparsed("theme", word(player, theme))));
+                    player,
+                    settled.entered() == 0 ? "brix.contest.ended_empty" : "brix.contest.ended_unplaced",
+                    Placeholder.unparsed("theme", word(player, theme)),
+                    Placeholder.unparsed("min", Integer.toString(config.minVotes()))));
             return;
         }
         int shown = Math.min(standings.size(), Math.max(1, config.places().size()));
@@ -380,12 +381,12 @@ public final class BrixContestPlay implements Listener {
         }
     }
 
-    /** The members of a plot, its owner among them, read from the database. */
-    private Set<PlayerUuid> membersOf(IslandId plot) {
-        Set<PlayerUuid> members = new HashSet<>();
+    /** The members of a plot, its owner among them, with when each joined; read from the database. */
+    private Map<PlayerUuid, Instant> membersOf(IslandId plot) {
+        Map<PlayerUuid, Instant> members = new HashMap<>();
         stored.apply(plot).ifPresent(island -> {
             for (IslandMember member : island.members().values()) {
-                members.add(member.playerUuid());
+                members.put(member.playerUuid(), member.joinedAt());
             }
         });
         return members;

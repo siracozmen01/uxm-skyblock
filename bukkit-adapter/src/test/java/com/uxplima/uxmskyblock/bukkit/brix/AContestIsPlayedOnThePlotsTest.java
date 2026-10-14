@@ -83,6 +83,7 @@ class AContestIsPlayedOnThePlotsTest extends MockBukkitHarness {
             Duration.ofHours(26),
             Duration.ofHours(1),
             5,
+            2,
             List.of("[message] entered %theme%"),
             List.of(List.of("[message] placed first on %theme%, place %place%"), List.of("[message] placed second")));
 
@@ -97,6 +98,18 @@ class AContestIsPlayedOnThePlotsTest extends MockBukkitHarness {
 
     @SuppressWarnings("NullAway.Init")
     private BrixContestPlay play;
+
+    @SuppressWarnings("NullAway.Init")
+    private IslandCommandTree tree;
+
+    @SuppressWarnings("NullAway.Init")
+    private BrixService service;
+
+    @SuppressWarnings("NullAway.Init")
+    private BrixContests held;
+
+    @SuppressWarnings("NullAway.Init")
+    private SchedulerPort scheduler;
 
     @SuppressWarnings("NullAway.Init")
     private CommandDispatcher<CommandSourceStack> players;
@@ -146,7 +159,7 @@ class AContestIsPlayedOnThePlotsTest extends MockBukkitHarness {
                 new ProfileId(UUID.randomUUID()),
                 START);
         islands.cacheIsland(land, "plots");
-        BrixService service = new BrixService(new BrixPlotsPort() {
+        service = new BrixService(new BrixPlotsPort() {
             @Override
             public Set<IslandId> findAll() {
                 return Set.copyOf(plots);
@@ -164,7 +177,7 @@ class AContestIsPlayedOnThePlotsTest extends MockBukkitHarness {
         });
         service.start(annPlot.id());
         service.start(bobPlot.id());
-        SchedulerPort scheduler = mock(SchedulerPort.class);
+        scheduler = mock(SchedulerPort.class);
         doAnswer(call -> {
                     call.getArgument(0, Runnable.class).run();
                     return null;
@@ -199,8 +212,9 @@ class AContestIsPlayedOnThePlotsTest extends MockBukkitHarness {
                 return now[0];
             }
         };
+        held = new BrixContests(kept, clock);
         play = new BrixContestPlay(
-                new BrixContests(kept, clock),
+                held,
                 service,
                 islands,
                 id -> Optional.ofNullable(stored.get(id)),
@@ -212,7 +226,7 @@ class AContestIsPlayedOnThePlotsTest extends MockBukkitHarness {
                 () -> server.getOnlinePlayers(),
                 bound -> picked[0] % bound,
                 clock);
-        IslandCommandTree tree = new IslandCommandTree(
+        tree = new IslandCommandTree(
                 mock(CreateIslandUseCase.class),
                 mock(IslandLocationService.class),
                 mock(IslandFlagService.class),
@@ -333,6 +347,15 @@ class AContestIsPlayedOnThePlotsTest extends MockBukkitHarness {
                 .contains("takes votes for 0d 1h 0m more. Plots entered: 2.")
                 .contains("from 1 to 5");
 
+        // Dee joins Bob's team once the votes have begun: the build was judged without her, so she is paid nothing.
+        PlayerMock dee = createMovingPlayer("Dee");
+        stored.put(
+                bobPlot.id(),
+                bobPlot.addMember(new IslandMember(
+                        new PlayerUuid(dee.getUniqueId()),
+                        new ProfileId(UUID.randomUUID()),
+                        IslandRole.MEMBER,
+                        START.plus(Duration.ofHours(26)).plusSeconds(1))));
         server.getPlayerList().disconnectPlayer(ann);
         now[0] = START.plus(Duration.ofHours(27)).minusMillis(1);
         play.beat();
@@ -351,6 +374,7 @@ class AContestIsPlayedOnThePlotsTest extends MockBukkitHarness {
                 .contains("placed first on A lighthouse, place 1")
                 .doesNotContain("placed second");
         assertThat(said(cem)).contains("placed first on A lighthouse");
+        assertThat(said(dee)).describedAs("joined after the building").doesNotContain("entered", "placed");
         assertThat(kept.paid).describedAs("Ann was away").hasSize(4);
 
         ann.reconnect();
@@ -404,6 +428,20 @@ class AContestIsPlayedOnThePlotsTest extends MockBukkitHarness {
                 .describedAs("the last placed no plot")
                 .contains("No build contest is under way.")
                 .doesNotContain("could not");
+
+        // One plot entered and voted for once, fewer than the two votes written: placed nothing, paid nothing.
+        Instant opened = now[0];
+        run(admin, op, "isadmin brix startcontest A tower");
+        run(ann, "island contest join");
+        now[0] = opened.plus(Duration.ofHours(26));
+        stand(op, 8);
+        run(op, "island contest vote 5");
+        said(ann);
+        said(bob);
+        now[0] = opened.plus(Duration.ofHours(27));
+        play.beat();
+        assertThat(said(bob)).contains("No plot drew the 2 votes it takes to be placed");
+        assertThat(said(ann)).describedAs("nothing paid").doesNotContain("entered A tower", "placed first");
     }
 
     @Test
@@ -418,7 +456,7 @@ class AContestIsPlayedOnThePlotsTest extends MockBukkitHarness {
                 mock(SchedulerPort.class),
                 Messages.bundled(),
                 new BrixConfiguration.Contests(
-                        List.of(), Duration.ofHours(1), Duration.ofHours(1), 5, List.of(), List.of()),
+                        List.of(), Duration.ofHours(1), Duration.ofHours(1), 5, 0, List.of(), List.of()),
                 new InteractionEffectPlayer(mock(SchedulerPort.class), Messages.bundled()),
                 List::of,
                 bound -> 0,

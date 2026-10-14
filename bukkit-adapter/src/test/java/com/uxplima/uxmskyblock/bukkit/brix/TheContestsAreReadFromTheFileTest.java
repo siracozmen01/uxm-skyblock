@@ -32,6 +32,7 @@ class TheContestsAreReadFromTheFileTest {
         assertThat(written("")).isEqualTo(BrixConfiguration.Contests.SHIPPED);
         assertThat(BrixConfiguration.Contests.SHIPPED.places()).hasSize(3);
         assertThat(BrixConfiguration.Contests.SHIPPED.mostStars()).isEqualTo(5);
+        assertThat(BrixConfiguration.Contests.SHIPPED.minVotes()).isEqualTo(3);
     }
 
     @Test
@@ -43,6 +44,7 @@ class TheContestsAreReadFromTheFileTest {
                     build = "2h"
                     vote = "30m"
                     most-stars = 10
+                    min-votes = 0
                     rewards {
                         entered = ["[message] thanks"]
                         places = [["[console] say first", "[message] first"], [], ["[message] third"]]
@@ -55,6 +57,7 @@ class TheContestsAreReadFromTheFileTest {
                         Duration.ofHours(2),
                         Duration.ofMinutes(30),
                         10,
+                        0,
                         List.of("[message] thanks"),
                         List.of(
                                 List.of("[console] say first", "[message] first"),
@@ -72,7 +75,8 @@ class TheContestsAreReadFromTheFileTest {
                 "contest { most-stars = 0 }",
                 "contest { most-stars = 11 }",
                 "contest { build = \"0s\" }",
-                "contest { vote = \"0s\" }")) {
+                "contest { vote = \"0s\" }",
+                "contest { min-votes = -1 }")) {
             assertThat(written(wrong)).describedAs(wrong).isEqualTo(BrixConfiguration.Contests.SHIPPED);
         }
         assertThat(written("contest { most-stars = 1 }").mostStars()).isEqualTo(1);

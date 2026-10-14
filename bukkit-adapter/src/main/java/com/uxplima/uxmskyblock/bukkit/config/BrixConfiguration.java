@@ -35,6 +35,7 @@ public record BrixConfiguration(boolean enabled, Ground ground, Modes modes, Rul
      * @param build how long plots are entered and built
      * @param vote how long votes are taken once the building ends
      * @param mostStars the most stars a vote gives, from 1
+     * @param minVotes the fewest votes a plot needs to be placed and paid at all
      * @param entered the list each member of every entered plot is paid
      * @param places the lists the members of the plots placed first, second and on are paid, first place first
      */
@@ -43,6 +44,7 @@ public record BrixConfiguration(boolean enabled, Ground ground, Modes modes, Rul
             Duration build,
             Duration vote,
             int mostStars,
+            int minVotes,
             List<String> entered,
             List<List<String>> places) {
 
@@ -51,6 +53,7 @@ public record BrixConfiguration(boolean enabled, Ground ground, Modes modes, Rul
                 Duration.ofDays(3),
                 Duration.ofDays(1),
                 5,
+                3,
                 List.of(),
                 List.of(List.of(), List.of(), List.of()));
 
@@ -62,6 +65,9 @@ public record BrixConfiguration(boolean enabled, Ground ground, Modes modes, Rul
             }
             if (mostStars < 1 || mostStars > 10) {
                 throw new IllegalArgumentException("most-stars is from 1 to 10, not " + mostStars);
+            }
+            if (minVotes < 0) {
+                throw new IllegalArgumentException("min-votes is not negative, not " + minVotes);
             }
             themes = List.copyOf(themes);
             entered = List.copyOf(entered);
@@ -201,6 +207,7 @@ public record BrixConfiguration(boolean enabled, Ground ground, Modes modes, Rul
                     AcidIslandConfiguration.durationOf(contest.node("build").getString(""), Contests.SHIPPED.build()),
                     AcidIslandConfiguration.durationOf(contest.node("vote").getString(""), Contests.SHIPPED.vote()),
                     contest.node("most-stars").getInt(Contests.SHIPPED.mostStars()),
+                    contest.node("min-votes").getInt(Contests.SHIPPED.minVotes()),
                     AcidIslandConfiguration.strings(paid.node("entered"), Contests.SHIPPED.entered()),
                     places);
         } catch (IllegalArgumentException e) {

@@ -6,9 +6,9 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
-import java.util.Set;
 import java.util.function.Function;
 
 import com.uxplima.uxmskyblock.core.domain.brix.Contest;
@@ -139,29 +139,40 @@ public final class BrixContests {
     }
 
     /**
-     * Settles the contest under way once its votes have ended: each member of each entered plot is owed the list
-     * every entry is paid, and the members of the plots placed 1 to {@code placesPaid} the list of their place.
-     * Answers the contest settled with its standings, or nothing when none was due.
+     * Settles the contest under way once its votes have ended. Only a plot that drew {@code minVotes} votes or more is
+     * placed: one nobody looked at earns nothing, and a plot alone in a contest does not win it by being there. Each
+     * member of each placed plot is owed the list every entry is paid, and the members of the plots placed 1 to
+     * {@code placesPaid} the list of their place; a member is paid only if they joined the team before the votes
+     * began, so a team filled once the building is judged earns nothing more.
+     *
+     * @param members each member of a plot with when they joined its team, read when the contest is settled
+     * @return the contest settled with its placed plots, best first, or nothing when none was due
      */
-    public Optional<Settled> settleIfDue(int placesPaid, Function<IslandId, Set<PlayerUuid>> members) {
+    public Optional<Settled> settleIfDue(
+            int placesPaid, int minVotes, Function<IslandId, Map<PlayerUuid, Instant>> members) {
         Optional<Contest> under = current();
         if (under.isEmpty() || under.get().phaseAt(clock.instant()) != Contest.Phase.ENDED) {
             return Optional.empty();
         }
         Contest contest = under.get();
-        List<ContestStanding> standings = standings(contest.number());
+        List<ContestStanding> all = standings(contest.number());
+        List<ContestStanding> placed =
+                all.stream().filter(standing -> standing.votes() >= minVotes).toList();
         List<ContestPayout> payouts = new ArrayList<>();
-        for (int at = 0; at < standings.size(); at++) {
-            IslandId plot = standings.get(at).island();
-            for (PlayerUuid member : members.apply(plot)) {
-                payouts.add(new ContestPayout(contest.number(), plot, member, ContestPayout.ENTERED));
+        for (int at = 0; at < placed.size(); at++) {
+            IslandId plot = placed.get(at).island();
+            for (Map.Entry<PlayerUuid, Instant> member : members.apply(plot).entrySet()) {
+                if (member.getValue().isAfter(contest.buildsUntil())) {
+                    continue;
+                }
+                payouts.add(new ContestPayout(contest.number(), plot, member.getKey(), ContestPayout.ENTERED));
                 if (at < placesPaid) {
-                    payouts.add(new ContestPayout(contest.number(), plot, member, at + 1));
+                    payouts.add(new ContestPayout(contest.number(), plot, member.getKey(), at + 1));
                 }
             }
         }
         port.settle(contest.number(), payouts);
-        return Optional.of(new Settled(contest.settle(), standings));
+        return Optional.of(new Settled(contest.settle(), placed, all.size()));
     }
 
     /** What a player is owed and has not been paid. */
@@ -174,8 +185,13 @@ public final class BrixContests {
         return port.markPaid(payout);
     }
 
-    /** A contest just settled, with its standings, best first. */
-    public record Settled(Contest contest, List<ContestStanding> standings) {
+    /**
+     * A contest just settled.
+     *
+     * @param standings its placed plots, best first
+     * @param entered how many plots were entered, placed or not
+     */
+    public record Settled(Contest contest, List<ContestStanding> standings, int entered) {
 
         public Settled {
             Objects.requireNonNull(contest, "contest must not be null");
