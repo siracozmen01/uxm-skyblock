@@ -158,4 +158,27 @@ class MissionConfigurationTest {
                                 com.uxplima.uxmskyblock.core.domain.mission.MissionTriggerType.MOB_KILL, "ZOMBIE", 1));
         org.assertj.core.api.Assertions.assertThat(config.lines()).containsOnlyKeys(miner.id());
     }
+
+    @org.junit.jupiter.api.Test
+    @DisplayName("The daily slots are read, none written is none, and a number below none is none")
+    void dailySlotsAreRead() throws IOException {
+        org.assertj.core.api.Assertions.assertThat(MissionConfiguration.load(HoconConfigurationLoader.builder()
+                                .buildAndLoadString(
+                                        "missions { daily-slots = 3, catalog { a { trigger-type = \"FISHING\" } } }"))
+                        .dailySlots())
+                .isEqualTo(3);
+        org.assertj.core.api.Assertions.assertThat(MissionConfiguration.load(
+                                HoconConfigurationLoader.builder().buildAndLoadString("missions { daily-slots = 2 }"))
+                        .dailySlots())
+                .describedAs("the shipped catalogue")
+                .isEqualTo(2);
+        org.assertj.core.api.Assertions.assertThat(MissionConfiguration.load(
+                                HoconConfigurationLoader.builder().buildAndLoadString("missions { daily-slots = -4 }"))
+                        .dailySlots())
+                .isZero();
+        org.assertj.core.api.Assertions.assertThat(MissionConfiguration.load(
+                                HoconConfigurationLoader.builder().buildAndLoadString("missions { }"))
+                        .dailySlots())
+                .isZero();
+    }
 }

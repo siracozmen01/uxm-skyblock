@@ -138,6 +138,7 @@ public final class GameplayCreationWiring {
                 }
             }
             this.missionService.resetIn(config.missionConfig().resetZone());
+            this.missionService.useDailySlots(config.missionConfig().dailySlots());
             // The mode an island plays is its owner's profile's, read once per island.
             com.uxplima.uxmskyblock.core.application.island.IslandStoragePort islands = persistence.islandStoragePort();
             this.missionService.readModesWith(island -> islands.findIslandById(island)

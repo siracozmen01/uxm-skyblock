@@ -24,7 +24,8 @@ public record MissionConfiguration(
         boolean enabled,
         List<MissionDefinition> missions,
         java.time.ZoneId resetZone,
-        Map<MissionId, List<MissionLine>> lines) {
+        Map<MissionId, List<MissionLine>> lines,
+        int dailySlots) {
 
     /** Missions whose days and weeks turn in the server's own zone. */
     public MissionConfiguration(boolean enabled, List<MissionDefinition> missions) {
@@ -33,7 +34,7 @@ public record MissionConfiguration(
 
     /** Missions of one line each. */
     public MissionConfiguration(boolean enabled, List<MissionDefinition> missions, java.time.ZoneId resetZone) {
-        this(enabled, missions, resetZone, Map.of());
+        this(enabled, missions, resetZone, Map.of(), 0);
     }
 
     public static final boolean DEFAULT_ENABLED = true;
@@ -42,6 +43,7 @@ public record MissionConfiguration(
         missions = (missions == null) ? List.of() : List.copyOf(missions);
         Objects.requireNonNull(resetZone, "resetZone must not be null");
         lines = Map.copyOf(lines);
+        dailySlots = Math.max(0, dailySlots);
     }
 
     public static MissionConfiguration defaultConfiguration() {
@@ -163,7 +165,12 @@ public record MissionConfiguration(
         java.time.ZoneId zone = zoneOf(node.node("reset-zone").getString("system"));
         ConfigurationNode catalogNode = node.node("catalog");
         if (catalogNode.virtual() || catalogNode.empty()) {
-            return new MissionConfiguration(enabled, defaultConfiguration().missions(), zone);
+            return new MissionConfiguration(
+                    enabled,
+                    defaultConfiguration().missions(),
+                    zone,
+                    Map.of(),
+                    node.node("daily-slots").getInt(0));
         }
 
         List<MissionDefinition> list = new ArrayList<>();
@@ -249,7 +256,12 @@ public record MissionConfiguration(
                             : java.util.Optional.of(MissionId.of(after))));
         }
 
-        return new MissionConfiguration(enabled, Collections.unmodifiableList(list), zone, linesOf);
+        return new MissionConfiguration(
+                enabled,
+                Collections.unmodifiableList(list),
+                zone,
+                linesOf,
+                node.node("daily-slots").getInt(0));
     }
 
     /**

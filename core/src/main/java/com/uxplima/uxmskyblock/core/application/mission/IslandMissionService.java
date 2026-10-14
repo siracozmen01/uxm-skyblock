@@ -82,6 +82,7 @@ public final class IslandMissionService {
 
     /** Lets go of the mode kept for an island that was erased. */
     public void forgetIsland(IslandId islandId) {
+        drawn.remove(islandId);
         Objects.requireNonNull(islandId, "islandId must not be null");
         modes.remove(islandId);
     }
@@ -103,11 +104,13 @@ public final class IslandMissionService {
             MissionDefinition mission = missionCatalog.get(whole);
             return mission != null && offered(islandId, mission, progress, now);
         }
-        if (!def.modes().isEmpty()) {
-            Optional<GameModeType> mode = modes.computeIfAbsent(islandId, island -> modeOf.apply(island));
-            if (mode.isEmpty() || !def.playedIn(mode.get())) {
-                return false;
-            }
+        if (!playable(islandId, def)) {
+            return false;
+        }
+        if (def.repeat() == com.uxplima.uxmskyblock.core.domain.mission.MissionRepeat.DAILY
+                && dailySlots > 0
+                && !drawnFor(islandId, now).contains(def.id())) {
+            return false;
         }
         if (def.after().isEmpty()) {
             return true;
@@ -116,6 +119,56 @@ public final class IslandMissionService {
         MissionProgress done = progress.get(def.after().get());
         // A chain whose first link the file no longer holds is offered: nobody could ever finish what is not there.
         return first == null || (done != null && current(first, done, now).completed());
+    }
+
+    /** Whether the island plays one of the mission's modes, or the mission names none. */
+    private boolean playable(IslandId islandId, MissionDefinition def) {
+        if (def.modes().isEmpty()) {
+            return true;
+        }
+        Optional<GameModeType> mode = modes.computeIfAbsent(islandId, island -> modeOf.apply(island));
+        return mode.isPresent() && def.playedIn(mode.get());
+    }
+
+    /** How many daily missions each island is offered a day, drawn from every one; none for no limit. */
+    private volatile int dailySlots;
+
+    /** The daily missions each island drew, with the day it drew them on. */
+    private final Map<IslandId, java.util.Map.Entry<Long, java.util.Set<MissionId>>> drawn = new ConcurrentHashMap<>();
+
+    /**
+     * Offers each island only {@code slots} of the daily missions its mode plays each day, drawn afresh at the turn
+     * of the day; zero offers them all.
+     *
+     * <p>The draw is worked out from the island, the day and each mission, not kept, so a restart or a second server
+     * offers the island the same missions all day.
+     */
+    public void useDailySlots(int slots) {
+        this.dailySlots = Math.max(0, slots);
+        drawn.clear();
+    }
+
+    /** The daily missions {@code islandId} is offered on the day {@code now} falls in. */
+    java.util.Set<MissionId> drawnFor(IslandId islandId, Instant now) {
+        long day = now.atZone(resetZone).toLocalDate().toEpochDay();
+        java.util.Map.Entry<Long, java.util.Set<MissionId>> today = drawn.get(islandId);
+        if (today != null && today.getKey() == day) {
+            return today.getValue();
+        }
+        java.util.Set<MissionId> picked = missionCatalog.values().stream()
+                .filter(def -> def.repeat() == com.uxplima.uxmskyblock.core.domain.mission.MissionRepeat.DAILY)
+                .filter(def -> playable(islandId, def))
+                .map(MissionDefinition::id)
+                .sorted(java.util.Comparator.comparingLong((MissionId id) -> java.util
+                                .UUID
+                                .nameUUIDFromBytes((islandId.value() + ":" + day + ":" + id.value())
+                                        .getBytes(java.nio.charset.StandardCharsets.UTF_8))
+                                .getMostSignificantBits())
+                        .thenComparing(MissionId::value))
+                .limit(dailySlots)
+                .collect(java.util.stream.Collectors.toUnmodifiableSet());
+        drawn.put(islandId, java.util.Map.entry(day, picked));
+        return picked;
     }
 
     /** Every mission the island is offered at {@code now}, for the profile's progress. */
