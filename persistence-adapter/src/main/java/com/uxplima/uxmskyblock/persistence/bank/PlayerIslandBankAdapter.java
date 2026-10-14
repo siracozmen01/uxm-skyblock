@@ -4,7 +4,6 @@ import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
-import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.List;
 import java.util.Locale;
@@ -12,7 +11,6 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 
-import com.google.gson.JsonObject;
 import com.uxplima.uxmlib.storage.sql.Database;
 import com.uxplima.uxmlib.storage.sql.Dialect;
 import com.uxplima.uxmskyblock.core.application.bank.IslandBankPort;
@@ -23,7 +21,6 @@ import com.uxplima.uxmskyblock.core.domain.event.StagedOutboxEvent;
 import com.uxplima.uxmskyblock.core.domain.identity.IslandId;
 import com.uxplima.uxmskyblock.persistence.sql.DialectTransactions;
 import com.uxplima.uxmskyblock.persistence.sql.SupportedDialects;
-import com.uxplima.uxmskyblock.persistence.sql.UniqueViolations;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -42,8 +39,9 @@ import org.jspecify.annotations.Nullable;
 public final class PlayerIslandBankAdapter implements IslandBankPort {
 
     private final Database database;
-    private final Dialect dialect;
-    private final DialectTransactions tx;
+    final Dialect dialect;
+    final DialectTransactions tx;
+    private final BankTransactionSteps steps = new BankTransactionSteps(this);
     private final SqlIslandBankLedger ledger;
 
     public PlayerIslandBankAdapter(Database database) {
@@ -234,83 +232,17 @@ public final class PlayerIslandBankAdapter implements IslandBankPort {
                 }
 
                 // Step 2: Insert PENDING reservation in processed_operations
-                String insertOpSql = """
-                        INSERT INTO processed_operations (
-                            operation_id, operation_scope, actor_id, idempotency_key,
-                            operation_type, resource_id, status, created_at
-                        ) VALUES (?, ?, ?, ?, 'BANK_TRANSACTION', ?, 'PENDING', CURRENT_TIMESTAMP)
-                        """;
-                try (PreparedStatement ps = connection.prepareStatement(insertOpSql)) {
-                    ps.setString(1, operationId.toString());
-                    ps.setString(2, effectiveScope);
-                    ps.setString(3, actorUuid.toString());
-                    ps.setString(4, idempotencyKey);
-                    ps.setString(5, islandId.value().toString());
-                    ps.executeUpdate();
-                } catch (SQLException collided) {
-                    // Another request with the same scope, actor and key reserved it between the check
-                    // above and this insert, and the engine held this one on the unique index until that
-                    // one committed. That is the same request, not a failure: roll this draft back and
-                    // answer with what the other one recorded. It used to surface as a persistence
-                    // error, so a caller retrying one deposit got a server error for its own retry.
-                    if (!UniqueViolations.isUniqueViolation(collided)) {
-                        throw collided;
-                    }
-                    tx.rollbackQuietly(connection);
-                    BankTransactionOutcome.DuplicateOperation winner =
-                            recordedOperation(connection, effectiveScope, actorUuid, idempotencyKey, operationId);
-                    tx.rollbackQuietly(connection);
-                    if (winner != null) {
-                        return winner;
-                    }
-                    throw collided;
+                BankTransactionOutcome.DuplicateOperation winner =
+                        steps.reserve(connection, operationId, effectiveScope, actorUuid, idempotencyKey, islandId);
+                if (winner != null) {
+                    return winner;
                 }
 
                 // Step 3: Authority lease verification with row locking
-                String authSql = (dialect == Dialect.SQLITE)
-                        ? "SELECT authoritative_node, authority_epoch, lease_expires_at, CURRENT_TIMESTAMP AS db_now FROM island_authorities WHERE island_id = ?"
-                        : "SELECT authoritative_node, authority_epoch, lease_expires_at, CURRENT_TIMESTAMP AS db_now FROM island_authorities WHERE island_id = ? FOR UPDATE";
-
-                try (PreparedStatement ps = connection.prepareStatement(authSql)) {
-                    ps.setString(1, islandId.value().toString());
-                    try (ResultSet rs = ps.executeQuery()) {
-                        if (!rs.next()) {
-                            updateProcessedOp(connection, operationId, "REJECTED", "AUTHORITY_NOT_FOUND");
-                            tx.commit(connection);
-                            return new BankTransactionOutcome.AuthorityRejected(
-                                    BankTransactionOutcome.AuthorityRejected.Kind.NO_AUTHORITY,
-                                    "Island authority record not found");
-                        }
-
-                        String authoritativeNode = rs.getString("authoritative_node");
-                        long authorityEpoch = rs.getLong("authority_epoch");
-                        Timestamp leaseExpiresAt = rs.getTimestamp("lease_expires_at");
-                        Timestamp dbNow = rs.getTimestamp("db_now");
-
-                        if (!authoritativeNode.equals(currentNode)) {
-                            updateProcessedOp(connection, operationId, "REJECTED", "AUTHORITY_NODE_MISMATCH");
-                            tx.commit(connection);
-                            return new BankTransactionOutcome.AuthorityRejected(
-                                    BankTransactionOutcome.AuthorityRejected.Kind.NO_AUTHORITY,
-                                    "Authority lease held by node: " + authoritativeNode);
-                        }
-
-                        if (authorityEpoch != expectedEpoch) {
-                            updateProcessedOp(connection, operationId, "REJECTED", "STALE_AUTHORITY_EPOCH");
-                            tx.commit(connection);
-                            return new BankTransactionOutcome.AuthorityRejected(
-                                    BankTransactionOutcome.AuthorityRejected.Kind.NO_AUTHORITY,
-                                    "Stale authority epoch: expected " + expectedEpoch + " but was " + authorityEpoch);
-                        }
-
-                        if (leaseExpiresAt == null || leaseExpiresAt.before(dbNow)) {
-                            updateProcessedOp(connection, operationId, "REJECTED", "AUTHORITY_LEASE_EXPIRED");
-                            tx.commit(connection);
-                            return new BankTransactionOutcome.AuthorityRejected(
-                                    BankTransactionOutcome.AuthorityRejected.Kind.NO_AUTHORITY,
-                                    "Authority lease has expired");
-                        }
-                    }
+                BankTransactionOutcome.AuthorityRejected refused =
+                        steps.refusedAuthority(connection, islandId, operationId, currentNode, expectedEpoch);
+                if (refused != null) {
+                    return refused;
                 }
 
                 // Step 4: Lock & read island_banks
@@ -403,40 +335,29 @@ public final class PlayerIslandBankAdapter implements IslandBankPort {
 
                 // Step 6: Append bank_transactions audit record
                 UUID txId = UUID.randomUUID();
-                String insertTxSql = """
-                        INSERT INTO bank_transactions (
-                            transaction_id, operation_id, island_id, actor_uuid,
-                            currency_id, currency_scale, delta_amount_minor_units,
-                            resulting_balance_minor_units, reason, bank_version, created_at
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-                        """;
-                try (PreparedStatement ps = connection.prepareStatement(insertTxSql)) {
-                    ps.setString(1, txId.toString());
-                    ps.setString(2, operationId.toString());
-                    ps.setString(3, islandId.value().toString());
-                    ps.setString(4, actorUuid.toString());
-                    ps.setString(5, upperCurrency);
-                    ps.setInt(6, currencyScale);
-                    ps.setLong(7, deltaAmountMinorUnits);
-                    ps.setLong(8, newBal);
-                    ps.setString(9, reason);
-                    // The version the bank row reached with this move, one more than the one it was read at.
-                    ps.setLong(10, expectedVersion + 1);
-                    ps.executeUpdate();
-                }
+                steps.writeAudit(
+                        connection,
+                        txId,
+                        operationId,
+                        islandId,
+                        actorUuid,
+                        upperCurrency,
+                        currencyScale,
+                        deltaAmountMinorUnits,
+                        newBal,
+                        reason,
+                        expectedVersion + 1);
 
                 // Step 7: Finalize processed_operations to APPLIED
-                JsonObject payloadObj = new JsonObject();
-                payloadObj.addProperty("status", "SUCCESS");
-                payloadObj.addProperty("islandId", islandId.value().toString());
-                payloadObj.addProperty("actorId", actorUuid.toString());
-                payloadObj.addProperty("amount", deltaAmountMinorUnits);
-                payloadObj.addProperty("currencyId", upperCurrency);
-                payloadObj.addProperty("scope", effectiveScope);
-                payloadObj.addProperty("reason", reason);
-                payloadObj.addProperty("newBalanceMinorUnits", newBal);
-                payloadObj.addProperty("transactionId", txId.toString());
-                String resultPayload = payloadObj.toString();
+                String resultPayload = BankTransactionSteps.resultPayload(
+                        islandId,
+                        actorUuid,
+                        deltaAmountMinorUnits,
+                        upperCurrency,
+                        effectiveScope,
+                        reason,
+                        newBal,
+                        txId);
                 updateProcessedOp(connection, operationId, "APPLIED", "SUCCESS", resultPayload);
 
                 // Step 7.5: Stage outbox event atomically in same transaction
@@ -492,7 +413,7 @@ public final class PlayerIslandBankAdapter implements IslandBankPort {
         }
     }
 
-    private void updateProcessedOp(Connection connection, UUID operationId, String status, String resultCode)
+    void updateProcessedOp(Connection connection, UUID operationId, String status, String resultCode)
             throws SQLException {
         updateProcessedOp(connection, operationId, status, resultCode, null);
     }
@@ -534,7 +455,7 @@ public final class PlayerIslandBankAdapter implements IslandBankPort {
     }
 
     /** What processed_operations already holds for this request, or null when it holds nothing. */
-    private static BankTransactionOutcome.@Nullable DuplicateOperation recordedOperation(
+    static BankTransactionOutcome.@Nullable DuplicateOperation recordedOperation(
             Connection connection, String scope, UUID actorUuid, String idempotencyKey, UUID operationId)
             throws SQLException {
         String checkOpSql = """
