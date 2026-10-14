@@ -307,8 +307,30 @@ class AMemberFliesOnTheirIslandTest extends MockBukkitHarness {
         assertThat(bought.flies(owner))
                 .describedAs("a purchase forgot the tiers for a moment")
                 .isTrue();
+        now = now.plus(IslandFly.UNREAD_FOR);
+        bought.onMove(new PlayerMoveEvent(owner, new Location(world, 7, 100, 5), new Location(world, 8, 100, 5)));
+        assertThat(bought.flies(owner)).describedAs("still within the while").isTrue();
+        now = now.plusSeconds(1);
+        bought.onMove(new PlayerMoveEvent(owner, new Location(world, 8, 100, 5), new Location(world, 9, 100, 5)));
+        assertThat(bought.flies(owner))
+                .describedAs("a read that never comes in sets them down")
+                .isFalse();
+
+        tiers.put(island.id().value(), 1);
+        bought.toggle(owner);
+        tiers.put(island.id().value(), -1);
+        bought.onMove(new PlayerMoveEvent(owner, new Location(world, 9, 100, 5), new Location(world, 10, 100, 5)));
+        tiers.put(island.id().value(), 1);
+        bought.onMove(new PlayerMoveEvent(owner, new Location(world, 10, 100, 5), new Location(world, 11, 100, 5)));
+        now = now.plus(IslandFly.UNREAD_FOR).plusSeconds(1);
+        tiers.put(island.id().value(), -1);
+        bought.onMove(new PlayerMoveEvent(owner, new Location(world, 11, 100, 5), new Location(world, 12, 100, 5)));
+        assertThat(bought.flies(owner))
+                .describedAs("a read that came in starts the while again")
+                .isTrue();
+
         tiers.put(island.id().value(), 0);
-        bought.onMove(new PlayerMoveEvent(owner, new Location(world, 7, 100, 5), new Location(world, 9, 100, 5)));
+        bought.onMove(new PlayerMoveEvent(owner, new Location(world, 12, 100, 5), new Location(world, 13, 100, 5)));
         assertThat(bought.flies(owner)).describedAs("known, and none bought").isFalse();
     }
 

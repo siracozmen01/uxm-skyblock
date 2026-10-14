@@ -58,6 +58,12 @@ public final class IslandFly implements Listener, ArrivalObserver {
      */
     private static final String UNREAD = "fly.reading";
 
+    /**
+     * How long a flier is kept up while their island's upgrades are read. A purchase forgets them for a moment, so a
+     * flier is not set down for it; but a read that never comes in must not keep wings that were never checked.
+     */
+    static final Duration UNREAD_FOR = Duration.ofSeconds(10);
+
     /** How long after being set down a player's fall is still the one spared. */
     static final Duration SPARED_FOR = Duration.ofSeconds(30);
 
@@ -73,6 +79,9 @@ public final class IslandFly implements Listener, ArrivalObserver {
     private final Set<UUID> flying = ConcurrentHashMap.newKeySet();
 
     private final Map<UUID, Instant> spared = new ConcurrentHashMap<>();
+
+    /** Since when each flier's island has been unread. */
+    private final Map<UUID, Instant> unreadSince = new ConcurrentHashMap<>();
 
     /**
      * @param tierOf the tier of an upgrade an island holds, zero for none, or below zero while it is not known
@@ -179,8 +188,19 @@ public final class IslandFly implements Listener, ArrivalObserver {
     /** Sets the player down if they may not fly where they now are. */
     private void check(Player player, Location at) {
         Optional<String> refused = refusal(player, at);
-        // An island whose upgrades are still being read keeps the flier up: a purchase forgets them for a moment.
-        if (refused.isEmpty() || refused.get().equals(UNREAD) || !flying.remove(player.getUniqueId())) {
+        if (refused.isEmpty()) {
+            unreadSince.remove(player.getUniqueId());
+            return;
+        }
+        // An island whose upgrades are still being read keeps the flier up for a while: a purchase forgets them.
+        if (refused.get().equals(UNREAD)) {
+            Instant since = unreadSince.computeIfAbsent(player.getUniqueId(), uuid -> clock.instant());
+            if (!clock.instant().isAfter(since.plus(UNREAD_FOR))) {
+                return;
+            }
+        }
+        unreadSince.remove(player.getUniqueId());
+        if (!flying.remove(player.getUniqueId())) {
             return;
         }
         ground(player);
@@ -216,6 +236,7 @@ public final class IslandFly implements Listener, ArrivalObserver {
     public void onQuit(PlayerQuitEvent event) {
         Player player = event.getPlayer();
         spared.remove(player.getUniqueId());
+        unreadSince.remove(player.getUniqueId());
         if (flying.remove(player.getUniqueId())) {
             ground(player);
         }
