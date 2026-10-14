@@ -355,6 +355,14 @@ public final class IslandCommandTree {
     /** {@code /is contest}, while Brix is enabled. */
     private com.uxplima.uxmskyblock.bukkit.fly.@Nullable IslandFly islandFly;
 
+    /** {@code /is values}, while the worth module is on. */
+    private com.uxplima.uxmskyblock.bukkit.worth.@Nullable BlockValues blockValues;
+
+    /** {@code /is values}: what each block is worth to an island. */
+    public void useBlockValues(com.uxplima.uxmskyblock.bukkit.worth.@Nullable BlockValues values) {
+        this.blockValues = values;
+    }
+
     /** {@code /is visitfee}, and the fee {@code /is visit} asks for, while the server charges one. */
     private com.uxplima.uxmskyblock.bukkit.visitor.@Nullable VisitFees visitFees;
 
@@ -847,6 +855,7 @@ public final class IslandCommandTree {
                 .then(Cmd.literal("courses").executes(this::executeCourses))
                 .then(Cmd.literal("plots").executes(this::executePlots))
                 .then(Cmd.literal("fly").executes(this::islandFly))
+                .then(Cmd.literal("values").executes(this::blockValues))
                 .then(Cmd.literal("visitfee")
                         .executes(ctx -> visitFee(ctx, null))
                         .then(Cmd.argument("amount", com.mojang.brigadier.arguments.DoubleArgumentType.doubleArg(0))
@@ -1092,6 +1101,23 @@ public final class IslandCommandTree {
             return Cmd.OK;
         }
         gallery.open(player);
+        return Cmd.OK;
+    }
+
+    private int blockValues(CommandContext<CommandSourceStack> ctx) {
+        if (!(ctx.getSource().getSender() instanceof Player player)) {
+            send(ctx.getSource().getSender(), "error.players_only");
+            return Cmd.OK;
+        }
+        com.uxplima.uxmskyblock.bukkit.worth.BlockValues values = this.blockValues;
+        if (values == null) {
+            send(player, "block_values.disabled");
+            return Cmd.OK;
+        }
+        // The values are the configuration's, in memory; the window opens on the player's own thread.
+        schedulerPort.onEntity(
+                new com.uxplima.uxmskyblock.core.domain.identity.PlayerUuid(player.getUniqueId()),
+                () -> values.open(player));
         return Cmd.OK;
     }
 

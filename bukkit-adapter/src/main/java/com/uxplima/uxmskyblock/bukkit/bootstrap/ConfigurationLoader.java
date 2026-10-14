@@ -102,6 +102,7 @@ public final class ConfigurationLoader {
             "tradewinds-market.conf",
             "tradewinds-contracts.conf",
             "parkour-courses.conf",
+            "block-values.conf",
             "brix-gallery.conf",
             "island-vault-page.conf",
             "player-trade.conf",

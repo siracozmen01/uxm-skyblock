@@ -511,6 +511,13 @@ final class IslandCommandWiring {
         tree.setMissionService(gameplay.missionService());
         tree.useIslandFly(gameplay.islandFly());
         tree.useVisitFees(visitFees(integration, config, persistence, gameplay, serverNodeId));
+        if (config.moduleSettings().isModuleEnabled("worth")) {
+            var wallet = integration.economyBridge();
+            var values = new com.uxplima.uxmskyblock.bukkit.worth.BlockValues(
+                    config::levelConfig, minorUnits -> wallet.format(minorUnits / 100.0), config.messages());
+            values.useMenuEngine(integration.menuEngine());
+            tree.useBlockValues(values);
+        }
         return tree;
     }
 
