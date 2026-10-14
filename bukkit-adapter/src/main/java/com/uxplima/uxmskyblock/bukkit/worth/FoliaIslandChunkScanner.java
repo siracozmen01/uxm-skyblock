@@ -118,6 +118,12 @@ public final class FoliaIslandChunkScanner implements IslandChunkScannerPort {
                                 }
                             }
                         }
+
+                        // 3. A stacked block stands for more than one: count the rest of its stack too.
+                        stackedBeyondOne(chunk, world, bounds, minY, maxY)
+                                .forEach((matKey, more) -> blockCounts
+                                        .computeIfAbsent(matKey, k -> new AtomicInteger(0))
+                                        .addAndGet(more));
                     } finally {
                         if (remainingChunks.decrementAndGet() == 0) {
                             Map<String, Integer> finalBlocks = new HashMap<>();
@@ -133,6 +139,27 @@ public final class FoliaIslandChunkScanner implements IslandChunkScannerPort {
                 });
             }
         }
+    }
+
+    /**
+     * How many blocks the stacks in {@code chunk} stand for beyond the one each is in the world, by kind, for the
+     * stacks inside {@code bounds} and the heights scanned, of a kind the scan counts.
+     */
+    Map<String, Integer> stackedBeyondOne(Chunk chunk, World world, IslandBounds bounds, int minY, int maxY) {
+        Map<String, Integer> more = new HashMap<>();
+        com.uxplima.uxmskyblock.bukkit.stack.BlockStacks.in(chunk).forEach((place, size) -> {
+            if (!bounds.contains(place.x(), place.z()) || place.y() < minY || place.y() >= maxY) {
+                return;
+            }
+            String matKey = world.getBlockAt(place.x(), place.y(), place.z())
+                    .getType()
+                    .getKey()
+                    .toString();
+            if (trackedBlocks.contains(matKey)) {
+                more.merge(matKey, size - 1, Integer::sum);
+            }
+        });
+        return more;
     }
 
     public Set<String> trackedBlocks() {

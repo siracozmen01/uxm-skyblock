@@ -483,6 +483,12 @@ public final class ConfigurationLoader {
                 "bank.conf",
                 com.uxplima.uxmskyblock.bukkit.config.BankPayoutsConfiguration::load,
                 com.uxplima.uxmskyblock.bukkit.config.BankPayoutsConfiguration.defaultConfiguration()));
+        wiring.useStackingConfig(loadConfig(
+                plugin,
+                dataDir,
+                "stacking.conf",
+                com.uxplima.uxmskyblock.bukkit.config.StackingConfiguration::load,
+                com.uxplima.uxmskyblock.bukkit.config.StackingConfiguration.defaultConfiguration()));
         wiring.useFlyConfig(loadConfig(
                 plugin,
                 dataDir,

@@ -627,6 +627,19 @@ public final class ConfigurationWiring {
         this.bankPayoutsConfig = Objects.requireNonNull(config, "config must not be null");
     }
 
+    /** Block stacking, {@code modules/stacking.conf}, the shipped one until the loader hands the file over. */
+    private volatile com.uxplima.uxmskyblock.bukkit.config.StackingConfiguration stackingConfig =
+            com.uxplima.uxmskyblock.bukkit.config.StackingConfiguration.defaultConfiguration();
+
+    public com.uxplima.uxmskyblock.bukkit.config.StackingConfiguration stackingConfig() {
+        return stackingConfig;
+    }
+
+    /** Hands over {@code modules/stacking.conf} as the server read it. */
+    public void useStackingConfig(com.uxplima.uxmskyblock.bukkit.config.StackingConfiguration config) {
+        this.stackingConfig = Objects.requireNonNull(config, "config must not be null");
+    }
+
     /** Flight on islands, {@code modules/fly.conf}, the shipped one until the loader hands the file over. */
     private volatile com.uxplima.uxmskyblock.bukkit.config.IslandFlyConfiguration flyConfig =
             com.uxplima.uxmskyblock.bukkit.config.IslandFlyConfiguration.defaultConfiguration();

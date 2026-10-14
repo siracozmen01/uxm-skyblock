@@ -200,6 +200,16 @@ public final class BootstrapEventRegistrar {
         if (featureModuleWiring.moduleRegistry().isModuleEnabled("worth") && gameplayWiring.worthListener() != null) {
             pm.registerEvents(gameplayWiring.worthListener(), plugin);
         }
+        if (featureModuleWiring.moduleRegistry().isModuleEnabled("worth")) {
+            // A block placed on one of its kind joins its stack, and each block of a stack counts toward worth.
+            pm.registerEvents(
+                    new com.uxplima.uxmskyblock.bukkit.stack.BlockStackListener(
+                            configWiring::stackingConfig,
+                            gameplayWiring.protectionListener(),
+                            gameplayWiring.worthService(),
+                            new com.uxplima.uxmskyblock.bukkit.stack.TextDisplayStackWorld(configWiring.messages())),
+                    plugin);
+        }
         if (featureModuleWiring.moduleRegistry().isModuleEnabled("dimensions")
                 && gameplayWiring.dimensionListener() != null) {
             pm.registerEvents(gameplayWiring.dimensionListener(), plugin);
