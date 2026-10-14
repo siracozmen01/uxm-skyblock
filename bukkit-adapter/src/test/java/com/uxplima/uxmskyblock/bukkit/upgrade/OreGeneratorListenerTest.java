@@ -137,4 +137,46 @@ class OreGeneratorListenerTest extends MockBukkitHarness {
 
         assertThat(event.getNewState().getType()).isEqualTo(Material.DIAMOND_ORE);
     }
+
+    @Test
+    @DisplayName("An ore generator booster makes each ore likelier and the stone the generator forms no likelier")
+    void aBoosterMakesOresLikelier() {
+        java.util.LinkedHashMap<Material, Double> rates = new java.util.LinkedHashMap<>();
+        rates.put(Material.COBBLESTONE, 0.7);
+        rates.put(Material.COAL_ORE, 0.2);
+        rates.put(Material.IRON_ORE, 0.1);
+        GeneratorsConfiguration config = new GeneratorsConfiguration(true, Map.of(1, rates));
+
+        assertThat(config.roll(1, 0.6)).isEqualTo(Material.COBBLESTONE);
+        assertThat(config.roll(1, 0.6, 2.0))
+                .describedAs("0.78 of 1.3 falls past the stone")
+                .isEqualTo(Material.COAL_ORE);
+        assertThat(config.roll(1, 0.5, 2.0))
+                .describedAs("0.65 of 1.3 is still stone")
+                .isEqualTo(Material.COBBLESTONE);
+        assertThat(config.roll(1, 0.95, 2.0)).isEqualTo(Material.IRON_ORE);
+        assertThat(config.roll(1, 0.82, 0.5))
+                .describedAs("nothing makes ores rarer: 0.82 of 1.0 is coal, as unboosted")
+                .isEqualTo(Material.COAL_ORE);
+
+        when(mockUpgradeService.isCached(islandId)).thenReturn(true);
+        when(mockUpgradeService.getCachedTier(islandId, ORE_UPGRADE_ID)).thenReturn(1);
+        OreGeneratorListener listener = new OreGeneratorListener(
+                mockUpgradeService,
+                new GeneratorsConfiguration(
+                        true, Map.of(1, Map.of(Material.COBBLESTONE, 1.0, Material.DIAMOND_ORE, 0.0001))),
+                spatialIndex);
+        listener.useBoosters((island, kind) -> island.equals(islandId)
+                        && kind == com.uxplima.uxmskyblock.core.domain.booster.BoosterCategory.ORE_GENERATOR
+                ? 1_000_000.0
+                : 1.0);
+        Block block = world.getBlockAt(0, 64, 0);
+        BlockState newState = block.getState();
+        newState.setType(Material.COBBLESTONE);
+        BlockFormEvent event = new BlockFormEvent(block, newState);
+        listener.onBlockForm(event);
+        assertThat(event.getNewState().getType())
+                .describedAs("a booster a million strong turns up the ore nearly always")
+                .isEqualTo(Material.DIAMOND_ORE);
+    }
 }

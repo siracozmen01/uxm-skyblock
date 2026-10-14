@@ -35,10 +35,25 @@ public record GeneratorsConfiguration(boolean enabled, Map<Integer, Map<Material
      * @return selected Material
      */
     public Material roll(int tier, double randomValue) {
-        Map<Material, Double> rates = ratesFor(tier);
-        if (rates == null) {
+        return roll(tier, randomValue, 1.0);
+    }
+
+    /** The blocks a generator forms of its own, which an ore generator booster never makes likelier. */
+    private static final java.util.Set<Material> FORMED =
+            java.util.EnumSet.of(Material.COBBLESTONE, Material.STONE, Material.BASALT);
+
+    /**
+     * As {@link #roll(int, double)}, with every ore's weight times {@code oreBoost}: an ore generator booster turns
+     * up the ores more often, and the stone the generator forms of its own as often as ever.
+     */
+    public Material roll(int tier, double randomValue, double oreBoost) {
+        Map<Material, Double> written = ratesFor(tier);
+        if (written == null) {
             return Material.COBBLESTONE;
         }
+        double boost = Math.max(1.0, oreBoost);
+        Map<Material, Double> rates = new java.util.LinkedHashMap<>();
+        written.forEach((block, weight) -> rates.put(block, FORMED.contains(block) ? weight : weight * boost));
 
         double totalWeight = 0.0;
         for (double w : rates.values()) {

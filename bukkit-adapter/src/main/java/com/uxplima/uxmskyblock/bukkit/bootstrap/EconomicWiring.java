@@ -205,6 +205,17 @@ public final class EconomicWiring {
                 ? new OreGeneratorListener(
                         this.upgradeService, config.generatorsConfig(), protectionListener.spatialIndex())
                 : null;
+        if (this.oreGeneratorListener != null && this.boosterListener != null) {
+            this.oreGeneratorListener.useBoosters(this.boosterListener::cachedMultiplier);
+        }
+        if (boostersEnabled) {
+            // Worked out off the event threads, so the booster is read where it is kept.
+            IslandBoosterService boosters = this.boosterService;
+            this.worthService.useWorthBoost(island -> boosters.getEffectiveMultiplier(
+                    island,
+                    com.uxplima.uxmskyblock.core.domain.booster.BoosterCategory.ISLAND_WORTH,
+                    java.time.Instant.now()));
+        }
         this.upgradesModule = new UpgradesModule(
                 this.upgradeService,
                 config.upgradesConfig(),

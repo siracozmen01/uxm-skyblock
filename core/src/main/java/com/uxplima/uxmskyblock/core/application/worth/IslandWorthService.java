@@ -197,7 +197,9 @@ public final class IslandWorthService {
         long totalScore = blockScore + spawnerScore + qScore + bScore;
         long level = totalScore / pointsPerLevel;
 
-        long rawWorth = index.getCachedEconomicWorth() + Math.max(0L, bankMinorUnits);
+        // An island worth booster makes what the island is worth more for as long as it runs; its level is its own.
+        double boost = Math.max(1.0, worthBoost.applyAsDouble(islandId));
+        long rawWorth = (long) ((index.getCachedEconomicWorth() + Math.max(0L, bankMinorUnits)) * boost);
         long dampedWorth = (long) (rawWorth * dampingFactor);
 
         leaderboardPort.updateIslandScore(islandId, totalScore, dampedWorth);
@@ -209,6 +211,13 @@ public final class IslandWorthService {
         }
         return score;
     }
+
+    /** Reads the island worth booster an island has running, whenever its score is worked out. */
+    public void useWorthBoost(java.util.function.ToDoubleFunction<IslandId> boost) {
+        this.worthBoost = Objects.requireNonNull(boost, "boost must not be null");
+    }
+
+    private volatile java.util.function.ToDoubleFunction<IslandId> worthBoost = island -> 1.0;
 
     /**
      * Told each island's score as it is worked out, so a rule that rides on the level follows it: a

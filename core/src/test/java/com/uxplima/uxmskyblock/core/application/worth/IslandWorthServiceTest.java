@@ -250,4 +250,26 @@ class IslandWorthServiceTest {
 
         assertThat(levels).containsExactly(2L);
     }
+
+    @Test
+    @DisplayName("An island worth booster makes the worth more while it runs, and leaves the level as it was")
+    void aWorthBoosterMakesTheWorthMore() {
+        service.recordBlockPlace(islandId, "minecraft:diamond_block", 2);
+        service.recordBlockPlace(islandId, "minecraft:emerald_block", 1);
+        service.useWorthBoost(island -> island.equals(islandId) ? 1.5 : 1.0);
+
+        IslandScoreBreakdown score = service.calculateScore(islandId, 0, 1_000L);
+
+        assertThat(score.rawEconomicWorthMinorUnits()).isEqualTo((long) (301_000L * 1.5));
+        long boosted = (long) (301_000L * 1.5);
+        assertThat(score.dampedEconomicWorthMinorUnits()).isEqualTo((long) (boosted * 0.85));
+        assertThat(score.calculatedLevel())
+                .describedAs("the level is the island's own")
+                .isEqualTo(30L);
+
+        service.useWorthBoost(island -> 0.5);
+        assertThat(service.calculateScore(islandId, 0, 1_000L).rawEconomicWorthMinorUnits())
+                .describedAs("nothing makes an island worth less")
+                .isEqualTo(301_000L);
+    }
 }
