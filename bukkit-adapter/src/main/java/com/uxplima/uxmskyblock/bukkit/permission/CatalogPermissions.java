@@ -63,6 +63,14 @@ public enum CatalogPermissions {
             "uxmskyblock.admin.parkour.resettimes",
             "Forget the runs on a Parkour course, of every runner or of one",
             PermissionDefault.OP),
+    ADMIN_BRIX_STARTCONTEST(
+            "uxmskyblock.admin.brix.startcontest",
+            "Open a Brix build contest, on a theme written or a configured one",
+            PermissionDefault.OP),
+    ADMIN_BRIX_STOPCONTEST(
+            "uxmskyblock.admin.brix.stopcontest",
+            "Take the Brix build contest under way off, with its entries and votes",
+            PermissionDefault.OP),
     ADMIN_LOOT_MARK(
             "uxmskyblock.admin.loot.mark",
             "Give a container a loot table, filled when it is first opened",

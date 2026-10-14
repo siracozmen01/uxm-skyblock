@@ -1,5 +1,6 @@
 package com.uxplima.uxmskyblock.bukkit.config;
 
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
@@ -20,7 +21,53 @@ import org.spongepowered.configurate.serialize.SerializationException;
  * @param modes the game modes on a plot
  * @param rules what cannot happen to a player on a plot
  */
-public record BrixConfiguration(boolean enabled, Ground ground, Modes modes, Rules rules) {
+public record BrixConfiguration(boolean enabled, Ground ground, Modes modes, Rules rules, Contests contests) {
+
+    /** A configuration with the shipped contests. */
+    public BrixConfiguration(boolean enabled, Ground ground, Modes modes, Rules rules) {
+        this(enabled, ground, modes, rules, Contests.SHIPPED);
+    }
+
+    /**
+     * The build contests.
+     *
+     * @param themes the themes a contest is opened on when the operator names none, by name
+     * @param build how long plots are entered and built
+     * @param vote how long votes are taken once the building ends
+     * @param mostStars the most stars a vote gives, from 1
+     * @param entered the list each member of every entered plot is paid
+     * @param places the lists the members of the plots placed first, second and on are paid, first place first
+     */
+    public record Contests(
+            List<String> themes,
+            Duration build,
+            Duration vote,
+            int mostStars,
+            List<String> entered,
+            List<List<String>> places) {
+
+        public static final Contests SHIPPED = new Contests(
+                List.of("lighthouse", "castle", "treehouse", "village", "ship", "garden"),
+                Duration.ofDays(3),
+                Duration.ofDays(1),
+                5,
+                List.of(),
+                List.of(List.of(), List.of(), List.of()));
+
+        public Contests {
+            Objects.requireNonNull(build, "build must not be null");
+            Objects.requireNonNull(vote, "vote must not be null");
+            if (build.isNegative() || build.isZero() || vote.isNegative() || vote.isZero()) {
+                throw new IllegalArgumentException("the building and the votes each take some time");
+            }
+            if (mostStars < 1 || mostStars > 10) {
+                throw new IllegalArgumentException("most-stars is from 1 to 10, not " + mostStars);
+            }
+            themes = List.copyOf(themes);
+            entered = List.copyOf(entered);
+            places = places.stream().map(List::copyOf).toList();
+        }
+    }
 
     private static final Logger LOGGER = Logger.getLogger(BrixConfiguration.class.getName());
 
@@ -137,7 +184,30 @@ public record BrixConfiguration(boolean enabled, Ground ground, Modes modes, Rul
                 rule.node("no-damage").getBoolean(Rules.SHIPPED.noDamage()),
                 rule.node("no-hunger").getBoolean(Rules.SHIPPED.noHunger()),
                 rule.node("no-spawning").getBoolean(Rules.SHIPPED.noSpawning()));
-        return new BrixConfiguration(root.node("enabled").getBoolean(true), ground, modes, rules);
+        ConfigurationNode contest = root.node("contest");
+        Contests contests;
+        try {
+            ConfigurationNode paid = contest.node("rewards");
+            List<List<String>> places = new java.util.ArrayList<>();
+            if (paid.node("places").virtual()) {
+                places.addAll(Contests.SHIPPED.places());
+            } else {
+                for (ConfigurationNode place : paid.node("places").childrenList()) {
+                    places.add(AcidIslandConfiguration.strings(place, List.of()));
+                }
+            }
+            contests = new Contests(
+                    AcidIslandConfiguration.strings(contest.node("themes"), Contests.SHIPPED.themes()),
+                    AcidIslandConfiguration.durationOf(contest.node("build").getString(""), Contests.SHIPPED.build()),
+                    AcidIslandConfiguration.durationOf(contest.node("vote").getString(""), Contests.SHIPPED.vote()),
+                    contest.node("most-stars").getInt(Contests.SHIPPED.mostStars()),
+                    AcidIslandConfiguration.strings(paid.node("entered"), Contests.SHIPPED.entered()),
+                    places);
+        } catch (IllegalArgumentException e) {
+            LOGGER.warning(() -> "modules/brix.conf contest: " + e.getMessage() + ". The shipped contests are used.");
+            contests = Contests.SHIPPED;
+        }
+        return new BrixConfiguration(root.node("enabled").getBoolean(true), ground, modes, rules, contests);
     }
 
     private static org.bukkit.GameMode gameMode(String written, org.bukkit.GameMode shipped) {

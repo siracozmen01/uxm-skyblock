@@ -349,6 +349,7 @@ final class IslandCommandWiring {
         if (gameplay.brixWiring().enabled()) {
             tree.usePlotSky(gameplay.brixWiring().skyCommands());
             tree.usePlotReset(gameplay.brixWiring().reset());
+            tree.useBrixContests(gameplay.brixWiring().contests());
         }
         // A Poseidon island's lore: a book on Java, a form on Bedrock, pages from the language files.
         if (gameplay.poseidonWiring().enabled()) {
@@ -496,6 +497,10 @@ final class IslandCommandWiring {
                             name -> java.util.Optional.ofNullable(org.bukkit.Bukkit.getOfflinePlayerIfCached(name))
                                     .map(org.bukkit.OfflinePlayer::getUniqueId))
                     .seasons(gameplay.parkourWiring().seasons()));
+        }
+        if (gameplay.brixWiring().enabled()) {
+            modes.add(new com.uxplima.uxmskyblock.bukkit.brix.BrixAdmin(
+                    gameplay.brixWiring().contests()));
         }
         // Loot tables serve every mode, so their branch is always there.
         modes.add(new com.uxplima.uxmskyblock.bukkit.loot.LootAdmin(config::lootTables));

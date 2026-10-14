@@ -662,7 +662,7 @@ public record AcidIslandConfiguration(
         return read;
     }
 
-    /** A span written as {@code 500ms}, {@code 2s}, {@code 5m}, {@code 1h} or a plain number of seconds. */
+    /** A span written as {@code 500ms}, {@code 2s}, {@code 5m}, {@code 1h}, {@code 3d} or a plain number of seconds. */
     static Duration durationOf(String written, Duration fallback) {
         String raw = written.trim().toLowerCase(java.util.Locale.ROOT);
         if (raw.isEmpty()) {
@@ -684,6 +684,14 @@ public record AcidIslandConfiguration(
             if (raw.endsWith("h")) {
                 return Duration.ofMillis(Math.round(
                         Double.parseDouble(raw.substring(0, raw.length() - 1).trim()) * 3_600_000));
+            }
+            if (raw.endsWith("d")) {
+                return Duration.ofMillis(Math.round(
+                        Double.parseDouble(raw.substring(0, raw.length() - 1).trim()) * 86_400_000));
+            }
+            // Java reads "3f" as a number; a unit this does not know is no number of seconds.
+            if (Character.isLetter(raw.charAt(raw.length() - 1))) {
+                return fallback;
             }
             return Duration.ofMillis(Math.round(Double.parseDouble(raw) * 1000));
         } catch (NumberFormatException e) {

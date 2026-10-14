@@ -26,7 +26,9 @@ public final class BrixWiring implements AutoCloseable {
     private final com.uxplima.uxmskyblock.core.application.brix.BrixSkies skies;
     private final com.uxplima.uxmskyblock.bukkit.brix.PlotSkyCommands skyCommands;
     private final com.uxplima.uxmskyblock.bukkit.brix.PlotReset reset;
+    private final com.uxplima.uxmskyblock.bukkit.brix.BrixContestPlay contests;
     private @org.jspecify.annotations.Nullable AutoCloseable beat;
+    private @org.jspecify.annotations.Nullable AutoCloseable contestBeat;
 
     public BrixWiring(
             ConfigurationWiring configuration,
@@ -65,8 +67,25 @@ public final class BrixWiring implements AutoCloseable {
                 config.rules(),
                 () -> persistence.gridAllocator().gridSpacing(),
                 config.ground().radius());
+        this.contests = new com.uxplima.uxmskyblock.bukkit.brix.BrixContestPlay(
+                new com.uxplima.uxmskyblock.core.application.brix.BrixContests(
+                        persistence.brixContestsPort(), java.time.Clock.systemUTC()),
+                service,
+                islands,
+                persistence.islandStoragePort()::findIslandById,
+                id -> java.util.Optional.ofNullable(
+                                org.bukkit.Bukkit.getOfflinePlayer(id).getName())
+                        .orElse(id.toString().substring(0, 8)),
+                scheduler,
+                configuration.messages(),
+                config.contests(),
+                new com.uxplima.uxmskyblock.bukkit.effect.InteractionEffectPlayer(scheduler, configuration.messages()),
+                org.bukkit.Bukkit::getOnlinePlayers,
+                bound -> java.util.concurrent.ThreadLocalRandom.current().nextInt(bound),
+                java.time.Clock.systemUTC());
         if (config.enabled()) {
             this.beat = modes.start();
+            this.contestBeat = contests.start();
         }
         scheduler.async(() -> {
             try {
@@ -98,6 +117,11 @@ public final class BrixWiring implements AutoCloseable {
         return reset;
     }
 
+    /** The build contests: their commands, their beat and their payouts. */
+    public com.uxplima.uxmskyblock.bukkit.brix.BrixContestPlay contests() {
+        return contests;
+    }
+
     /** What cannot happen on a plot. */
     public com.uxplima.uxmskyblock.bukkit.brix.BrixRules rules() {
         return rules;
@@ -126,6 +150,15 @@ public final class BrixWiring implements AutoCloseable {
                 running.close();
             } catch (Exception e) {
                 LOGGER.log(Level.WARNING, "Stopping the Brix modes failed.", e);
+            }
+        }
+        AutoCloseable looking = contestBeat;
+        contestBeat = null;
+        if (looking != null) {
+            try {
+                looking.close();
+            } catch (Exception e) {
+                LOGGER.log(Level.WARNING, "Stopping the Brix contest beat failed.", e);
             }
         }
     }

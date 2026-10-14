@@ -344,6 +344,12 @@ public final class IslandCommandTree {
     private com.uxplima.uxmskyblock.bukkit.brix.@Nullable PlotSkyCommands plotSky;
 
     private com.uxplima.uxmskyblock.bukkit.brix.@Nullable PlotReset plotReset;
+    private com.uxplima.uxmskyblock.bukkit.brix.@Nullable BrixContestPlay brixContests;
+
+    /** {@code /is contest}, while Brix is enabled. */
+    public void useBrixContests(com.uxplima.uxmskyblock.bukkit.brix.@Nullable BrixContestPlay contests) {
+        this.brixContests = contests;
+    }
 
     /** What {@code /is plot reset} clears, while islands can be Brix plots. */
     public void usePlotReset(com.uxplima.uxmskyblock.bukkit.brix.@Nullable PlotReset reset) {
@@ -813,6 +819,20 @@ public final class IslandCommandTree {
                                                         com.mojang.brigadier.arguments.IntegerArgumentType.getInteger(
                                                                 ctx, "number")))))))
                 .then(Cmd.literal("courses").executes(this::executeCourses))
+                .then(Cmd.literal("contest")
+                        .executes(ctx -> brixContest(ctx, com.uxplima.uxmskyblock.bukkit.brix.BrixContestPlay::show))
+                        .then(Cmd.literal("join")
+                                .executes(ctx ->
+                                        brixContest(ctx, com.uxplima.uxmskyblock.bukkit.brix.BrixContestPlay::join)))
+                        .then(Cmd.literal("vote")
+                                .then(Cmd.argument(
+                                                "stars", com.mojang.brigadier.arguments.IntegerArgumentType.integer())
+                                        .executes(ctx -> brixContest(
+                                                ctx,
+                                                (contests, player) -> contests.vote(
+                                                        player,
+                                                        com.mojang.brigadier.arguments.IntegerArgumentType.getInteger(
+                                                                ctx, "stars")))))))
                 .then(Cmd.literal("plot")
                         .then(Cmd.literal("reset")
                                 .executes(ctx -> plotReset(ctx, false))
@@ -1024,6 +1044,22 @@ public final class IslandCommandTree {
             return Cmd.OK;
         }
         courses.open(player);
+        return Cmd.OK;
+    }
+
+    private int brixContest(
+            CommandContext<CommandSourceStack> ctx,
+            java.util.function.BiConsumer<com.uxplima.uxmskyblock.bukkit.brix.BrixContestPlay, Player> act) {
+        if (!(ctx.getSource().getSender() instanceof Player player)) {
+            send(ctx.getSource().getSender(), "error.players_only");
+            return Cmd.OK;
+        }
+        com.uxplima.uxmskyblock.bukkit.brix.BrixContestPlay contests = this.brixContests;
+        if (contests == null) {
+            send(player, "brix.contest.none");
+            return Cmd.OK;
+        }
+        act.accept(contests, player);
         return Cmd.OK;
     }
 

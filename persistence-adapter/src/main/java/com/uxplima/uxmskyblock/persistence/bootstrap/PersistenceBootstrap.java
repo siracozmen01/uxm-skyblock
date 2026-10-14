@@ -166,6 +166,7 @@ public final class PersistenceBootstrap implements AutoCloseable {
     private final com.uxplima.uxmskyblock.persistence.leaderboard.SqlModeStandingsAdapter modeStandingsAdapter;
     private final com.uxplima.uxmskyblock.persistence.brix.SqlBrixPlotsAdapter brixPlotsAdapter;
     private final com.uxplima.uxmskyblock.persistence.brix.SqlBrixSkiesAdapter brixSkiesAdapter;
+    private final com.uxplima.uxmskyblock.persistence.brix.SqlBrixContestsAdapter brixContestsAdapter;
     private final com.uxplima.uxmskyblock.persistence.tradewinds.SqlVesselsAdapter vesselsAdapter;
     private final com.uxplima.uxmskyblock.persistence.inventory.VesselCargoJournalAdapter cargoJournal;
     private final com.uxplima.uxmskyblock.persistence.tradewinds.SqlVoyagesAdapter voyages;
@@ -286,6 +287,8 @@ public final class PersistenceBootstrap implements AutoCloseable {
                 new com.uxplima.uxmskyblock.persistence.leaderboard.SqlModeStandingsAdapter(database.dataSource());
         this.brixPlotsAdapter = new com.uxplima.uxmskyblock.persistence.brix.SqlBrixPlotsAdapter(database.dataSource());
         this.brixSkiesAdapter = new com.uxplima.uxmskyblock.persistence.brix.SqlBrixSkiesAdapter(database.dataSource());
+        this.brixContestsAdapter =
+                new com.uxplima.uxmskyblock.persistence.brix.SqlBrixContestsAdapter(database.dataSource());
         this.vesselsAdapter =
                 new com.uxplima.uxmskyblock.persistence.tradewinds.SqlVesselsAdapter(database.dataSource());
         this.cargoJournal = new com.uxplima.uxmskyblock.persistence.inventory.VesselCargoJournalAdapter(database);
@@ -597,6 +600,11 @@ public final class PersistenceBootstrap implements AutoCloseable {
     /** The time and weather each Brix plot's team set. */
     public com.uxplima.uxmskyblock.core.application.brix.BrixSkiesPort brixSkiesPort() {
         return brixSkiesAdapter;
+    }
+
+    /** The Brix build contests, their entries, votes and payouts. */
+    public com.uxplima.uxmskyblock.core.application.brix.BrixContestsPort brixContestsPort() {
+        return brixContestsAdapter;
     }
 
     /** Which islands are TradeWinds vessels. */
