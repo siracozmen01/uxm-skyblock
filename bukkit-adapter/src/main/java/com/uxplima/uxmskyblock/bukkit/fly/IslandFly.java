@@ -15,13 +15,16 @@ import java.util.function.ToIntBiFunction;
 
 import org.bukkit.GameMode;
 import org.bukkit.Location;
+import org.bukkit.NamespacedKey;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 import org.bukkit.event.entity.EntityDamageEvent;
+import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.event.player.PlayerMoveEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
+import org.bukkit.persistence.PersistentDataType;
 
 import com.uxplima.uxmskyblock.bukkit.arrival.Arrival;
 import com.uxplima.uxmskyblock.bukkit.arrival.ArrivalObserver;
@@ -41,6 +44,13 @@ import com.uxplima.uxmskyblock.core.domain.upgrade.UpgradeId;
  * which Folia announces by no event, by the arrival watch.
  */
 public final class IslandFly implements Listener, ArrivalObserver {
+
+    /**
+     * The mark of wings this gave, kept on the player. The game saves a player's flight with them, so a server that
+     * stopped without a quit, or a plugin taken off, would leave wings nothing here remembers to take back; a player
+     * who joins still marked is set down.
+     */
+    static final NamespacedKey MARK = new NamespacedKey("uxmskyblock", "island-fly");
 
     /** How long after being set down a player's fall is still the one spared. */
     static final Duration SPARED_FOR = Duration.ofSeconds(30);
@@ -104,6 +114,7 @@ public final class IslandFly implements Listener, ArrivalObserver {
             return;
         }
         flying.add(player.getUniqueId());
+        player.getPersistentDataContainer().set(MARK, PersistentDataType.BYTE, (byte) 1);
         player.setAllowFlight(true);
         player.setFlying(true);
         messages.send(player, "fly.on");
@@ -177,6 +188,16 @@ public final class IslandFly implements Listener, ArrivalObserver {
         }
     }
 
+    /** A player who joins with the mark of wings given before is set down: nothing here gave them this time. */
+    @EventHandler(priority = EventPriority.LOWEST)
+    public void onJoin(PlayerJoinEvent event) {
+        Player player = event.getPlayer();
+        if (!flying.contains(player.getUniqueId())
+                && player.getPersistentDataContainer().has(MARK)) {
+            ground(player);
+        }
+    }
+
     @EventHandler(priority = EventPriority.MONITOR)
     public void onQuit(PlayerQuitEvent event) {
         Player player = event.getPlayer();
@@ -188,6 +209,7 @@ public final class IslandFly implements Listener, ArrivalObserver {
 
     /** Takes back the wings this gave, unless the player's game mode gives them their own. */
     private static void ground(Player player) {
+        player.getPersistentDataContainer().remove(MARK);
         GameMode mode = player.getGameMode();
         if (mode == GameMode.CREATIVE || mode == GameMode.SPECTATOR) {
             return;

@@ -260,6 +260,37 @@ class AMemberFliesOnTheirIslandTest extends MockBukkitHarness {
     }
 
     @Test
+    @DisplayName("Wings given before a stop with no quit are taken back on joining, and others' are left alone")
+    void wingsLeftByAStopAreTakenBack() {
+        IslandFly before = fly(shipped());
+        before.toggle(member);
+        assertThat(member.getPersistentDataContainer().has(IslandFly.MARK)).isTrue();
+
+        IslandFly after = fly(shipped());
+        after.onJoin(new org.bukkit.event.player.PlayerJoinEvent(member, Component.empty()));
+        assertThat(member.getAllowFlight())
+                .describedAs("the server stopped with them aloft")
+                .isFalse();
+        assertThat(member.getPersistentDataContainer().has(IslandFly.MARK)).isFalse();
+
+        owner.setAllowFlight(true);
+        after.onJoin(new org.bukkit.event.player.PlayerJoinEvent(owner, Component.empty()));
+        assertThat(owner.getAllowFlight())
+                .describedAs("wings given by another, unmarked")
+                .isTrue();
+
+        after.toggle(member);
+        after.onJoin(new org.bukkit.event.player.PlayerJoinEvent(member, Component.empty()));
+        assertThat(member.getAllowFlight())
+                .describedAs("flying by this one now")
+                .isTrue();
+        after.toggle(member);
+        assertThat(member.getPersistentDataContainer().has(IslandFly.MARK))
+                .describedAs("coming down takes the mark off")
+                .isFalse();
+    }
+
+    @Test
     @DisplayName("With the fall not spared, a player set down for leaving takes it")
     void aFallNotSpared() {
         IslandFly fly = fly(new IslandFlyConfiguration(true, null, "", false));
