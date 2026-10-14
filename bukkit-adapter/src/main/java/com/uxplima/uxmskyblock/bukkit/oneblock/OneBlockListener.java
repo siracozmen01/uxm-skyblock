@@ -1,6 +1,5 @@
 package com.uxplima.uxmskyblock.bukkit.oneblock;
 
-import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 
@@ -16,8 +15,6 @@ import org.bukkit.event.block.BlockBreakEvent;
 import org.bukkit.util.BoundingBox;
 import org.bukkit.util.Vector;
 
-import net.kyori.adventure.text.minimessage.tag.resolver.Placeholder;
-
 import com.uxplima.uxmskyblock.bukkit.effect.InteractionEffectPlayer;
 import com.uxplima.uxmskyblock.bukkit.effect.InteractionEffects;
 import com.uxplima.uxmskyblock.bukkit.i18n.Messages;
@@ -28,7 +25,6 @@ import com.uxplima.uxmskyblock.core.application.oneblock.OneBlockService;
 import com.uxplima.uxmskyblock.core.application.scheduler.SchedulerPort;
 import com.uxplima.uxmskyblock.core.domain.identity.IslandId;
 import com.uxplima.uxmskyblock.core.domain.island.Island;
-import com.uxplima.uxmskyblock.core.domain.mission.MissionTriggerType;
 
 /**
  * Brings a OneBlock island's block back when it is broken, as whatever its phase draws.
@@ -42,25 +38,28 @@ import com.uxplima.uxmskyblock.core.domain.mission.MissionTriggerType;
  */
 public final class OneBlockListener implements Listener {
 
-    private final OneBlockService service;
+    /** What one counted break of the block does: the next block laid, a creature or a chest set on it, a phase begun or finished, and the island told. */
+    private final OneBlockBreaking breaking = new OneBlockBreaking(this);
+
+    final OneBlockService service;
     private final IslandProtectionListener islands;
-    private final SchedulerPort scheduler;
-    private final Messages messages;
-    private final InteractionEffects effects;
-    private final InteractionEffectPlayer effectPlayer;
-    private volatile ModeMissions missions = ModeMissions.NONE;
-    private volatile OneBlockDraws draws = OneBlockDraws.PLAIN;
-    private volatile @org.jspecify.annotations.Nullable OneBlockMoments moments;
-    private volatile @org.jspecify.annotations.Nullable OneBlockPhaseLists phaseLists;
-    private volatile @org.jspecify.annotations.Nullable OneBlockPauses pauses;
+    final SchedulerPort scheduler;
+    final Messages messages;
+    final InteractionEffects effects;
+    final InteractionEffectPlayer effectPlayer;
+    volatile ModeMissions missions = ModeMissions.NONE;
+    volatile OneBlockDraws draws = OneBlockDraws.PLAIN;
+    volatile @org.jspecify.annotations.Nullable OneBlockMoments moments;
+    volatile @org.jspecify.annotations.Nullable OneBlockPhaseLists phaseLists;
+    volatile @org.jspecify.annotations.Nullable OneBlockPauses pauses;
     private volatile @org.jspecify.annotations.Nullable OneBlockGates gates;
     private volatile @org.jspecify.annotations.Nullable OneBlockBranches branches;
-    private volatile @org.jspecify.annotations.Nullable OneBlockProgressBars bars;
-    private volatile @org.jspecify.annotations.Nullable OneBlockBlockLines blockLines;
-    private volatile @org.jspecify.annotations.Nullable OneBlockBiomes biomes;
-    private volatile com.uxplima.uxmskyblock.core.application.oneblock.@org.jspecify.annotations.Nullable OneBlockContributions
+    volatile @org.jspecify.annotations.Nullable OneBlockProgressBars bars;
+    volatile @org.jspecify.annotations.Nullable OneBlockBlockLines blockLines;
+    volatile @org.jspecify.annotations.Nullable OneBlockBiomes biomes;
+    volatile com.uxplima.uxmskyblock.core.application.oneblock.@org.jspecify.annotations.Nullable OneBlockContributions
             contributions;
-    private volatile java.util.function.DoubleSupplier luck =
+    volatile java.util.function.DoubleSupplier luck =
             () -> java.util.concurrent.ThreadLocalRandom.current().nextDouble();
 
     public OneBlockListener(
@@ -207,7 +206,7 @@ public final class OneBlockListener implements Listener {
                                 x >> 4,
                                 z >> 4,
                                 () -> service.onBreak(id)
-                                        .ifPresent(next -> counted(owner, player, world, x, y, z, next))));
+                                        .ifPresent(next -> breaking.counted(owner, player, world, x, y, z, next))));
                 return;
             }
         }
@@ -215,7 +214,7 @@ public final class OneBlockListener implements Listener {
         if (broken.isEmpty()) {
             return;
         }
-        counted(island.get(), player, world, x, y, z, broken.get());
+        breaking.counted(island.get(), player, world, x, y, z, broken.get());
     }
 
     /** Lays the island's block again as the phase it stands in draws it, for a break that did not count. */
@@ -232,191 +231,8 @@ public final class OneBlockListener implements Listener {
                 }));
     }
 
-    /**
-     * What a counted break does: the block comes back as the draw or a moment, a phase that begins does so with its
-     * lists, and a phase that waits begins with bedrock.
-     */
-    private void counted(Island owner, Player player, World world, int x, int y, int z, OneBlockService.Broken next) {
-        var members = contributions;
-        if (members != null) {
-            members.count(
-                    owner.id(), new com.uxplima.uxmskyblock.core.domain.identity.PlayerUuid(player.getUniqueId()));
-        }
-        OneBlockPauses waits = pauses;
-        OneBlockDraws ahead = draws;
-        OneBlockProgressBars shown = bars;
-        if (shown != null) {
-            scheduler.onEntity(player.getUniqueId(), () -> shown.show(player, next.position()));
-        }
-        // A hostile creature drawn ahead is told now, so the breaker is ready when it comes.
-        for (OneBlockService.Coming coming : next.coming()) {
-            if (!ahead.hostile(coming.creature())) {
-                continue;
-            }
-            net.kyori.adventure.text.Component creature = ahead.creatureName(coming.creature(), player);
-            messages.send(
-                    player,
-                    "oneblock.creature_coming",
-                    Placeholder.component("creature", creature),
-                    Placeholder.unparsed("breaks", Long.toString(coming.inBreaks())));
-            effectPlayer.fire(
-                    effects,
-                    "oneblock-creature-coming",
-                    player,
-                    Map.of(
-                            "creature",
-                            ahead.plainCreatureName(coming.creature()),
-                            "breaks",
-                            Long.toString(coming.inBreaks())));
-        }
-        // Set once the break has finished: set now, the break would clear it again.
-        OneBlockDraws drawn = draws;
-        OneBlockMoments happens = moments;
-        IslandId islandId = owner.id();
-        String phase = next.position().phase().key();
-        java.time.Duration pause = waits != null && next.phaseBegan() ? waits.pauseOf(phase) : java.time.Duration.ZERO;
-        OneBlockBiomes painted = biomes;
-        if (painted != null && next.phaseBegan()) {
-            painted.began(owner, world, x, z, phase);
-        }
-        String momentKey = "moment:" + next.position().intoPhase();
-        // A moment the island was paid in this pass, before a crash or an operator set its count back, is not had.
-        // A phase that waits begins with bedrock, so nothing is laid at its first break but that.
-        java.util.Optional<com.uxplima.uxmskyblock.bukkit.config.OneBlockMoment> moment =
-                happens == null || !pause.isZero()
-                        ? java.util.Optional.empty()
-                        : happens.at(phase, next.position().intoPhase())
-                                .filter(m -> service.claim(islandId, phase, momentKey, next.nextCycle()));
-        scheduler.onRegion(world.getName(), x >> 4, z >> 4, () -> {
-            OneBlockBlockLines over = blockLines;
-            if (waits != null && !pause.isZero()) {
-                // The countdown is the line while the phase waits.
-                if (over != null) {
-                    over.take(islandId);
-                }
-                waits.begin(islandId, phase, pause, world, x, y, z);
-                putBackOnTop(world, x, y, z);
-                return;
-            }
-            if (over != null) {
-                over.show(islandId, world, x, y, z, next.position(), player);
-            }
-            String rarity = comeBack(
-                    drawn,
-                    world,
-                    x,
-                    y,
-                    z,
-                    next,
-                    player,
-                    moment.map(m -> m.block()).orElse(null));
-            if (rarity != null) {
-                scheduler.onEntity(player.getUniqueId(), () -> effectPlayer.fire(effects, rarity, player));
-            }
-            if (happens != null) {
-                moment.ifPresent(m -> happens.inTheWorld(drawn, m, world, x, y, z, player));
-            }
-        });
-        if (happens != null) {
-            moment.ifPresent(m -> paid(
-                    islandId,
-                    phase,
-                    momentKey,
-                    next.nextCycle(),
-                    player,
-                    () -> happens.forTheBreaker(
-                            effectPlayer,
-                            effects,
-                            m,
-                            player,
-                            Map.of(
-                                    "phase",
-                                    phase,
-                                    "break",
-                                    Long.toString(next.position().intoPhase()),
-                                    "cycle",
-                                    Long.toString(next.nextCycle() + 1)))));
-        }
-        // A lucky break, as often as the file of the phase the broken block belonged to says: the phase it finished,
-        // when it finished one, and that phase's last block.
-        OneBlockPhaseLists lists = phaseLists;
-        String of = next.finished()
-                .map(com.uxplima.uxmskyblock.core.domain.oneblock.OneBlockPhase::key)
-                .orElse(phase);
-        if (lists != null && lists.lucky(of, luck.getAsDouble())) {
-            Map<String, String> lucky = Map.of(
-                    "phase",
-                    of,
-                    "break",
-                    Long.toString(next.finished()
-                            .map(com.uxplima.uxmskyblock.core.domain.oneblock.OneBlockPhase::blocks)
-                            .orElse(next.position().intoPhase())),
-                    "cycle",
-                    // The round the broken block was broken in.
-                    Long.toString(next.cycle() + 1));
-            if (!lists.run(
-                    effectPlayer,
-                    of,
-                    com.uxplima.uxmskyblock.bukkit.config.OneBlockLists.LUCKY,
-                    owner,
-                    player,
-                    lucky)) {
-                effectPlayer.fire(effects, "oneblock-lucky-break", player, lucky);
-            }
-        }
-        ModeMissions counts = missions;
-        // The block broken belonged to the phase it finished, when it finished one.
-        counts.counted(
-                player,
-                MissionTriggerType.ONEBLOCK_BREAK,
-                next.finished().orElse(next.position().phase()).key(),
-                1L);
-        if (next.phaseBegan()) {
-            counts.counted(
-                    player,
-                    MissionTriggerType.ONEBLOCK_PHASE,
-                    next.position().phase().key(),
-                    1L);
-            OneBlockPhaseLists written = phaseLists;
-            // Which pass through the phases, from 1, as the panel and the placeholders count it.
-            String cycle = Long.toString(next.cycle() + 1);
-            next.finished().ifPresent(finished -> {
-                Map<String, String> says = Map.of("phase", finished.key(), "cycle", cycle);
-                // The phase's own lists, or the shipped one when it wrote none.
-                pay(islandId, finished.key(), "finished", next.cycle(), player, () -> {
-                    if (written == null
-                            || !written.run(effectPlayer, finished.key(), "finished", owner, player, says)) {
-                        effectPlayer.fire(effects, "oneblock-phase-finished", player, says);
-                    }
-                });
-                if (written != null && next.cycle() == 0) {
-                    pay(
-                            islandId,
-                            finished.key(),
-                            "first-finished",
-                            0,
-                            player,
-                            () -> written.run(effectPlayer, finished.key(), "first-finished", owner, player, says));
-                }
-            });
-            messages.send(player, "oneblock.phase_began", Placeholder.unparsed("phase", title(player, next)));
-            Map<String, String> began = Map.of(
-                    "phase",
-                    next.position().phase().key(),
-                    "blocks",
-                    Long.toString(next.position().phaseLength()),
-                    "cycle",
-                    Long.toString(next.nextCycle() + 1));
-            pay(islandId, phase, "began", next.nextCycle(), player, () -> {
-                if (written == null || !written.run(effectPlayer, phase, "began", owner, player, began)) {
-                    effectPlayer.fire(effects, "oneblock-phase-began", player, began);
-                }
-            });
-        }
-    }
-
     /** Pays a reward of a phase once in its pass: claimed here, then recorded and paid as {@link #paid} does. */
-    private void pay(IslandId islandId, String phase, String reward, long cycle, Player player, Runnable payment) {
+    void pay(IslandId islandId, String phase, String reward, long cycle, Player player, Runnable payment) {
         if (service.claim(islandId, phase, reward, cycle)) {
             paid(islandId, phase, reward, cycle, player, payment);
         }
@@ -426,7 +242,7 @@ public final class OneBlockListener implements Listener {
      * Records a reward claimed off the region threads, then pays it on the player's own: a reward storage already
      * holds in that pass, or could not record, is not paid.
      */
-    private void paid(IslandId islandId, String phase, String reward, long cycle, Player player, Runnable payment) {
+    void paid(IslandId islandId, String phase, String reward, long cycle, Player player, Runnable payment) {
         scheduler.async(() -> {
             if (service.record(islandId, phase, reward, cycle)) {
                 scheduler.onEntity(player.getUniqueId(), payment);
@@ -450,7 +266,7 @@ public final class OneBlockListener implements Listener {
      *
      * @return the entry of modules/effects.conf the drawn entry's rarity fires for the breaker, or none
      */
-    private static @org.jspecify.annotations.Nullable String comeBack(
+    static @org.jspecify.annotations.Nullable String comeBack(
             OneBlockDraws draws,
             World world,
             int x,
@@ -488,7 +304,7 @@ public final class OneBlockListener implements Listener {
      * lets them fall through it into the void. Whoever is in the block's column, below its top and not
      * far under it, is set back on it where they stood, looking where they looked.
      */
-    private static void putBackOnTop(World world, int x, int y, int z) {
+    static void putBackOnTop(World world, int x, int y, int z) {
         BoundingBox column = new BoundingBox(x, y - CAUGHT_WITHIN, z, x + 1, y + 1, z + 1);
         for (Entity entity : world.getNearbyEntities(column, Player.class::isInstance)) {
             Location at = entity.getLocation();
@@ -503,7 +319,7 @@ public final class OneBlockListener implements Listener {
     }
 
     /** The phase's title in the player's language, or its name when the catalogue has none. */
-    private String title(Player player, OneBlockService.Broken next) {
+    String phaseTitle(Player player, OneBlockService.Broken next) {
         String key = next.position().phase().key();
         return messages.named(player, "oneblock.phases", key, key);
     }
