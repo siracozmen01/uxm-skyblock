@@ -1,6 +1,5 @@
 package com.uxplima.uxmskyblock.bukkit.menu;
 
-import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
@@ -9,8 +8,6 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.function.Consumer;
-import java.util.logging.Level;
-import java.util.logging.Logger;
 
 import org.bukkit.Material;
 import org.bukkit.entity.Player;
@@ -25,7 +22,6 @@ import com.uxplima.uxmlib.gui.SimpleGui;
 import com.uxplima.uxmlib.gui.item.GuiItem;
 import com.uxplima.uxmlib.gui.style.MenuTitles;
 import com.uxplima.uxmskyblock.bukkit.bedrock.BedrockFormService;
-import com.uxplima.uxmskyblock.bukkit.i18n.ItemNames;
 import com.uxplima.uxmskyblock.bukkit.i18n.Messages;
 import com.uxplima.uxmskyblock.bukkit.inventory.TradableStacks;
 import com.uxplima.uxmskyblock.bukkit.session.PlayerSessionCoordinator;
@@ -46,13 +42,14 @@ import org.jspecify.annotations.Nullable;
  */
 public final class IslandMissionsMenu {
 
-    private static final Logger LOGGER = Logger.getLogger(IslandMissionsMenu.class.getName());
+    /** Items handed in to a mission from the missions window: what the player carries counted, taken, and credited to the mission. */
+    private final MissionHandIns handIns = new MissionHandIns(this);
 
-    private final IslandMissionService missionService;
+    final IslandMissionService missionService;
     private final IslandStoragePort islandStoragePort;
     private final @Nullable PlayerSessionCoordinator sessionCoordinator;
-    private final SchedulerPort schedulerPort;
-    private final Messages messages;
+    final SchedulerPort schedulerPort;
+    final Messages messages;
     private @Nullable BedrockFormService bedrockFormService;
 
     private volatile @Nullable Consumer<Player> wayBack;
@@ -201,7 +198,7 @@ public final class IslandMissionsMenu {
             long drawnWith = count;
             choices.add(new BedrockFormService.Choice(label, () -> {
                 if (submittable) {
-                    handleManualItemSubmission(player, islandId, profileId, def, drawnWith);
+                    handIns.handleManualItemSubmission(player, islandId, profileId, def, drawnWith);
                 }
             }));
         }
@@ -258,7 +255,7 @@ public final class IslandMissionsMenu {
             GuiItem guiItem = GuiItem.button(item, event -> {
                 event.setCancelled(true);
                 if (submits) {
-                    handleManualItemSubmission(player, islandId, profileId, def, count);
+                    handIns.handleManualItemSubmission(player, islandId, profileId, def, count);
                 }
             });
 
@@ -296,7 +293,7 @@ public final class IslandMissionsMenu {
                             String island = opened.getOrDefault("island", "");
                             String profile = opened.getOrDefault("profile", "");
                             if (!island.isEmpty() && !profile.isEmpty()) {
-                                handleManualItemSubmission(
+                                handIns.handleManualItemSubmission(
                                         ctx.player(),
                                         IslandId.of(UUID.fromString(island)),
                                         new ProfileId(UUID.fromString(profile)),
@@ -417,77 +414,6 @@ public final class IslandMissionsMenu {
         this.wayBack = wayBack;
     }
 
-    /** Package private so the guard against losing a player's items can drive it directly. */
-    void handleManualItemSubmission(
-            Player player, IslandId islandId, ProfileId profileId, MissionDefinition def, long alreadyCounted) {
-        String filter = def.targetFilter();
-        Material requiredMat = Material.matchMaterial(filter);
-        if (requiredMat == null) {
-            messages.send(player, "menu.missions.invalid_requirement", Placeholder.unparsed("filter", filter));
-            return;
-        }
-
-        int count = TradableStacks.countOf(player, requiredMat);
-
-        if (count <= 0) {
-            messages.send(player, "menu.missions.nothing_to_submit", ItemNames.placeholder("item", requiredMat.name()));
-            return;
-        }
-
-        // How many the mission still wanted when this window was drawn. Reading it again here would
-        // be a query on the thread that owns the player, and the answer is already on the tile the
-        // player just clicked. What the service actually credits is what it reports back, and
-        // anything it did not take is handed straight back below.
-        long needed = def.requiredAmount() - alreadyCounted;
-        int toTake = (int) Math.min(count, needed);
-
-        if (toTake <= 0) {
-            return;
-        }
-
-        TradableStacks.take(player, requiredMat, toTake);
-
-        final int taken = toTake;
-        schedulerPort.async(() -> {
-            long credited;
-            try {
-                credited = missionService
-                        .submitManualItems(islandId, profileId, def.id(), taken, Instant.now())
-                        .map(IslandMissionService.MissionSubmission::credited)
-                        .orElse(0L);
-            } catch (RuntimeException e) {
-                LOGGER.log(
-                        Level.SEVERE,
-                        "Crediting a manual mission submission failed, returning the items to the player",
-                        e);
-                credited = 0L;
-            }
-
-            long creditedFinal = credited;
-            schedulerPort.onEntity(new PlayerUuid(player.getUniqueId()), () -> {
-                // Whatever the mission did not take goes back. A window drawn a moment ago can say
-                // the mission wants ten when another window has already handed in eight, and a
-                // player who loses the other two to a counter that stopped rising has been robbed
-                // by their own second window.
-                int surplus = (int) (taken - creditedFinal);
-                if (surplus > 0) {
-                    returnItems(player, requiredMat, surplus);
-                }
-                if (creditedFinal <= 0) {
-                    messages.send(
-                            player, "menu.missions.submit_failed", ItemNames.placeholder("item", requiredMat.name()));
-                    return;
-                }
-                messages.send(
-                        player,
-                        "menu.missions.submitted",
-                        Placeholder.unparsed("amount", Long.toString(creditedFinal)),
-                        ItemNames.placeholder("item", requiredMat.name()));
-                open(player);
-            });
-        });
-    }
-
     /**
      * Gives back what was taken when the submission was not credited.
      *
@@ -497,10 +423,16 @@ public final class IslandMissionsMenu {
      * player has paid for nothing. What does not fit goes on the ground at their feet rather than
      * being dropped silently.
      */
-    private void returnItems(Player player, Material material, int amount) {
+    void returnItems(Player player, Material material, int amount) {
         if (amount <= 0) {
             return;
         }
         TradableStacks.give(player, material, amount);
+    }
+
+    /** Package private so the guard against losing a player's items can drive it directly. */
+    void handleManualItemSubmission(
+            Player player, IslandId islandId, ProfileId profileId, MissionDefinition def, long alreadyCounted) {
+        handIns.handleManualItemSubmission(player, islandId, profileId, def, alreadyCounted);
     }
 }
