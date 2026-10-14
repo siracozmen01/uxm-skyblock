@@ -171,6 +171,13 @@ public final class SkyblockBootstrap implements AutoCloseable {
 
     public void enable() {
         featureModuleWiring.enable();
+        // An island's Nether and End stand at its own places in their worlds, which the database does not name.
+        java.util.List<String> mirrors = new java.util.ArrayList<>();
+        var dimensions = configWiring.dimensionConfig();
+        if (dimensions.enabled()) {
+            dimensions.mappings().values().forEach(mapping -> mirrors.add(mapping.worldName()));
+        }
+        gameplayWiring.protectionListener().spatialIndex().mirror(configWiring.islandWorlds(), mirrors);
         for (String world : configWiring.islandWorlds()) {
             gameplayWiring.protectionListener().loadPersistedIslands(world);
         }

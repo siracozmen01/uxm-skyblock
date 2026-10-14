@@ -83,14 +83,17 @@ public final class SpatialIslandIndex {
             }
         }
 
-        Set<SpatialChunkKey> oldKeys = islandChunksMap.put(id, newKeys);
-        if (oldKeys != null) {
-            for (SpatialChunkKey oldKey : oldKeys) {
-                if (!newKeys.contains(oldKey)) {
-                    chunkToIsland.remove(oldKey, id);
-                }
+        // An island stands in each of its worlds at once, its Nether and End over its overworld: indexing it in one
+        // world drops only that world's chunks it no longer covers, and keeps it in every other.
+        Set<SpatialChunkKey> keys = islandChunksMap.computeIfAbsent(id, unused -> ConcurrentHashMap.newKeySet());
+        keys.removeIf(oldKey -> {
+            boolean dropped = oldKey.world().equals(worldName) && !newKeys.contains(oldKey);
+            if (dropped) {
+                chunkToIsland.remove(oldKey, id);
             }
-        }
+            return dropped;
+        });
+        keys.addAll(newKeys);
     }
 
     /**
@@ -116,6 +119,38 @@ public final class SpatialIslandIndex {
             return Optional.empty();
         }
         return findIslandAt(location.getWorld().getName(), location.getBlockX(), location.getBlockZ());
+    }
+
+    /** The worlds islands are kept by, and the Nether and End worlds that stand over them at the same places. */
+    private volatile java.util.List<String> islandWorlds = java.util.List.of();
+
+    private volatile Set<String> mirrors = Set.of();
+
+    /**
+     * Names the worlds that mirror the island worlds: an island's Nether and End stand at its own places there, and
+     * the database keeps the island by its island world alone. An island read in an island world is indexed in every
+     * mirror too, and a miss in a mirror is read by the island worlds.
+     */
+    public void mirror(java.util.Collection<String> islandWorlds, java.util.Collection<String> mirrorWorlds) {
+        this.islandWorlds = java.util.List.copyOf(islandWorlds);
+        this.mirrors = Set.copyOf(mirrorWorlds);
+    }
+
+    /** The island at a place of {@code worldName}, read from the database by the world the island is kept by. */
+    private Optional<Island> stored(String worldName, int blockX, int blockZ) {
+        if (storagePort == null) {
+            return Optional.empty();
+        }
+        if (!mirrors.contains(worldName)) {
+            return storagePort.findIslandByLocation(worldName, blockX, blockZ);
+        }
+        for (String kept : islandWorlds) {
+            Optional<Island> found = storagePort.findIslandByLocation(kept, blockX, blockZ);
+            if (found.isPresent()) {
+                return found;
+            }
+        }
+        return Optional.empty();
     }
 
     /**
@@ -147,7 +182,7 @@ public final class SpatialIslandIndex {
                 if (pendingLookups.add(key)) {
                     schedulerPort.async(() -> {
                         try {
-                            Optional<Island> persisted = storagePort.findIslandByLocation(worldName, blockX, blockZ);
+                            Optional<Island> persisted = stored(worldName, blockX, blockZ);
                             persisted.ifPresent(is -> indexIsland(is, worldName));
                         } finally {
                             pendingLookups.remove(key);
@@ -156,7 +191,7 @@ public final class SpatialIslandIndex {
                 }
             } else {
                 // Synchronous fallback only when running in offline unit tests without scheduler
-                Optional<Island> persisted = storagePort.findIslandByLocation(worldName, blockX, blockZ);
+                Optional<Island> persisted = stored(worldName, blockX, blockZ);
                 persisted.ifPresent(is -> indexIsland(is, worldName));
                 return persisted;
             }
@@ -173,8 +208,14 @@ public final class SpatialIslandIndex {
         if (storagePort == null) {
             return;
         }
+        boolean islandWorld = islandWorlds.contains(worldName);
         for (Island island : storagePort.findAllByWorld(worldName)) {
             indexIsland(island, worldName);
+            if (islandWorld) {
+                for (String mirror : mirrors) {
+                    indexIsland(island, mirror);
+                }
+            }
         }
     }
 
