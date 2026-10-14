@@ -24,7 +24,8 @@ public record PoseidonConfiguration(
         List<String> waterEffects,
         Map<String, Wreck> wrecks,
         List<String> chapters,
-        Boss boss) {
+        Boss boss,
+        Coral coral) {
 
     private static final Logger LOGGER = Logger.getLogger(PoseidonConfiguration.class.getName());
 
@@ -120,6 +121,28 @@ public record PoseidonConfiguration(
         }
     }
 
+    /**
+     * Coral that spreads slowly on a Poseidon island: around each player there, now and then, a living coral block
+     * grows a coral or a fan of its colour into the water beside it.
+     *
+     * @param enabled whether coral spreads at all
+     * @param checkEvery how often each player on a Poseidon island is looked around
+     * @param samples how many blocks around them are looked at, each time
+     * @param radius how far from them a block may be
+     * @param chance the chance, from 0 to 1, that a coral block looked at grows
+     */
+    public record Coral(boolean enabled, Duration checkEvery, int samples, int radius, double chance) {
+
+        public static final Coral SHIPPED = new Coral(true, Duration.ofSeconds(30), 24, 12, 0.25);
+
+        public Coral {
+            if (!checkEvery.isPositive() || samples < 0 || radius < 1 || !(chance >= 0 && chance <= 1)) {
+                throw new IllegalArgumentException(
+                        "check-every and radius must be above 0, samples not below 0, the chance from 0 to 1");
+            }
+        }
+    }
+
     /** The wreck group a monument start lays, from the monument block of the file. */
     public static final String MONUMENT = "monument";
 
@@ -129,6 +152,7 @@ public record PoseidonConfiguration(
 
     public PoseidonConfiguration {
         Objects.requireNonNull(boss, "boss must not be null");
+        Objects.requireNonNull(coral, "coral must not be null");
         // A mission is known by its id in lower case, as the missions file reads it.
         chapters = chapters.stream()
                 .map(chapter -> chapter.trim().toLowerCase(java.util.Locale.ROOT))
@@ -147,7 +171,7 @@ public record PoseidonConfiguration(
     /** The shipped chapters of the story and the shipped boss. */
     public PoseidonConfiguration(
             boolean enabled, Ocean ocean, PoseidonRules rules, List<String> waterEffects, Map<String, Wreck> wrecks) {
-        this(enabled, ocean, rules, waterEffects, wrecks, SHIPPED_CHAPTERS, Boss.SHIPPED);
+        this(enabled, ocean, rules, waterEffects, wrecks, SHIPPED_CHAPTERS, Boss.SHIPPED, Coral.SHIPPED);
     }
 
     private static Map<String, Wreck> shippedWrecks() {
@@ -240,7 +264,23 @@ public record PoseidonConfiguration(
                 AcidIslandConfiguration.strings(hazard.node("water-effects"), SHIPPED_WATER_EFFECTS),
                 withMonument(wrecks(root.node("wrecks")), root.node("wrecks"), root.node("monument")),
                 AcidIslandConfiguration.strings(root.node("lore", "chapters"), SHIPPED_CHAPTERS),
-                boss(root.node("boss")));
+                boss(root.node("boss")),
+                coral(root.node("coral")));
+    }
+
+    private static Coral coral(ConfigurationNode node) {
+        Coral shipped = Coral.SHIPPED;
+        try {
+            return new Coral(
+                    node.node("enabled").getBoolean(shipped.enabled()),
+                    AcidIslandConfiguration.durationOf(node.node("check-every").getString(""), shipped.checkEvery()),
+                    node.node("samples").getInt(shipped.samples()),
+                    node.node("radius").getInt(shipped.radius()),
+                    node.node("chance").getDouble(shipped.chance()));
+        } catch (IllegalArgumentException e) {
+            LOGGER.warning(() -> "modules/poseidon.conf coral: " + e.getMessage() + ". The shipped growth is used.");
+            return shipped;
+        }
     }
 
     private static Boss boss(ConfigurationNode node) {

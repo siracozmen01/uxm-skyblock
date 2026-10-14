@@ -37,6 +37,7 @@ public final class PoseidonWiring implements AutoCloseable {
     private final com.uxplima.uxmskyblock.bukkit.poseidon.DeepBoss boss;
     private @Nullable AutoCloseable beat;
     private @Nullable AutoCloseable bossBeat;
+    private @Nullable AutoCloseable coralBeat;
 
     public PoseidonWiring(
             ConfigurationWiring configuration,
@@ -76,6 +77,14 @@ public final class PoseidonWiring implements AutoCloseable {
         if (config.enabled()) {
             this.beat = hazard.start();
             this.bossBeat = boss.start();
+            this.coralBeat = new com.uxplima.uxmskyblock.bukkit.poseidon.CoralGrowth(
+                            config.coral(),
+                            service,
+                            islands,
+                            scheduler,
+                            org.bukkit.Bukkit::isOwnedByCurrentRegion,
+                            new java.util.Random())
+                    .start();
         }
         scheduler.async(() -> {
             try {
@@ -144,6 +153,15 @@ public final class PoseidonWiring implements AutoCloseable {
     /** Stops the air hurting, before the server stops. */
     @Override
     public void close() {
+        AutoCloseable growing = coralBeat;
+        coralBeat = null;
+        if (growing != null) {
+            try {
+                growing.close();
+            } catch (Exception e) {
+                LOGGER.log(Level.WARNING, "Stopping the coral growth failed.", e);
+            }
+        }
         AutoCloseable rising = bossBeat;
         bossBeat = null;
         if (rising != null) {
