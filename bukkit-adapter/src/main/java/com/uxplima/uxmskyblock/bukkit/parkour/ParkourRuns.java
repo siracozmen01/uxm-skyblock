@@ -3,7 +3,6 @@ package com.uxplima.uxmskyblock.bukkit.parkour;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -33,7 +32,6 @@ import com.uxplima.uxmskyblock.bukkit.effect.InteractionEffectPlayer;
 import com.uxplima.uxmskyblock.bukkit.effect.InteractionEffects;
 import com.uxplima.uxmskyblock.bukkit.i18n.Messages;
 import com.uxplima.uxmskyblock.bukkit.listener.IslandProtectionListener;
-import com.uxplima.uxmskyblock.core.application.parkour.ParkourPort;
 import com.uxplima.uxmskyblock.core.application.parkour.ParkourSeasonService;
 import com.uxplima.uxmskyblock.core.application.parkour.ParkourService;
 import com.uxplima.uxmskyblock.core.application.scheduler.SchedulerPort;
@@ -50,6 +48,9 @@ import com.uxplima.uxmskyblock.core.domain.island.Island;
  * the scheduler, and the answer comes back to the runner's thread.
  */
 public final class ParkourRuns implements Listener {
+
+    /** A run over the finish plate: the time kept, the best times and the rewards the runner has not yet claimed. */
+    private final ParkourFinish finishing = new ParkourFinish(this);
 
     private static final Logger LOGGER = Logger.getLogger(ParkourRuns.class.getName());
 
@@ -68,24 +69,24 @@ public final class ParkourRuns implements Listener {
     /** One run under way. */
     record Run(IslandId course, Instant started, Location checkpoint, Instant told) {}
 
-    private final ParkourService service;
+    final ParkourService service;
     private final IslandProtectionListener islands;
-    private final SchedulerPort scheduler;
+    final SchedulerPort scheduler;
     private final ParkourConfiguration config;
-    private final Messages messages;
-    private final InteractionEffects effects;
-    private final InteractionEffectPlayer effectPlayer;
-    private final Clock clock;
-    private final Map<UUID, Run> runs = new ConcurrentHashMap<>();
+    final Messages messages;
+    final InteractionEffects effects;
+    final InteractionEffectPlayer effectPlayer;
+    final Clock clock;
+    final Map<UUID, Run> runs = new ConcurrentHashMap<>();
     private volatile java.util.function.Consumer<Player> whenStarted = runner -> {};
-    private volatile @org.jspecify.annotations.Nullable ParkourGhosts ghosts;
-    private volatile @org.jspecify.annotations.Nullable ParkourSplits splits;
+    volatile @org.jspecify.annotations.Nullable ParkourGhosts ghosts;
+    volatile @org.jspecify.annotations.Nullable ParkourSplits splits;
     private volatile @org.jspecify.annotations.Nullable ParkourChecks checks;
     private volatile @org.jspecify.annotations.Nullable ParkourSeasonService seasons;
     private volatile InteractionEffects rewards = InteractionEffects.none();
-    private volatile com.uxplima.uxmskyblock.core.application.parkour.@org.jspecify.annotations.Nullable ParkourRewardsPort
+    volatile com.uxplima.uxmskyblock.core.application.parkour.@org.jspecify.annotations.Nullable ParkourRewardsPort
             ledger;
-    private volatile ParkourConfiguration.Rewards terms = ParkourConfiguration.Rewards.SHIPPED;
+    volatile ParkourConfiguration.Rewards terms = ParkourConfiguration.Rewards.SHIPPED;
 
     public ParkourRuns(
             ParkourService service,
@@ -177,7 +178,7 @@ public final class ParkourRuns implements Listener {
             // The course's own team builds it, so it earns nothing there.
             boolean team = island.get().members().values().stream()
                     .anyMatch(member -> member.playerUuid().equals(PlayerUuid.of(runner.getUniqueId())));
-            finish(runner, course, standing, team);
+            finishing.finish(runner, course, standing, team);
         }
     }
 
@@ -251,80 +252,11 @@ public final class ParkourRuns implements Listener {
         return (millis > 0 ? "+" : "-") + format(Duration.ofMillis(Math.abs(millis)));
     }
 
-    private void finish(Player runner, IslandId course, Location plate, boolean team) {
-        Run run = runs.get(runner.getUniqueId());
-        if (run == null || !run.course().equals(course)) {
-            return;
-        }
-        runs.remove(runner.getUniqueId());
-        Duration time = Duration.between(run.started(), clock.instant());
-        PlayerUuid who = PlayerUuid.of(runner.getUniqueId());
-        ParkourGhosts racing = ghosts;
-        com.uxplima.uxmskyblock.core.application.parkour.GhostPath path =
-                racing == null ? null : racing.finished(runner, time, plate);
-        ParkourSplits taking = splits;
-        Optional<Map<com.uxplima.uxmskyblock.core.application.parkour.ParkourSplitsPort.Checkpoint, Long>> taken =
-                taking == null ? Optional.empty() : taking.finished(runner.getUniqueId());
-        effectPlayer.fire(effects, "parkour-finished", runner, said(time));
-        scheduler.async(() -> {
-            ParkourService.Finish finish;
-            Optional<ParkourPort.Best> before;
-            Optional<ParkourPort.Best> after;
-            try {
-                before = service.leader(course);
-                finish = service.finish(course, who, time);
-                after = service.leader(course);
-            } catch (RuntimeException e) {
-                LOGGER.log(Level.WARNING, e, () -> "A run on course " + course + " could not be counted.");
-                scheduler.onEntity(who, () -> messages.send(runner, "parkour.finished", timed("time", time)));
-                return;
-            }
-            boolean best =
-                    finish instanceof ParkourService.Finish.First || finish instanceof ParkourService.Finish.Beaten;
-            if (taking != null && best && taken.isPresent()) {
-                taking.keep(course, who, taken.get());
-            }
-            if (racing != null && path != null && best) {
-                racing.keep(course, who, time, path);
-            }
-            // A record is a time below the course's best before it, that still leads once it is counted: of two
-            // finishes at once, the slower is no record.
-            boolean courseRecord =
-                    after.filter(leader -> leader.runner().equals(who) && leader.millis() == time.toMillis())
-                                    .isPresent()
-                            && before.map(was -> time.toMillis() < was.millis()).orElse(true);
-            String recordWas =
-                    before.map(was -> format(Duration.ofMillis(was.millis()))).orElse("");
-            Optional<ParkourSeasonService.Counted> season = counted(course, who, time);
-            boolean seasonRecord =
-                    season.filter(ParkourSeasonService.Counted::record).isPresent();
-            String seasonWas = season.flatMap(ParkourSeasonService.Counted::was)
-                    .map(was -> format(Duration.ofMillis(was)))
-                    .orElse("");
-            List<String> lists = team ? List.of() : claimed(course, who, finish, courseRecord, seasonRecord, time);
-            scheduler.onEntity(who, () -> {
-                told(runner, finish);
-                if (courseRecord) {
-                    messages.send(runner, "parkour.course_record", timed("time", time));
-                }
-                if (seasonRecord) {
-                    messages.send(
-                            runner,
-                            "parkour.season.record",
-                            timed("time", time),
-                            Placeholder.unparsed("season", season.get().season().name()));
-                }
-                paid(runner, finish, lists, recordWas, seasonWas);
-            });
-        });
-    }
-
     /**
      * Pays the finish: the first on the course, a new best of the runner's own, and a course record, each its list.
      * {@code recordWas} is the course's best this run beat, empty when there was none.
      */
-    private void paid(
-            Player runner, ParkourService.Finish finish, List<String> lists, String recordWas, String seasonWas) {
+    void paid(Player runner, ParkourService.Finish finish, List<String> lists, String recordWas, String seasonWas) {
         Map<String, String> says = said(finish.time());
         for (String list : lists) {
             String was =
@@ -339,42 +271,8 @@ public final class ParkourRuns implements Listener {
         }
     }
 
-    /**
-     * The lists this finish earns and has claimed: a first finish once for good, a new best and a course record once
-     * in their period, none for a run quicker than the shortest. Off the main thread.
-     */
-    private List<String> claimed(
-            IslandId course,
-            PlayerUuid who,
-            ParkourService.Finish finish,
-            boolean courseRecord,
-            boolean seasonRecord,
-            Duration time) {
-        com.uxplima.uxmskyblock.core.application.parkour.ParkourRewardsPort paidIn = ledger;
-        ParkourConfiguration.Rewards written = terms;
-        if (paidIn == null || time.compareTo(written.shortestRun()) < 0) {
-            return List.of();
-        }
-        long now = clock.millis();
-        long again = now - written.againAfter().toMillis();
-        List<String> lists = new ArrayList<>();
-        if (finish instanceof ParkourService.Finish.First) {
-            claim(paidIn, course, who, FIRST_FINISH, now, Long.MIN_VALUE, lists);
-        }
-        if (finish instanceof ParkourService.Finish.Beaten) {
-            claim(paidIn, course, who, PERSONAL_BEST, now, again, lists);
-        }
-        if (courseRecord) {
-            claim(paidIn, course, who, COURSE_RECORD, now, again, lists);
-        }
-        if (seasonRecord) {
-            claim(paidIn, course, who, SEASON_RECORD, now, again, lists);
-        }
-        return List.copyOf(lists);
-    }
-
     /** The finish counted in the season under way, if one is and it could be counted. Off the main thread. */
-    private Optional<ParkourSeasonService.Counted> counted(IslandId course, PlayerUuid who, Duration time) {
+    Optional<ParkourSeasonService.Counted> counted(IslandId course, PlayerUuid who, Duration time) {
         ParkourSeasonService counting = seasons;
         if (counting == null) {
             return Optional.empty();
@@ -387,7 +285,7 @@ public final class ParkourRuns implements Listener {
         }
     }
 
-    private static void claim(
+    static void claim(
             com.uxplima.uxmskyblock.core.application.parkour.ParkourRewardsPort paidIn,
             IslandId course,
             PlayerUuid who,
@@ -411,7 +309,7 @@ public final class ParkourRuns implements Listener {
         return Map.copyOf(all);
     }
 
-    private void told(Player runner, ParkourService.Finish finish) {
+    void told(Player runner, ParkourService.Finish finish) {
         switch (finish) {
             case ParkourService.Finish.First first -> {
                 messages.send(runner, "parkour.first", timed("time", first.time()));
@@ -518,11 +416,11 @@ public final class ParkourRuns implements Listener {
     }
 
     /** What a finish says to its effect list: the time as the chat writes it, and in milliseconds. */
-    private static Map<String, String> said(Duration time) {
+    static Map<String, String> said(Duration time) {
         return Map.of("time", format(time), "millis", Long.toString(time.toMillis()));
     }
 
-    private static net.kyori.adventure.text.minimessage.tag.resolver.TagResolver timed(String name, Duration time) {
+    static net.kyori.adventure.text.minimessage.tag.resolver.TagResolver timed(String name, Duration time) {
         return Placeholder.unparsed(name, format(time));
     }
 
