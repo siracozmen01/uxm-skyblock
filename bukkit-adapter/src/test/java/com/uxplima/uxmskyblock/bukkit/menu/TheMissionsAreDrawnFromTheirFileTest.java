@@ -91,6 +91,54 @@ class TheMissionsAreDrawnFromTheirFileTest extends MockBukkitHarness {
     }
 
     @Test
+    @DisplayName("A mission of lines shows the lines finished, and where each line stands")
+    void aMissionOfLinesShowsEachLine() {
+        MissionDefinition miner = new MissionDefinition(
+                MissionId.of("miner"),
+                MissionBranch.MINING,
+                "Miner",
+                "Mine and fight.",
+                MissionTriggerType.LINES,
+                "",
+                2,
+                new MissionReward(1L, 0L, 0L, List.of()));
+        MissionDefinition stone = new MissionDefinition(
+                MissionId.of("miner#1"),
+                MissionBranch.MINING,
+                "Miner",
+                "",
+                MissionTriggerType.BLOCK_BREAK,
+                "STONE",
+                64,
+                MissionReward.empty());
+        MissionDefinition zombies = new MissionDefinition(
+                MissionId.of("miner#2"),
+                MissionBranch.MINING,
+                "Miner",
+                "",
+                MissionTriggerType.MOB_KILL,
+                "ZOMBIE",
+                10,
+                MissionReward.empty());
+        org.mockito.Mockito.when(missions.linesOf(miner.id())).thenReturn(List.of(stone, zombies));
+        java.time.Instant now = java.time.Instant.now();
+        Map<MissionId, com.uxplima.uxmskyblock.core.domain.mission.MissionProgress> progress = Map.of(
+                miner.id(),
+                        new com.uxplima.uxmskyblock.core.domain.mission.MissionProgress(
+                                miner.id(), 1, false, null, now),
+                stone.id(),
+                        new com.uxplima.uxmskyblock.core.domain.mission.MissionProgress(stone.id(), 70, true, now, now),
+                zombies.id(),
+                        new com.uxplima.uxmskyblock.core.domain.mission.MissionProgress(
+                                zombies.id(), 3, false, null, now));
+
+        assertThat(menu.rows(player, progress, List.of(miner)).get(0).words())
+                .containsEntry("status", "1 / 2 (64/64, 3/10)");
+        assertThat(menu.rows(player, Map.of(), List.of(DIAMONDS)).get(0).words())
+                .containsEntry("status", "0 / 10");
+    }
+
+    @Test
     @DisplayName("Every fact a mission tile can list has words in the catalogue")
     void everyFactHasWords() {
         MessageProvider provider = new MessageProvider("en");

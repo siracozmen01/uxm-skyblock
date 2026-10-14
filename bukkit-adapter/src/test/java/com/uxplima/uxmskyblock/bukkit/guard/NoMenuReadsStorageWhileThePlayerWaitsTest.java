@@ -75,8 +75,13 @@ class NoMenuReadsStorageWhileThePlayerWaitsTest {
     private static final Pattern NOT_STORAGE = Pattern.compile("^(?:messages|schedulerPort|scheduler|configuration|"
             + "config|bedrockFormService|forms|sessionCoordinator|presetCatalog|protectionListener)\\.");
 
-    /** Single calls onto one of those receivers that touch nothing but memory. */
-    private static final List<String> ANSWERED_FROM_MEMORY = List.of("recycleService.cancelResetChallenge(");
+    /**
+     * Single calls onto one of those receivers that touch nothing but memory.
+     *
+     * <p>The lines of a mission of several are registered with the catalogue at startup and read back from a map.
+     */
+    private static final List<String> ANSWERED_FROM_MEMORY =
+            List.of("recycleService.cancelResetChallenge(", "missionService.linesOf(");
 
     @Test
     @DisplayName("There really are menus to check, so a clean result means something")

@@ -120,4 +120,42 @@ class MissionConfigurationTest {
         assertThat(MissionConfiguration.zoneOf("Mars/Olympus")).isEqualTo(java.time.ZoneId.systemDefault());
         assertThat(MissionConfiguration.zoneOf("UTC")).isEqualTo(java.time.ZoneId.of("UTC"));
     }
+
+    @org.junit.jupiter.api.Test
+    @DisplayName("A mission that writes lines counts LINES, as many as it has, and a line it cannot count is left out")
+    void linesAreRead() throws IOException {
+        ConfigurationNode root = HoconConfigurationLoader.builder().buildAndLoadString("""
+                missions {
+                    catalog {
+                        miner {
+                            trigger-type = "FISHING"
+                            required-amount = 40
+                            lines = [
+                                { trigger-type = "block_break", target-filter = "STONE", required-amount = 64 }
+                                { trigger-type = "ITEM_SUBMIT", required-amount = 3 }
+                                { trigger-type = "MOB_KILL", target-filter = "ZOMBIE" }
+                            ]
+                        }
+                        plain { trigger-type = "FISHING", required-amount = 4 }
+                    }
+                }
+                """);
+        MissionConfiguration config = MissionConfiguration.load(root);
+        com.uxplima.uxmskyblock.core.domain.mission.MissionDefinition miner = config.missions().stream()
+                .filter(m -> m.id().value().equals("miner"))
+                .findFirst()
+                .orElseThrow();
+        org.assertj.core.api.Assertions.assertThat(miner.triggerType())
+                .isEqualTo(com.uxplima.uxmskyblock.core.domain.mission.MissionTriggerType.LINES);
+        org.assertj.core.api.Assertions.assertThat(miner.requiredAmount()).isEqualTo(2L);
+        org.assertj.core.api.Assertions.assertThat(config.lines().get(miner.id()))
+                .containsExactly(
+                        new com.uxplima.uxmskyblock.core.domain.mission.MissionLine(
+                                com.uxplima.uxmskyblock.core.domain.mission.MissionTriggerType.BLOCK_BREAK,
+                                "STONE",
+                                64),
+                        new com.uxplima.uxmskyblock.core.domain.mission.MissionLine(
+                                com.uxplima.uxmskyblock.core.domain.mission.MissionTriggerType.MOB_KILL, "ZOMBIE", 1));
+        org.assertj.core.api.Assertions.assertThat(config.lines()).containsOnlyKeys(miner.id());
+    }
 }

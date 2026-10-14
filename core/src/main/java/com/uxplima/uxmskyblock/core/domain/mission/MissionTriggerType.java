@@ -25,5 +25,7 @@ public enum MissionTriggerType {
     /** Potions brewed at a stand the player opened; the target is the potion's kind. */
     BREW,
     /** Experience gained; the amount is how many points. */
-    EXPERIENCE
+    EXPERIENCE,
+    /** A mission of several lines; it counts the lines finished, and nothing fires it directly. */
+    LINES
 }

@@ -191,7 +191,7 @@ public final class IslandMissionsMenu {
                             player,
                             "menu.missions.status_open",
                             Placeholder.unparsed("count", Long.toString(count)),
-                            Placeholder.unparsed("required", Long.toString(def.requiredAmount())));
+                            Placeholder.unparsed("required", def.requiredAmount() + lineCounts(def, progressMap)));
             String label = com.uxplima.uxmskyblock.bukkit.bedrock.FormText.of(messages.renderPlain(
                     player,
                     "menu.missions.form_button",
@@ -239,7 +239,7 @@ public final class IslandMissionsMenu {
                             player,
                             "menu.missions.status_open",
                             Placeholder.unparsed("count", Long.toString(count)),
-                            Placeholder.unparsed("required", Long.toString(def.requiredAmount())));
+                            Placeholder.unparsed("required", def.requiredAmount() + lineCounts(def, progressMap)));
 
             String branch = def.branch().name();
             ItemStack item = tiles.item(
@@ -331,13 +331,38 @@ public final class IslandMissionsMenu {
                             "@menu.missions.repeats." + def.repeat().name().toLowerCase(Locale.ROOT)));
             words.put(
                     "status",
-                    completed ? "<key:menu.missions.status_completed>" : count + " / " + def.requiredAmount());
+                    completed
+                            ? "<key:menu.missions.status_completed>"
+                            : count + " / " + def.requiredAmount() + lineCounts(def, progressMap));
             words.put("crystals", Long.toString(def.reward().crystals()));
             words.put("currency", money(def.reward().currencyMinorUnits()));
             words.put("exp", Long.toString(def.reward().islandExp()));
             rows.add(new MenuRow(words, new Drawn(def, count, completed)));
         }
         return List.copyOf(rows);
+    }
+
+    /**
+     * Where each line of a mission of several stands, as {@code  (12/64, 3/10)}, after the count of lines finished, or
+     * nothing for a mission of one.
+     */
+    String lineCounts(
+            MissionDefinition def,
+            Map<com.uxplima.uxmskyblock.core.domain.mission.MissionId, MissionProgress> progressMap) {
+        if (def.triggerType() != MissionTriggerType.LINES) {
+            return "";
+        }
+        List<MissionDefinition> lines = missionService.linesOf(def.id());
+        if (lines.isEmpty()) {
+            return "";
+        }
+        List<String> each = new ArrayList<>();
+        for (MissionDefinition line : lines) {
+            MissionProgress progress = progressMap.get(line.id());
+            long count = progress == null ? 0L : Math.min(progress.progressCount(), line.requiredAmount());
+            each.add(count + "/" + line.requiredAmount());
+        }
+        return " (" + String.join(", ", each) + ")";
     }
 
     /** Where a kind of mission stands in the window: the ones that come back soonest first. */

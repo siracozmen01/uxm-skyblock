@@ -130,6 +130,13 @@ public final class GameplayCreationWiring {
         this.missionService = new IslandMissionService(persistence.islandMissionStoragePort());
         if (config.moduleSettings().isModuleEnabled("missions")) {
             this.missionService.registerMissions(config.missionConfig().missions());
+            for (com.uxplima.uxmskyblock.core.domain.mission.MissionDefinition mission :
+                    config.missionConfig().missions()) {
+                var written = config.missionConfig().lines().get(mission.id());
+                if (written != null) {
+                    this.missionService.registerLines(mission, written);
+                }
+            }
             this.missionService.resetIn(config.missionConfig().resetZone());
             // The mode an island plays is its owner's profile's, read once per island.
             com.uxplima.uxmskyblock.core.application.island.IslandStoragePort islands = persistence.islandStoragePort();

@@ -11,6 +11,7 @@ import com.uxplima.uxmskyblock.core.domain.gamemode.GameModeType;
 import com.uxplima.uxmskyblock.core.domain.mission.MissionBranch;
 import com.uxplima.uxmskyblock.core.domain.mission.MissionDefinition;
 import com.uxplima.uxmskyblock.core.domain.mission.MissionId;
+import com.uxplima.uxmskyblock.core.domain.mission.MissionLine;
 import com.uxplima.uxmskyblock.core.domain.mission.MissionRepeat;
 import com.uxplima.uxmskyblock.core.domain.mission.MissionReward;
 import com.uxplima.uxmskyblock.core.domain.mission.MissionTriggerType;
@@ -19,11 +20,20 @@ import org.spongepowered.configurate.ConfigurationNode;
 /**
  * Configuration holder for island missions, branches, trigger specifications, and rewards.
  */
-public record MissionConfiguration(boolean enabled, List<MissionDefinition> missions, java.time.ZoneId resetZone) {
+public record MissionConfiguration(
+        boolean enabled,
+        List<MissionDefinition> missions,
+        java.time.ZoneId resetZone,
+        Map<MissionId, List<MissionLine>> lines) {
 
     /** Missions whose days and weeks turn in the server's own zone. */
     public MissionConfiguration(boolean enabled, List<MissionDefinition> missions) {
         this(enabled, missions, java.time.ZoneId.systemDefault());
+    }
+
+    /** Missions of one line each. */
+    public MissionConfiguration(boolean enabled, List<MissionDefinition> missions, java.time.ZoneId resetZone) {
+        this(enabled, missions, resetZone, Map.of());
     }
 
     public static final boolean DEFAULT_ENABLED = true;
@@ -31,6 +41,7 @@ public record MissionConfiguration(boolean enabled, List<MissionDefinition> miss
     public MissionConfiguration {
         missions = (missions == null) ? List.of() : List.copyOf(missions);
         Objects.requireNonNull(resetZone, "resetZone must not be null");
+        lines = Map.copyOf(lines);
     }
 
     public static MissionConfiguration defaultConfiguration() {
@@ -156,6 +167,7 @@ public record MissionConfiguration(boolean enabled, List<MissionDefinition> miss
         }
 
         List<MissionDefinition> list = new ArrayList<>();
+        Map<MissionId, List<MissionLine>> linesOf = new java.util.HashMap<>();
         for (Map.Entry<Object, ? extends ConfigurationNode> entry :
                 catalogNode.childrenMap().entrySet()) {
             String missionKey = String.valueOf(entry.getKey());
@@ -187,6 +199,13 @@ public record MissionConfiguration(boolean enabled, List<MissionDefinition> miss
             }
             String targetFilter = mNode.node("target-filter").getString("");
             long requiredAmount = Math.max(1L, mNode.node("required-amount").getLong(10L));
+            List<MissionLine> written = lines(missionKey, mNode.node("lines"));
+            if (!written.isEmpty()) {
+                triggerType = MissionTriggerType.LINES;
+                targetFilter = "";
+                requiredAmount = written.size();
+                linesOf.put(MissionId.of(missionKey), written);
+            }
 
             ConfigurationNode rewardsNode = mNode.node("rewards");
             long crystals = Math.max(0L, rewardsNode.node("crystals").getLong(0L));
@@ -230,7 +249,28 @@ public record MissionConfiguration(boolean enabled, List<MissionDefinition> miss
                             : java.util.Optional.of(MissionId.of(after))));
         }
 
-        return new MissionConfiguration(enabled, Collections.unmodifiableList(list), zone);
+        return new MissionConfiguration(enabled, Collections.unmodifiableList(list), zone, linesOf);
+    }
+
+    /**
+     * The lines a mission writes, each counted on its own, in the order written. A line that counts something a line
+     * cannot, or names no trigger there is, is left out with a line in the console.
+     */
+    static List<MissionLine> lines(String mission, ConfigurationNode written) {
+        List<MissionLine> lines = new ArrayList<>();
+        for (ConfigurationNode line : written.childrenList()) {
+            String trigger = line.node("trigger-type").getString("").strip().toUpperCase(Locale.ROOT);
+            try {
+                lines.add(new MissionLine(
+                        MissionTriggerType.valueOf(trigger),
+                        line.node("target-filter").getString(""),
+                        Math.max(1L, line.node("required-amount").getLong(1L))));
+            } catch (IllegalArgumentException unwritable) {
+                LOGGER.warning(() -> "The mission " + mission + " has a line counting '" + trigger
+                        + "', which a line cannot count. The line is left out.");
+            }
+        }
+        return lines;
     }
 
     private static final java.util.logging.Logger LOGGER =

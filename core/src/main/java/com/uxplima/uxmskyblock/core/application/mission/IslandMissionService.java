@@ -44,6 +44,13 @@ public final class IslandMissionService {
     private volatile @Nullable Consumer<MissionFinished> finishedListener;
 
     private final Map<MissionId, MissionDefinition> missionCatalog = new ConcurrentHashMap<>();
+
+    /** The lines of every mission of several, each kept as a mission of its own that pays nothing. */
+    private final Map<MissionId, MissionDefinition> lines = new ConcurrentHashMap<>();
+
+    /** The mission each line belongs to. */
+    private final Map<MissionId, MissionId> lineOf = new ConcurrentHashMap<>();
+
     private final Map<String, Map<MissionId, MissionProgress>> progressCache = new ConcurrentHashMap<>();
     private final Map<String, DirtyProgressEntry> dirtyEntries = new ConcurrentHashMap<>();
 
@@ -91,6 +98,11 @@ public final class IslandMissionService {
      */
     public boolean offered(
             IslandId islandId, MissionDefinition def, Map<MissionId, MissionProgress> progress, Instant now) {
+        MissionId whole = lineOf.get(def.id());
+        if (whole != null) {
+            MissionDefinition mission = missionCatalog.get(whole);
+            return mission != null && offered(islandId, mission, progress, now);
+        }
         if (!def.modes().isEmpty()) {
             Optional<GameModeType> mode = modes.computeIfAbsent(islandId, island -> modeOf.apply(island));
             if (mode.isEmpty() || !def.playedIn(mode.get())) {
@@ -142,7 +154,7 @@ public final class IslandMissionService {
         Objects.requireNonNull(now, "now must not be null");
         Map<MissionId, MissionProgress> current = new java.util.HashMap<>();
         findAllProgress(islandId, profileId).forEach((id, progress) -> {
-            MissionDefinition def = missionCatalog.get(id);
+            MissionDefinition def = definitionOf(id);
             current.put(id, def == null ? progress : current(def, progress, now));
         });
         return Collections.unmodifiableMap(current);
@@ -158,6 +170,59 @@ public final class IslandMissionService {
         for (MissionDefinition def : definitions) {
             registerMission(def);
         }
+    }
+
+    /**
+     * Gives {@code mission}, which counts {@link MissionTriggerType#LINES}, its lines: each counted on its own, and the
+     * mission moved on by one as each is finished, so it is finished when every line is. A line comes back with the
+     * mission and is offered while the mission is.
+     */
+    public void registerLines(
+            MissionDefinition mission, List<com.uxplima.uxmskyblock.core.domain.mission.MissionLine> written) {
+        Objects.requireNonNull(mission, "mission must not be null");
+        Objects.requireNonNull(written, "written must not be null");
+        if (mission.triggerType() != MissionTriggerType.LINES || written.size() != mission.requiredAmount()) {
+            throw new IllegalArgumentException(
+                    "A mission of lines counts LINES and needs as many as it has: " + mission.id());
+        }
+        for (int number = 1; number <= written.size(); number++) {
+            com.uxplima.uxmskyblock.core.domain.mission.MissionLine line = written.get(number - 1);
+            MissionId id = com.uxplima.uxmskyblock.core.domain.mission.MissionLine.idOf(mission.id(), number);
+            lines.put(
+                    id,
+                    new MissionDefinition(
+                            id,
+                            mission.branch(),
+                            mission.displayName(),
+                            "",
+                            line.triggerType(),
+                            line.targetFilter(),
+                            line.requiredAmount(),
+                            com.uxplima.uxmskyblock.core.domain.mission.MissionReward.empty(),
+                            mission.repeat(),
+                            mission.modes(),
+                            Optional.empty()));
+            lineOf.put(id, mission.id());
+        }
+    }
+
+    /** The lines of {@code mission}, in order, or none for a mission of one. */
+    public List<MissionDefinition> linesOf(MissionId mission) {
+        List<MissionDefinition> found = new ArrayList<>();
+        for (int number = 1; ; number++) {
+            MissionDefinition line =
+                    lines.get(com.uxplima.uxmskyblock.core.domain.mission.MissionLine.idOf(mission, number));
+            if (line == null) {
+                return found;
+            }
+            found.add(line);
+        }
+    }
+
+    /** A mission or a line, by its id. */
+    private @Nullable MissionDefinition definitionOf(MissionId id) {
+        MissionDefinition mission = missionCatalog.get(id);
+        return mission != null ? mission : lines.get(id);
     }
 
     public Optional<MissionDefinition> findMission(MissionId missionId) {
@@ -208,6 +273,9 @@ public final class IslandMissionService {
         // A mission that comes back counts for none: the level would fall every time its day or week turned.
         int completed = 0;
         for (MissionProgress progress : findAllProgress(islandId, profileId).values()) {
+            if (lineOf.containsKey(progress.missionId())) {
+                continue;
+            }
             MissionDefinition def = missionCatalog.get(progress.missionId());
             if (progress.completed()
                     && (def == null
@@ -251,7 +319,7 @@ public final class IslandMissionService {
         Map<MissionId, MissionProgress> playerProgress = findAllProgress(islandId, profileId);
         List<MissionProgress> updated = new ArrayList<>();
 
-        for (MissionDefinition def : missionCatalog.values()) {
+        for (MissionDefinition def : countable()) {
             if (def.triggerType() != triggerType
                     || !matchesFilter(def.targetFilter(), target)
                     || !offered(islandId, def, playerProgress, now)) {
@@ -274,13 +342,20 @@ public final class IslandMissionService {
         Objects.requireNonNull(now, "now must not be null");
         Map<MissionId, MissionProgress> playerProgress = findAllProgress(islandId, profileId);
         List<MissionProgress> updated = new ArrayList<>();
-        for (MissionDefinition def : missionCatalog.values()) {
+        for (MissionDefinition def : countable()) {
             if (def.triggerType() != triggerType || !offered(islandId, def, playerProgress, now)) {
                 continue;
             }
             move(islandId, profileId, def, counted -> reached - counted, playerProgress, now, updated);
         }
         return updated;
+    }
+
+    /** Every mission and every line, which is what a trigger counts for. */
+    private List<MissionDefinition> countable() {
+        List<MissionDefinition> all = new ArrayList<>(missionCatalog.values());
+        all.addAll(lines.values());
+        return all;
     }
 
     /** Moves one mission on by what {@code toAdd} answers, writes where it stands, and pays it when this finished it. */
@@ -305,6 +380,15 @@ public final class IslandMissionService {
                     dirtyKey(islandId, profileId, def.id()), new DirtyProgressEntry(islandId, profileId, next));
         }
         updated.add(next);
+        MissionId whole = lineOf.get(def.id());
+        if (whole != null) {
+            // A line pays nothing of its own: finishing it moves its mission on by one.
+            MissionDefinition mission = missionCatalog.get(whole);
+            if (advance.finishedItNow() && mission != null) {
+                move(islandId, profileId, mission, counted -> 1L, playerProgress, now, updated);
+            }
+            return;
+        }
         if (advance.finishedItNow()) {
             IslandMissionRewardPort rewards = this.rewardPort;
             if (rewards != null) {
