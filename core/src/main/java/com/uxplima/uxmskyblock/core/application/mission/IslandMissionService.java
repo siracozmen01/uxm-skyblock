@@ -27,11 +27,11 @@ import org.jspecify.annotations.Nullable;
  */
 public final class IslandMissionService {
 
-    private static final java.util.logging.Logger LOGGER =
-            java.util.logging.Logger.getLogger(IslandMissionService.class.getName());
+    /** How a mission moves: a trigger, a level reached or handed-in items counted against what is still owed, the step written, and the island told when it finishes. */
+    private final MissionAdvances advances = new MissionAdvances(this);
 
-    private final IslandMissionStoragePort storagePort;
-    private volatile @Nullable IslandMissionRewardPort rewardPort;
+    final IslandMissionStoragePort storagePort;
+    volatile @Nullable IslandMissionRewardPort rewardPort;
 
     /**
      * Told when a mission is finished, once, by whoever finished it.
@@ -41,18 +41,18 @@ public final class IslandMissionService {
      * than a port because it is a side channel: a feed that is not listening must not change what a
      * mission does.
      */
-    private volatile @Nullable Consumer<MissionFinished> finishedListener;
+    volatile @Nullable Consumer<MissionFinished> finishedListener;
 
-    private final Map<MissionId, MissionDefinition> missionCatalog = new ConcurrentHashMap<>();
+    final Map<MissionId, MissionDefinition> missionCatalog = new ConcurrentHashMap<>();
 
     /** The lines of every mission of several, each kept as a mission of its own that pays nothing. */
     private final Map<MissionId, MissionDefinition> lines = new ConcurrentHashMap<>();
 
     /** The mission each line belongs to. */
-    private final Map<MissionId, MissionId> lineOf = new ConcurrentHashMap<>();
+    final Map<MissionId, MissionId> lineOf = new ConcurrentHashMap<>();
 
     private final Map<String, Map<MissionId, MissionProgress>> progressCache = new ConcurrentHashMap<>();
-    private final Map<String, DirtyProgressEntry> dirtyEntries = new ConcurrentHashMap<>();
+    final Map<String, DirtyProgressEntry> dirtyEntries = new ConcurrentHashMap<>();
 
     public record DirtyProgressEntry(IslandId islandId, ProfileId profileId, MissionProgress progress) {
         public DirtyProgressEntry {
@@ -354,101 +354,11 @@ public final class IslandMissionService {
         return fromStorage;
     }
 
-    public List<MissionProgress> handleTrigger(
-            IslandId islandId,
-            ProfileId profileId,
-            MissionTriggerType triggerType,
-            @Nullable String target,
-            long amount,
-            Instant now) {
-        Objects.requireNonNull(islandId, "islandId must not be null");
-        Objects.requireNonNull(profileId, "profileId must not be null");
-        Objects.requireNonNull(triggerType, "triggerType must not be null");
-        Objects.requireNonNull(now, "now must not be null");
-        if (amount <= 0) {
-            return List.of();
-        }
-
-        Map<MissionId, MissionProgress> playerProgress = findAllProgress(islandId, profileId);
-        List<MissionProgress> updated = new ArrayList<>();
-
-        for (MissionDefinition def : countable()) {
-            if (def.triggerType() != triggerType
-                    || !matchesFilter(def.targetFilter(), target)
-                    || !offered(islandId, def, playerProgress, now)) {
-                continue;
-            }
-            move(islandId, profileId, def, counted -> amount, playerProgress, now, updated);
-        }
-        return updated;
-    }
-
-    /**
-     * Moves the missions that count {@code triggerType} up to {@code reached}, a level or a balance the island
-     * stands at now rather than one more of something. A mission already further on stays where it is.
-     */
-    public List<MissionProgress> handleReach(
-            IslandId islandId, ProfileId profileId, MissionTriggerType triggerType, long reached, Instant now) {
-        Objects.requireNonNull(islandId, "islandId must not be null");
-        Objects.requireNonNull(profileId, "profileId must not be null");
-        Objects.requireNonNull(triggerType, "triggerType must not be null");
-        Objects.requireNonNull(now, "now must not be null");
-        Map<MissionId, MissionProgress> playerProgress = findAllProgress(islandId, profileId);
-        List<MissionProgress> updated = new ArrayList<>();
-        for (MissionDefinition def : countable()) {
-            if (def.triggerType() != triggerType || !offered(islandId, def, playerProgress, now)) {
-                continue;
-            }
-            move(islandId, profileId, def, counted -> reached - counted, playerProgress, now, updated);
-        }
-        return updated;
-    }
-
     /** Every mission and every line, which is what a trigger counts for. */
-    private List<MissionDefinition> countable() {
+    List<MissionDefinition> countable() {
         List<MissionDefinition> all = new ArrayList<>(missionCatalog.values());
         all.addAll(lines.values());
         return all;
-    }
-
-    /** Moves one mission on by what {@code toAdd} answers, writes where it stands, and pays it when this finished it. */
-    private void move(
-            IslandId islandId,
-            ProfileId profileId,
-            MissionDefinition def,
-            java.util.function.LongUnaryOperator toAdd,
-            Map<MissionId, MissionProgress> playerProgress,
-            Instant now,
-            List<MissionProgress> updated) {
-        Advance advance = advance(playerProgress, def, toAdd, now);
-        if (advance == null) {
-            return;
-        }
-        MissionProgress next = advance.progress();
-        if (next.completed()) {
-            dirtyEntries.remove(dirtyKey(islandId, profileId, def.id()));
-            storagePort.saveProgress(islandId, profileId, next);
-        } else {
-            dirtyEntries.put(
-                    dirtyKey(islandId, profileId, def.id()), new DirtyProgressEntry(islandId, profileId, next));
-        }
-        updated.add(next);
-        MissionId whole = lineOf.get(def.id());
-        if (whole != null) {
-            // A line pays nothing of its own: finishing it moves its mission on by one.
-            MissionDefinition mission = missionCatalog.get(whole);
-            if (advance.finishedItNow() && mission != null) {
-                move(islandId, profileId, mission, counted -> 1L, playerProgress, now, updated);
-            }
-            return;
-        }
-        if (advance.finishedItNow()) {
-            IslandMissionRewardPort rewards = this.rewardPort;
-            if (rewards != null) {
-                rewards.dispatchReward(islandId, profileId, def);
-            }
-            tellSomebodyItFinished(islandId, profileId, def);
-        }
     }
 
     /**
@@ -459,66 +369,6 @@ public final class IslandMissionService {
      * mission now stood, so a player who handed in ten to a mission needing two lost eight.
      */
     public record MissionSubmission(MissionProgress progress, long credited) {}
-
-    /** Hands items in, crediting no more than the mission still asks for. */
-    public Optional<MissionSubmission> submitManualItems(
-            IslandId islandId, ProfileId profileId, MissionId missionId, long amount, Instant now) {
-        Objects.requireNonNull(islandId, "islandId must not be null");
-        Objects.requireNonNull(profileId, "profileId must not be null");
-        Objects.requireNonNull(missionId, "missionId must not be null");
-        Objects.requireNonNull(now, "now must not be null");
-        if (amount <= 0) {
-            return Optional.empty();
-        }
-
-        MissionDefinition def = missionCatalog.get(missionId);
-        if (def == null || def.triggerType() != MissionTriggerType.ITEM_SUBMIT) {
-            return Optional.empty();
-        }
-
-        Map<MissionId, MissionProgress> playerProgress = findAllProgress(islandId, profileId);
-        if (!offered(islandId, def, playerProgress, now)) {
-            return Optional.empty();
-        }
-        Advance advance = advance(playerProgress, def, amount, now);
-        if (advance == null || advance.credited() <= 0) {
-            return Optional.of(new MissionSubmission(
-                    Optional.ofNullable(playerProgress.get(def.id()))
-                            .orElseGet(() -> MissionProgress.initial(def.id())),
-                    0L));
-        }
-
-        MissionProgress next = advance.progress();
-        dirtyEntries.remove(dirtyKey(islandId, profileId, def.id()));
-        storagePort.saveProgress(islandId, profileId, next);
-
-        if (advance.finishedItNow()) {
-            IslandMissionRewardPort rewards = this.rewardPort;
-            if (rewards != null) {
-                rewards.dispatchReward(islandId, profileId, def);
-            }
-            tellSomebodyItFinished(islandId, profileId, def);
-        }
-        return Optional.of(new MissionSubmission(next, advance.credited()));
-    }
-
-    public Optional<MissionProgress> submitManualItem(
-            IslandId islandId, ProfileId profileId, MissionId missionId, long amount, Instant now) {
-        Objects.requireNonNull(islandId, "islandId must not be null");
-        Objects.requireNonNull(profileId, "profileId must not be null");
-        Objects.requireNonNull(missionId, "missionId must not be null");
-        Objects.requireNonNull(now, "now must not be null");
-        if (amount <= 0) {
-            return Optional.empty();
-        }
-
-        MissionDefinition def = missionCatalog.get(missionId);
-        if (def == null || def.triggerType() != MissionTriggerType.ITEM_SUBMIT) {
-            return Optional.empty();
-        }
-
-        return submitManualItems(islandId, profileId, missionId, amount, now).map(MissionSubmission::progress);
-    }
 
     /** A mission somebody just finished. */
     public record MissionFinished(IslandId islandId, ProfileId profileId, MissionDefinition definition) {
@@ -539,89 +389,11 @@ public final class IslandMissionService {
         this.finishedListener = listener;
     }
 
-    /** Tells whoever is listening, without letting them change what the mission did. */
-    private void tellSomebodyItFinished(IslandId islandId, ProfileId profileId, MissionDefinition def) {
-        Consumer<MissionFinished> listener = this.finishedListener;
-        if (listener == null) {
-            return;
-        }
-        try {
-            listener.accept(new MissionFinished(islandId, profileId, def));
-        } catch (RuntimeException e) {
-            LOGGER.log(
-                    java.util.logging.Level.WARNING,
-                    e,
-                    () -> "Telling somebody that mission " + def.id() + " finished failed.");
-        }
-    }
-
     /**
      * One mission moved: where it now stands, whether this caller is the one that finished it, and
      * how much of what it offered the mission took.
      */
-    private record Advance(MissionProgress progress, boolean finishedItNow, long credited) {}
-
-    /**
-     * Moves one mission on by {@code amount}, atomically for that mission.
-     *
-     * <p>Reading the progress, adding to it and writing it back leaves a window, and the triggers
-     * arrive on a pool: every block a player breaks is one. Two of them read the same count and both
-     * wrote the same one back, so the player mined two and the mission counted one. Worse, two that
-     * read one short of the target both crossed it, and both saw themselves cross it, so the reward
-     * was handed out twice.
-     *
-     * <p>The progress map is keyed by mission, so one {@code compute} does the whole move under that
-     * key. Only the caller whose own increment crossed the line is told it finished it, and the
-     * storage write and the reward stay outside the map, where slow work belongs.
-     *
-     * @return where the mission now stands, or null when it was already finished
-     */
-    private @Nullable Advance advance(
-            Map<MissionId, MissionProgress> playerProgress, MissionDefinition def, long amount, Instant now) {
-        return advance(playerProgress, def, counted -> amount, now);
-    }
-
-    /**
-     * Moves one mission on by what {@code toAdd} answers for where it stands, read under the mission's key. A level
-     * or a balance reached asks for the difference between it and where the mission stands: read outside, two of
-     * them read the same count and both added their difference, so the mission went past what was ever reached.
-     *
-     * @return where the mission now stands, or null when it was already finished or did not move
-     */
-    private @Nullable Advance advance(
-            Map<MissionId, MissionProgress> playerProgress,
-            MissionDefinition def,
-            java.util.function.LongUnaryOperator toAdd,
-            Instant now) {
-        boolean[] finishedItNow = {false};
-        boolean[] moved = {false};
-        long[] credited = {0L};
-        MissionProgress next = playerProgress.compute(def.id(), (missionId, existing) -> {
-            // A mission that came back since the last of this progress starts over before it moves on.
-            MissionProgress before =
-                    existing != null ? current(def, existing, now) : MissionProgress.initial(missionId);
-            if (before.completed()) {
-                return before;
-            }
-            long amount = toAdd.applyAsLong(before.progressCount());
-            if (amount <= 0) {
-                return existing;
-            }
-            moved[0] = true;
-            // What the mission still wants is read here, under the key, not before it. Two hand ins
-            // that read it outside both took what was left, the second one's items went past the
-            // target, and the player was told they counted while nothing handed them back.
-            long take = Math.min(amount, Math.max(0L, def.requiredAmount() - before.progressCount()));
-            credited[0] = take;
-            MissionProgress after = before.increment(take, def.requiredAmount(), now);
-            finishedItNow[0] = after.completed();
-            return after;
-        });
-        if (next == null || !moved[0] || (next.completed() && !finishedItNow[0])) {
-            return null;
-        }
-        return new Advance(next, finishedItNow[0], credited[0]);
-    }
+    record Advance(MissionProgress progress, boolean finishedItNow, long credited) {}
 
     /**
      * Flushes all buffered unpersisted non-completion progress increments to relational storage.
@@ -678,11 +450,11 @@ public final class IslandMissionService {
         progressCache.remove(cacheKey(islandId, profileId));
     }
 
-    private String dirtyKey(IslandId islandId, ProfileId profileId, MissionId missionId) {
+    String dirtyKey(IslandId islandId, ProfileId profileId, MissionId missionId) {
         return islandId.value() + ":" + profileId.value() + ":" + missionId.value();
     }
 
-    private boolean matchesFilter(String filter, @Nullable String target) {
+    boolean matchesFilter(String filter, @Nullable String target) {
         if (filter.isEmpty() || filter.equals("*")) {
             return true;
         }
@@ -690,5 +462,35 @@ public final class IslandMissionService {
             return false;
         }
         return filter.equalsIgnoreCase(target.trim());
+    }
+
+    public List<MissionProgress> handleTrigger(
+            IslandId islandId,
+            ProfileId profileId,
+            MissionTriggerType triggerType,
+            @Nullable String target,
+            long amount,
+            Instant now) {
+        return advances.handleTrigger(islandId, profileId, triggerType, target, amount, now);
+    }
+
+    /**
+     * Moves the missions that count {@code triggerType} up to {@code reached}, a level or a balance the island
+     * stands at now rather than one more of something. A mission already further on stays where it is.
+     */
+    public List<MissionProgress> handleReach(
+            IslandId islandId, ProfileId profileId, MissionTriggerType triggerType, long reached, Instant now) {
+        return advances.handleReach(islandId, profileId, triggerType, reached, now);
+    }
+
+    /** Hands items in, crediting no more than the mission still asks for. */
+    public Optional<MissionSubmission> submitManualItems(
+            IslandId islandId, ProfileId profileId, MissionId missionId, long amount, Instant now) {
+        return advances.submitManualItems(islandId, profileId, missionId, amount, now);
+    }
+
+    public Optional<MissionProgress> submitManualItem(
+            IslandId islandId, ProfileId profileId, MissionId missionId, long amount, Instant now) {
+        return advances.submitManualItem(islandId, profileId, missionId, amount, now);
     }
 }
