@@ -200,6 +200,96 @@ class ThePoseidonLoreIsReadTest extends MockBukkitHarness {
         }
     }
 
+    @Test
+    @DisplayName(
+            "The book follows the story: each chapter earned, then a page naming the next mission, nothing after it")
+    void theBookFollowsTheStory() {
+        java.util.Set<String> earned = new java.util.HashSet<>(java.util.Set.of("poseidon_story_1"));
+        List<ProfileId> asked = new ArrayList<>();
+        PoseidonLore lore = lore();
+        lore.follow(new PoseidonLore.Story(
+                List.of("poseidon_story_1", "gone", "poseidon_story_2", "poseidon_story_3"),
+                profile -> {
+                    asked.add(profile);
+                    return java.util.Set.copyOf(earned);
+                },
+                mission -> mission.equals("gone")
+                        ? Optional.empty()
+                        : Optional.of("@missions.catalog." + mission + ".name")));
+        int opening =
+                messages.provider().getRawList("poseidon.lore.pages", "en").size();
+
+        lore.open(diver);
+        List<String> pages = opened.getLast().pages().stream()
+                .map(ThePoseidonLoreIsReadTest::plain)
+                .toList();
+        assertThat(pages)
+                .describedAs("the opening, the first chapter's two pages, one lost page")
+                .hasSize(opening + 3);
+        assertThat(pages.get(opening)).contains("Salt and Stone");
+        assertThat(pages.getLast())
+                .contains("A lost page")
+                .describedAs("a mission the file does not hold is skipped")
+                .contains("Finish The Watchers to find it.");
+        assertThat(asked).containsExactly(SEA_PROFILE);
+
+        earned.add("poseidon_story_2");
+        earned.add("poseidon_story_3");
+        lore.open(diver);
+        pages = opened.getLast().pages().stream()
+                .map(ThePoseidonLoreIsReadTest::plain)
+                .toList();
+        assertThat(pages).hasSize(opening + 4);
+        assertThat(pages.getLast()).contains("Lanterns Below");
+        assertThat(pages).noneMatch(page -> page.contains("A lost page"));
+
+        bedrock = true;
+        earned.clear();
+        lore.open(diver);
+        for (int page = 1; page < opening; page++) {
+            forms.getLast().pick().accept(forms.getLast().buttons().size() - 2);
+        }
+        forms.getLast().pick().accept(forms.getLast().buttons().size() - 2);
+        assertThat(forms.getLast().body())
+                .describedAs("a Bedrock reader turns to the same lost page")
+                .contains("Finish Salt and Stone to find it.");
+        assertThat(forms.getLast().buttons()).containsExactly("Previous page", "Close");
+
+        lore.open(farmer);
+        assertThat(asked).describedAs("another mode's island reads no missions").hasSize(3);
+    }
+
+    @Test
+    @DisplayName("Every language words each shipped chapter and the lost page; the chapters are read from the file")
+    void everyLanguageWordsTheChapters() throws Exception {
+        for (String language : messages.provider().getAvailableLocales()) {
+            for (String chapter : com.uxplima.uxmskyblock.bukkit.config.PoseidonConfiguration.SHIPPED_CHAPTERS) {
+                assertThat(messages.provider().getRawList("poseidon.lore.chapters." + chapter, language))
+                        .describedAs("%s in %s", chapter, language)
+                        .isNotEmpty();
+            }
+            assertThat(messages.provider().getRaw("poseidon.lore.locked", language))
+                    .describedAs("the lost page in %s", language)
+                    .contains("<mission>");
+        }
+        assertThat(com.uxplima.uxmskyblock.bukkit.config.PoseidonConfiguration.load(
+                                org.spongepowered.configurate.hocon.HoconConfigurationLoader.builder()
+                                        .buildAndLoadString(new String(
+                                                java.util.Objects.requireNonNull(getClass()
+                                                                .getClassLoader()
+                                                                .getResourceAsStream("modules/poseidon.conf"))
+                                                        .readAllBytes(),
+                                                java.nio.charset.StandardCharsets.UTF_8)))
+                        .chapters())
+                .isEqualTo(com.uxplima.uxmskyblock.bukkit.config.PoseidonConfiguration.SHIPPED_CHAPTERS);
+        assertThat(com.uxplima.uxmskyblock.bukkit.config.PoseidonConfiguration.load(
+                                org.spongepowered.configurate.hocon.HoconConfigurationLoader.builder()
+                                        .buildAndLoadString("lore { chapters = [\" My_Story \"] }"))
+                        .chapters())
+                .describedAs("by the id the missions file reads")
+                .containsExactly("my_story");
+    }
+
     private static String plain(net.kyori.adventure.text.@org.jspecify.annotations.Nullable Component line) {
         return line == null ? "" : PlainTextComponentSerializer.plainText().serialize(line);
     }

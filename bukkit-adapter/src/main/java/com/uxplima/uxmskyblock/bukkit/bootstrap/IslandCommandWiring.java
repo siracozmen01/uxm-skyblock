@@ -348,14 +348,29 @@ final class IslandCommandWiring {
         // A Poseidon island's lore: a book on Java, a form on Bedrock, pages from the language files.
         if (gameplay.poseidonWiring().enabled()) {
             var forms = integration.bedrockFormService();
-            tree.usePoseidonLore(new com.uxplima.uxmskyblock.bukkit.poseidon.PoseidonLore(
-                    integration.messages(),
-                    gameplay.scheduler(),
-                    authority.sessionCoordinator()::activeProfile,
-                    gameplay.gameModeHierarchyService()::modeOf,
-                    forms::isBedrock,
-                    forms.screen(),
-                    org.bukkit.entity.Player::openBook));
+            com.uxplima.uxmskyblock.bukkit.poseidon.PoseidonLore lore =
+                    new com.uxplima.uxmskyblock.bukkit.poseidon.PoseidonLore(
+                            integration.messages(),
+                            gameplay.scheduler(),
+                            authority.sessionCoordinator()::activeProfile,
+                            gameplay.gameModeHierarchyService()::modeOf,
+                            forms::isBedrock,
+                            forms.screen(),
+                            org.bukkit.entity.Player::openBook);
+            lore.follow(new com.uxplima.uxmskyblock.bukkit.poseidon.PoseidonLore.Story(
+                    config.poseidonConfig().chapters(),
+                    profile -> persistence
+                            .islandStoragePort()
+                            .findIslandIdByProfileId(profile)
+                            .map(island -> gameplay.missionService().findAllProgress(island, profile).values().stream()
+                                    .filter(com.uxplima.uxmskyblock.core.domain.mission.MissionProgress::completed)
+                                    .map(progress -> progress.missionId().value())
+                                    .collect(java.util.stream.Collectors.toUnmodifiableSet()))
+                            .orElse(java.util.Set.of()),
+                    mission -> gameplay.missionService()
+                            .findMission(com.uxplima.uxmskyblock.core.domain.mission.MissionId.of(mission))
+                            .map(com.uxplima.uxmskyblock.core.domain.mission.MissionDefinition::displayName)));
+            tree.usePoseidonLore(lore);
         }
         integration.placeholderExpansion().useOneBlock(oneBlockPanel);
         if (gameplay.tradeWindsWiring().enabled()) {

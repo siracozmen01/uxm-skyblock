@@ -17,7 +17,12 @@ import org.spongepowered.configurate.ConfigurationNode;
  * @param wrecks the wrecks and ruins a preset can lay, by name; each is the action {@code uxm:<name>}
  */
 public record PoseidonConfiguration(
-        boolean enabled, Ocean ocean, PoseidonRules rules, List<String> waterEffects, Map<String, Wreck> wrecks) {
+        boolean enabled,
+        Ocean ocean,
+        PoseidonRules rules,
+        List<String> waterEffects,
+        Map<String, Wreck> wrecks,
+        List<String> chapters) {
 
     private static final Logger LOGGER = Logger.getLogger(PoseidonConfiguration.class.getName());
 
@@ -66,7 +71,15 @@ public record PoseidonConfiguration(
     /** The shipped wrecks: a shipwreck, one big ruin, and a ring of small ones. */
     public static final Map<String, Wreck> SHIPPED_WRECKS = shippedWrecks();
 
+    /** The story missions whose chapters the lore book holds, in their order. */
+    public static final List<String> SHIPPED_CHAPTERS =
+            List.of("poseidon_story_1", "poseidon_story_2", "poseidon_story_3", "poseidon_story_4", "poseidon_story_5");
+
     public PoseidonConfiguration {
+        // A mission is known by its id in lower case, as the missions file reads it.
+        chapters = chapters.stream()
+                .map(chapter -> chapter.trim().toLowerCase(java.util.Locale.ROOT))
+                .toList();
         Objects.requireNonNull(ocean, "ocean must not be null");
         Objects.requireNonNull(rules, "rules must not be null");
         waterEffects = List.copyOf(waterEffects);
@@ -76,6 +89,12 @@ public record PoseidonConfiguration(
     /** The shipped ocean, hazard and wrecks, with Poseidon on or off. */
     public PoseidonConfiguration(boolean enabled, Ocean ocean) {
         this(enabled, ocean, PoseidonRules.shipped(), SHIPPED_WATER_EFFECTS, SHIPPED_WRECKS);
+    }
+
+    /** The shipped chapters of the story. */
+    public PoseidonConfiguration(
+            boolean enabled, Ocean ocean, PoseidonRules rules, List<String> waterEffects, Map<String, Wreck> wrecks) {
+        this(enabled, ocean, rules, waterEffects, wrecks, SHIPPED_CHAPTERS);
     }
 
     private static Map<String, Wreck> shippedWrecks() {
@@ -163,7 +182,8 @@ public record PoseidonConfiguration(
                 ocean,
                 rules,
                 AcidIslandConfiguration.strings(hazard.node("water-effects"), SHIPPED_WATER_EFFECTS),
-                wrecks(root.node("wrecks")));
+                wrecks(root.node("wrecks")),
+                AcidIslandConfiguration.strings(root.node("lore", "chapters"), SHIPPED_CHAPTERS));
     }
 
     private static Map<String, Wreck> wrecks(ConfigurationNode node) {
