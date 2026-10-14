@@ -1,7 +1,6 @@
 package com.uxplima.uxmskyblock.bukkit.config;
 
 import java.time.Duration;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -443,146 +442,6 @@ public record AcidIslandConfiguration(
                 Between.SHIPPED);
     }
 
-    public static AcidIslandConfiguration load(ConfigurationNode root) {
-        AcidIslandConfiguration shipped = defaultConfiguration();
-        Sea sea;
-        ConfigurationNode seaNode = root.node("sea");
-        try {
-            ConfigurationNode ventNode = seaNode.node("vents");
-            Vents vents = new Vents(
-                    ventNode.node("chance").getDouble(Vents.SHIPPED.chance()),
-                    ventNode.node("reach").getInt(Vents.SHIPPED.reach()),
-                    strings(ventNode.node("effects"), Vents.SHIPPED.effects()));
-            sea = new Sea(
-                    seaNode.node("below-island").getInt(Sea.SHIPPED.belowIsland()),
-                    seaNode.node("depth").getInt(Sea.SHIPPED.depth()),
-                    seaNode.node("radius").getInt(Sea.SHIPPED.radius()),
-                    seaNode.node("floor").getString(Sea.SHIPPED.floor()).trim(),
-                    vents,
-                    seaNode.node("geysers", "chance").getDouble(Sea.SHIPPED.geyserChance()),
-                    new Bed(
-                            strings(seaNode.node("bed", "blocks"), Bed.SHIPPED.blocks()),
-                            seaNode.node("bed", "thickness").getInt(Bed.SHIPPED.thickness()),
-                            seaNode.node("bed", "mounds").getInt(Bed.SHIPPED.mounds())));
-        } catch (IllegalArgumentException e) {
-            LOGGER.warning(() -> "modules/acidisland.conf sea: " + e.getMessage() + ". The shipped sea is used.");
-            sea = Sea.SHIPPED;
-        }
-        ConfigurationNode hazard = root.node("hazard");
-        AcidRules rules;
-        try {
-            rules = new AcidRules(
-                    hazard.node("water-damage").getDouble(shipped.rules().waterDamage()),
-                    hazard.node("rain-damage").getDouble(shipped.rules().rainDamage()),
-                    hazard.node("helmet-blocks-rain").getBoolean(shipped.rules().helmetBlocksRain()),
-                    durationOf(
-                            hazard.node("check-every").getString(""),
-                            shipped.rules().checkEvery()));
-        } catch (IllegalArgumentException e) {
-            LOGGER.warning(
-                    () -> "modules/acidisland.conf hazard: " + e.getMessage() + ". The shipped numbers are used.");
-            rules = shipped.rules();
-        }
-        ConfigurationNode purification = root.node("purification");
-        return new AcidIslandConfiguration(
-                root.node("enabled").getBoolean(true),
-                sea,
-                rules,
-                strings(hazard.node("water-protection"), shipped.waterProtection()),
-                strings(hazard.node("water-effects"), shipped.waterEffects()),
-                new Purification(
-                        purification.node("furnace").getBoolean(true),
-                        purification.node("brewing-with-coal").getBoolean(true)),
-                seaLife(root.node("sea-life")),
-                armour(hazard.node("armour")),
-                cleanWater(root.node("clean-water")),
-                look(seaNode.node("look")),
-                buried(seaNode.node("buried")),
-                tide(seaNode.node("tide")),
-                offerings(seaNode.node("vents", "offerings")),
-                between(seaNode.node("between")));
-    }
-
-    /** The sea between islands, as {@code sea between} writes it; one that cannot be is off, said. */
-    private static Between between(ConfigurationNode node) {
-        try {
-            return new Between(
-                    node.node("enabled").getBoolean(Between.SHIPPED.enabled()),
-                    node.node("world").getString(Between.SHIPPED.world()),
-                    node.node("surface").getInt(Between.SHIPPED.surface()));
-        } catch (IllegalArgumentException e) {
-            LOGGER.warning(() -> "modules/acidisland.conf sea between: " + e.getMessage() + ". It is off.");
-            return Between.SHIPPED;
-        }
-    }
-
-    /**
-     * The offerings, as {@code sea vents offerings} writes them; one that cannot be read is left out, said, and a
-     * wait that cannot be is the shipped one.
-     */
-    private static Offerings offerings(ConfigurationNode node) {
-        if (node.virtual()) {
-            return Offerings.SHIPPED;
-        }
-        List<Offering> read = new ArrayList<>();
-        ConfigurationNode list = node.node("list");
-        if (list.virtual()) {
-            read.addAll(Offerings.SHIPPED.list());
-        }
-        int at = 0;
-        for (ConfigurationNode written : list.childrenList()) {
-            at++;
-            int number = at;
-            try {
-                read.add(new Offering(
-                        strings(written.node("items"), List.of()),
-                        written.node("takes").getInt(1),
-                        written.node("loot").getString("")));
-            } catch (IllegalArgumentException e) {
-                LOGGER.warning(() -> "modules/acidisland.conf sea vents offerings, offering " + number + ": "
-                        + e.getMessage() + ". It is left out.");
-            }
-        }
-        Duration after = durationOf(node.node("after").getString(""), Offerings.SHIPPED.after());
-        return new Offerings(after.isNegative() ? Offerings.SHIPPED.after() : after, read);
-    }
-
-    /** The tide, as {@code sea tide} writes it; one that cannot be is the shipped one, said. */
-    private static Tide tide(ConfigurationNode node) {
-        try {
-            return new Tide(
-                    new com.uxplima.uxmskyblock.core.domain.hazard.AcidTide(
-                            node.node("rise").getInt(Tide.SHIPPED.tide().rise()),
-                            durationOf(
-                                    node.node("period").getString(""),
-                                    Tide.SHIPPED.tide().period())),
-                    durationOf(node.node("check-every").getString(""), Tide.SHIPPED.checkEvery()));
-        } catch (IllegalArgumentException e) {
-            LOGGER.warning(() -> "modules/acidisland.conf sea tide: " + e.getMessage() + ". The shipped tide is used.");
-            return Tide.SHIPPED;
-        }
-    }
-
-    /** The structures buried in the floor, as {@code sea buried} writes them; what cannot be read is the shipped. */
-    private static Buried buried(ConfigurationNode node) {
-        if (node.virtual()) {
-            return Buried.SHIPPED;
-        }
-        ConfigurationNode groups = node.node("groups");
-        try {
-            return new Buried(
-                    node.node("sink").getInt(Buried.SHIPPED.sink()),
-                    groups.virtual()
-                            ? Buried.SHIPPED.groups()
-                            : PoseidonConfiguration.wrecks(
-                                    groups, Buried.SHIPPED.groups(), "modules/acidisland.conf sea buried groups"));
-        } catch (IllegalArgumentException e) {
-            LOGGER.warning(
-                    () -> "modules/acidisland.conf sea buried: " + e.getMessage() + ". The shipped ones are used.");
-            return Buried.SHIPPED;
-        }
-    }
-
     /** How the sea looks, as {@code sea look} writes it; what cannot be read is the shipped, said. */
     public static Look look(ConfigurationNode node) {
         Look shipped = Look.SHIPPED;
@@ -599,103 +458,17 @@ public record AcidIslandConfiguration(
         }
     }
 
-    /** What clean water does, as {@code clean-water} writes it; what cannot be read is the shipped. */
-    private static CleanWater cleanWater(ConfigurationNode node) {
-        try {
-            return new CleanWater(
-                    node.node("heals").getDouble(CleanWater.SHIPPED.heals()),
-                    strings(node.node("effects"), CleanWater.SHIPPED.effects()));
-        } catch (IllegalArgumentException e) {
-            LOGGER.warning(
-                    () -> "modules/acidisland.conf clean-water: " + e.getMessage() + ". The shipped one is used.");
-            return CleanWater.SHIPPED;
-        }
-    }
-
-    /** The armour that keeps the acid off, as {@code hazard armour} writes it; what cannot be read is the shipped. */
-    private static Armour armour(ConfigurationNode node) {
-        Armour shipped = Armour.SHIPPED;
-        try {
-            return new Armour(
-                    strings(node.node("sets"), shipped.sets()),
-                    node.node("sea").getBoolean(shipped.sea()),
-                    node.node("rain").getBoolean(shipped.rain()),
-                    node.node("wear").getInt(shipped.wear()));
-        } catch (IllegalArgumentException e) {
-            LOGGER.warning(
-                    () -> "modules/acidisland.conf hazard armour: " + e.getMessage() + ". The shipped armour is used.");
-            return shipped;
-        }
-    }
-
-    /** What the sea does to items and creatures, as {@code sea-life} writes it; what cannot be read is the shipped. */
-    private static SeaLife seaLife(ConfigurationNode node) {
-        SeaLife shipped = SeaLife.SHIPPED;
-        try {
-            ConfigurationNode items = node.node("items");
-            ConfigurationNode creatures = node.node("creatures");
-            return new SeaLife(
-                    node.node("reach").getInt(shipped.reach()),
-                    items.node("dissolve").getBoolean(shipped.itemsDissolve()),
-                    durationOf(items.node("after").getString(""), shipped.itemsAfter()),
-                    creatures.node("burn").getBoolean(shipped.creaturesBurn()),
-                    creatures.node("damage").getDouble(shipped.creatureDamage()),
-                    strings(creatures.node("spared"), shipped.spared()));
-        } catch (IllegalArgumentException e) {
-            LOGGER.warning(() -> "modules/acidisland.conf sea-life: " + e.getMessage() + ". The shipped one is used.");
-            return shipped;
-        }
-    }
-
-    /** The strings of a list, or the fallback when the list is not written at all. */
-    static List<String> strings(ConfigurationNode node, List<String> fallback) {
-        if (node.virtual()) {
-            return fallback;
-        }
-        List<String> read = new ArrayList<>();
-        for (ConfigurationNode child : node.childrenList()) {
-            String value = child.getString("").trim();
-            if (!value.isEmpty()) {
-                read.add(value);
-            }
-        }
-        return read;
+    public static AcidIslandConfiguration load(ConfigurationNode root) {
+        return AcidIslandReader.load(root);
     }
 
     /** A span written as {@code 500ms}, {@code 2s}, {@code 5m}, {@code 1h}, {@code 3d} or a plain number of seconds. */
     static Duration durationOf(String written, Duration fallback) {
-        String raw = written.trim().toLowerCase(java.util.Locale.ROOT);
-        if (raw.isEmpty()) {
-            return fallback;
-        }
-        try {
-            if (raw.endsWith("ms")) {
-                return Duration.ofMillis(
-                        Long.parseLong(raw.substring(0, raw.length() - 2).trim()));
-            }
-            if (raw.endsWith("s")) {
-                return Duration.ofMillis(Math.round(
-                        Double.parseDouble(raw.substring(0, raw.length() - 1).trim()) * 1000));
-            }
-            if (raw.endsWith("m")) {
-                return Duration.ofMillis(Math.round(
-                        Double.parseDouble(raw.substring(0, raw.length() - 1).trim()) * 60_000));
-            }
-            if (raw.endsWith("h")) {
-                return Duration.ofMillis(Math.round(
-                        Double.parseDouble(raw.substring(0, raw.length() - 1).trim()) * 3_600_000));
-            }
-            if (raw.endsWith("d")) {
-                return Duration.ofMillis(Math.round(
-                        Double.parseDouble(raw.substring(0, raw.length() - 1).trim()) * 86_400_000));
-            }
-            // Java reads "3f" as a number; a unit this does not know is no number of seconds.
-            if (Character.isLetter(raw.charAt(raw.length() - 1))) {
-                return fallback;
-            }
-            return Duration.ofMillis(Math.round(Double.parseDouble(raw) * 1000));
-        } catch (NumberFormatException e) {
-            return fallback;
-        }
+        return AcidIslandValues.durationOf(written, fallback);
+    }
+
+    /** The strings of a list, or the fallback when the list is not written at all. */
+    static List<String> strings(ConfigurationNode node, List<String> fallback) {
+        return AcidIslandValues.strings(node, fallback);
     }
 }
