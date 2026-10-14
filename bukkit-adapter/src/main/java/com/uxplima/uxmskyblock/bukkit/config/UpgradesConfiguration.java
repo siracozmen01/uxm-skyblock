@@ -120,6 +120,18 @@ public record UpgradesConfiguration(boolean enabled, Map<UpgradeId, UpgradeDefin
                                 new UpgradeTier(2, 90_000L, "PRIMARY", Map.of("rate_multiplier", 1.25)),
                                 new UpgradeTier(3, 250_000L, "PRIMARY", Map.of("rate_multiplier", 1.50)))));
 
+        // 8. How much money the island bank holds, the first tier free.
+        UpgradeId bankId = UpgradeId.of("bank_limit");
+        defs.put(
+                bankId,
+                new UpgradeDefinition(
+                        bankId,
+                        "@upgrades.names.bank_limit",
+                        List.of(
+                                new UpgradeTier(1, 0L, "PRIMARY", Map.of("limit", 100_000.0)),
+                                new UpgradeTier(2, 50_000L, "PRIMARY", Map.of("limit", 1_000_000.0)),
+                                new UpgradeTier(3, 250_000L, "PRIMARY", Map.of("limit", 10_000_000.0)))));
+
         // 8. More of every drop from the mobs killed on the island.
         UpgradeId dropsId = UpgradeId.of("mob_drops");
         defs.put(

@@ -119,6 +119,10 @@ public final class IntegrationWiring implements AutoCloseable {
                 gameplay.scheduler(),
                 persistence.economySagaPort(),
                 config.bankConfig().currencies());
+        // A player's deposit stops at the most the island's bank limit tier lets it hold.
+        var bankCap = new com.uxplima.uxmskyblock.bukkit.bank.BankCap(
+                gameplay.upgradeService()::getDefinition, gameplay.upgradeService()::getCurrentTier);
+        this.economyBridge.useBalanceCap(bankCap::of);
 
         this.bedrockDetector = LateBedrockDetector.forServer(plugin.getServer());
         this.bedrockScreen = LateBedrockScreen.forServer(plugin.getServer());

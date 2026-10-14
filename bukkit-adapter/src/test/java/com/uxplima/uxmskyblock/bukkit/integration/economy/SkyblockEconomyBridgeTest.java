@@ -391,4 +391,31 @@ class SkyblockEconomyBridgeTest {
         assertThat(wallet.withdraw(who, 100L)).isFalse();
         assertThat(wallet.deposit(who, 100L)).isFalse();
     }
+
+    @Test
+    @DisplayName(
+            "A deposit that would fill the bank past its limit is refused before any money moves, and one that fits goes in")
+    void aFullBankRefusesTheDeposit() {
+        when(mockEconomy.isPresent()).thenReturn(true);
+        when(mockEconomy.has(eq(mockPlayer), anyDouble())).thenReturn(true);
+        when(mockEconomy.withdraw(eq(mockPlayer), anyDouble())).thenReturn(true);
+        when(mockBankService.getBalanceMinorUnits(profileId)).thenReturn(Optional.of(9_000L));
+        when(mockBankService.deposit(any(), any(), anyLong(), any()))
+                .thenReturn(new BankTransactionOutcome.Success(sampleBank, sampleTx));
+        bridge.useBalanceCap(island -> island.equals(islandId) ? 14_000L : Long.MAX_VALUE);
+
+        AtomicReference<BankTransactionOutcome> full = new AtomicReference<>();
+        bridge.depositToIslandBank(mockPlayer, profileId, 51L, nodeId, full::set);
+        assertThat(full.get()).isInstanceOf(BankTransactionOutcome.AuthorityRejected.class);
+        assertThat(((BankTransactionOutcome.AuthorityRejected) Objects.requireNonNull(full.get())).kind())
+                .isEqualTo(BankTransactionOutcome.AuthorityRejected.Kind.BANK_FULL);
+        verify(mockEconomy, never()).withdraw(eq(mockPlayer), anyDouble());
+
+        AtomicReference<BankTransactionOutcome> fits = new AtomicReference<>();
+        bridge.depositToIslandBank(mockPlayer, profileId, 50L, nodeId, fits::set);
+        assertThat(fits.get()).describedAs("to the limit exactly").isInstanceOf(BankTransactionOutcome.Success.class);
+        assertThat(com.uxplima.uxmskyblock.bukkit.command.BankRefusalLines.keyFor(
+                        Objects.requireNonNull(full.get()), "x"))
+                .isEqualTo("bank.full");
+    }
 }

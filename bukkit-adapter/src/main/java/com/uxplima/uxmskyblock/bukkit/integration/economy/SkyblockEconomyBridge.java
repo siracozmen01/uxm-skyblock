@@ -38,6 +38,10 @@ public final class SkyblockEconomyBridge {
 
     private final EconomyBridge economyBridge;
     private final IslandBankService bankService;
+
+    /** The most an island bank may hold, in minor units; no limit until the wiring hands one over. */
+    private volatile java.util.function.ToLongFunction<IslandId> balanceCap = island -> Long.MAX_VALUE;
+
     private final SchedulerPort schedulerPort;
     private final @Nullable EconomySagaCoordinator sagaCoordinator;
     private final @Nullable BankWallets wallets;
@@ -234,6 +238,11 @@ public final class SkyblockEconomyBridge {
                 coordinator.sagaTimeout());
     }
 
+    /** Holds every island bank to at most {@code cap} of money, in minor units, against a player's deposit. */
+    public void useBalanceCap(java.util.function.ToLongFunction<IslandId> cap) {
+        this.balanceCap = Objects.requireNonNull(cap, "cap must not be null");
+    }
+
     /**
      * Deposits money from player's wallet into the island bank via durable two-phase saga.
      * If bank mutation fails, wallet deduction is compensated and refunded immediately.
@@ -282,6 +291,16 @@ public final class SkyblockEconomyBridge {
                         BankTransactionOutcome.AuthorityRejected.Kind.NO_ISLAND,
                         "No island associated with profile " + profileId);
                 schedulerPort.onEntity(playerUuid, () -> callback.accept(outcome));
+                return;
+            }
+
+            long cap = balanceCap.applyAsLong(optIsland.get());
+            if (cap != Long.MAX_VALUE
+                    && bankService.getBalanceMinorUnits(profileId).orElse(0L) + minorUnits > cap) {
+                BankTransactionOutcome full = new BankTransactionOutcome.AuthorityRejected(
+                        BankTransactionOutcome.AuthorityRejected.Kind.BANK_FULL,
+                        "Deposit refused: the island bank holds at most " + cap + " minor units.");
+                schedulerPort.onEntity(playerUuid, () -> callback.accept(full));
                 return;
             }
 

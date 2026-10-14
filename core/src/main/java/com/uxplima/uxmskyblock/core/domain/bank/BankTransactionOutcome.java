@@ -56,6 +56,8 @@ public sealed interface BankTransactionOutcome {
             REFUND_FAILED,
             /** The server has no economy plugin, so there is no wallet to take from or give to. */
             NO_ECONOMY,
+            /** The island bank holds as much as its bank limit lets it, so nothing more goes in. */
+            BANK_FULL,
             /**
              * The database did not answer whether the move landed. The saga that asked is left as it
              * stood and is settled from its journal, and nothing is paid back in the meantime.
