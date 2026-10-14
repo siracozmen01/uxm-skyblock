@@ -127,6 +127,87 @@ public final class IslandMissionListener implements Listener, ModeMissions {
         }
     }
 
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    public void onCraft(org.bukkit.event.inventory.CraftItemEvent event) {
+        if (!(event.getWhoClicked() instanceof Player player)) {
+            return;
+        }
+        org.bukkit.inventory.ItemStack result = event.getRecipe().getResult();
+        long made = CraftCount.made(
+                result,
+                event.getInventory().getMatrix(),
+                event.isShiftClick(),
+                player.getInventory().getStorageContents());
+        if (made > 0) {
+            dispatchTrigger(player, MissionTriggerType.CRAFT, normalizeMaterialName(result.getType()), made);
+        }
+    }
+
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    public void onSmelt(org.bukkit.event.inventory.FurnaceExtractEvent event) {
+        if (event.getItemAmount() > 0) {
+            dispatchTrigger(
+                    event.getPlayer(),
+                    MissionTriggerType.SMELT,
+                    normalizeMaterialName(event.getItemType()),
+                    event.getItemAmount());
+        }
+    }
+
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    public void onEnchant(org.bukkit.event.enchantment.EnchantItemEvent event) {
+        dispatchTrigger(
+                event.getEnchanter(),
+                MissionTriggerType.ENCHANT,
+                normalizeMaterialName(event.getItem().getType()),
+                1L);
+    }
+
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    public void onExperience(org.bukkit.event.player.PlayerExpChangeEvent event) {
+        if (event.getAmount() > 0) {
+            dispatchTrigger(event.getPlayer(), MissionTriggerType.EXPERIENCE, "*", event.getAmount());
+        }
+    }
+
+    /** Who last opened each brewing stand, by its place, so a brew is counted for them. */
+    private final ConcurrentMap<Location, UUID> brewers = new ConcurrentHashMap<>();
+
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    public void onStandOpened(org.bukkit.event.inventory.InventoryOpenEvent event) {
+        if (event.getInventory() instanceof org.bukkit.inventory.BrewerInventory stand) {
+            org.bukkit.block.BrewingStand block = stand.getHolder();
+            if (block != null) {
+                brewers.put(block.getLocation(), event.getPlayer().getUniqueId());
+            }
+        }
+    }
+
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    public void onBrew(org.bukkit.event.inventory.BrewEvent event) {
+        UUID brewer = brewers.get(event.getBlock().getLocation());
+        Player player = brewer == null ? null : online.apply(brewer);
+        if (player == null) {
+            return;
+        }
+        java.util.Map<String, Long> brewed = new java.util.HashMap<>();
+        for (org.bukkit.inventory.ItemStack potion : event.getResults()) {
+            if (potion != null && !potion.getType().isAir()) {
+                brewed.merge(potionKind(potion), (long) potion.getAmount(), Long::sum);
+            }
+        }
+        brewed.forEach((kind, count) -> dispatchTrigger(player, MissionTriggerType.BREW, kind, count));
+    }
+
+    /** A potion's kind, as SWIFTNESS, or its item's name when it carries none. */
+    private String potionKind(org.bukkit.inventory.ItemStack potion) {
+        if (potion.getItemMeta() instanceof org.bukkit.inventory.meta.PotionMeta meta
+                && meta.getBasePotionType() != null) {
+            return meta.getBasePotionType().name();
+        }
+        return normalizeMaterialName(potion.getType());
+    }
+
     private volatile java.util.function.Function<
                     IslandId, List<com.uxplima.uxmskyblock.core.domain.island.IslandMember>>
             members = island -> List.of();
