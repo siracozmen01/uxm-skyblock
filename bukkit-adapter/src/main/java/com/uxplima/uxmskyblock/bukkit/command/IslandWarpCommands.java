@@ -30,25 +30,19 @@ import com.uxplima.uxmskyblock.core.application.activity.ActivityFeedService;
 import com.uxplima.uxmskyblock.core.application.island.IslandLocationService;
 import com.uxplima.uxmskyblock.core.application.scheduler.SchedulerPort;
 import com.uxplima.uxmskyblock.core.application.warp.IslandWarpService;
-import com.uxplima.uxmskyblock.core.domain.activity.ActivityEventType;
 import com.uxplima.uxmskyblock.core.domain.identity.IslandId;
 import com.uxplima.uxmskyblock.core.domain.identity.PlayerUuid;
 import com.uxplima.uxmskyblock.core.domain.identity.ProfileId;
 import com.uxplima.uxmskyblock.core.domain.island.Island;
-import com.uxplima.uxmskyblock.core.domain.warp.DuplicateWarpNameException;
-import com.uxplima.uxmskyblock.core.domain.warp.InvalidWarpNameException;
 import com.uxplima.uxmskyblock.core.domain.warp.IslandClosedToVisitorsException;
 import com.uxplima.uxmskyblock.core.domain.warp.IslandLockedException;
 import com.uxplima.uxmskyblock.core.domain.warp.IslandWarp;
 import com.uxplima.uxmskyblock.core.domain.warp.PlayerBannedFromIslandException;
 import com.uxplima.uxmskyblock.core.domain.warp.UnsafeTeleportDestinationException;
 import com.uxplima.uxmskyblock.core.domain.warp.WarpCategory;
-import com.uxplima.uxmskyblock.core.domain.warp.WarpLimitExceededException;
 import com.uxplima.uxmskyblock.core.domain.warp.WarpLocation;
 import com.uxplima.uxmskyblock.core.domain.warp.WarpLockedException;
 import com.uxplima.uxmskyblock.core.domain.warp.WarpName;
-import com.uxplima.uxmskyblock.core.domain.warp.WarpNotFoundException;
-import com.uxplima.uxmskyblock.core.domain.warp.WarpOutsideIslandException;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -61,21 +55,24 @@ import org.jspecify.annotations.Nullable;
  */
 public final class IslandWarpCommands {
 
-    private static final java.util.logging.Logger LOGGER =
-            java.util.logging.Logger.getLogger(IslandWarpCommands.class.getName());
+    /** {@code /is warp <name>} and {@code /is warp visit <owner> <name>}: going to a warp of one's own island or of another. */
+    private final WarpVisitVerbs visits = new WarpVisitVerbs(this);
+
+    /** {@code /is setwarp}, {@code /is delwarp} and the warp's lock, category and place: a warp made, changed or taken away, and why one was refused. */
+    private final WarpEditVerbs edits = new WarpEditVerbs(this);
 
     private static final int PAGE_SIZE = 20;
 
     private final Supplier<@Nullable IslandWarpService> warpServiceProvider;
-    private final IslandLocationService islandLocationService;
-    private final SchedulerPort schedulerPort;
-    private final Messages messages;
+    final IslandLocationService islandLocationService;
+    final SchedulerPort schedulerPort;
+    final Messages messages;
 
     /** The directory as a window. Absent on a node whose menus are off, and then the lines are sent. */
     private volatile @Nullable IslandWarpBrowseMenu browseMenu;
 
     /** Where a new warp is written down for the island's members to read. */
-    private final IslandActivityLog activityLog = new IslandActivityLog();
+    final IslandActivityLog activityLog = new IslandActivityLog();
 
     /** Tells this command group which window draws the public directory. */
     public void useBrowseMenu(@Nullable IslandWarpBrowseMenu browseMenu) {
@@ -87,7 +84,7 @@ public final class IslandWarpCommands {
         this.activityLog.useService(service);
     }
 
-    private final @Nullable PlayerSessionCoordinator sessionCoordinator;
+    final @Nullable PlayerSessionCoordinator sessionCoordinator;
 
     public IslandWarpCommands(
             Supplier<@Nullable IslandWarpService> warpServiceProvider,
@@ -120,27 +117,27 @@ public final class IslandWarpCommands {
                 .then(Cmd.literal("visit")
                         .then(Cmd.argument("owner", StringArgumentType.word())
                                 .then(Cmd.argument("name", StringArgumentType.word())
-                                        .executes(this::executeVisitWarp))))
+                                        .executes(visits::executeVisitWarp))))
                 .then(Cmd.literal("create")
                         .then(Cmd.argument("name", StringArgumentType.word())
-                                .executes(ctx -> executeCreate(ctx, WarpCategory.GENERAL))
+                                .executes(ctx -> edits.executeCreate(ctx, WarpCategory.GENERAL))
                                 .then(Cmd.argument("category", StringArgumentType.word())
-                                        .executes(this::executeCreateWithCategory))))
+                                        .executes(edits::executeCreateWithCategory))))
                 .then(Cmd.literal("move")
-                        .then(Cmd.argument("name", StringArgumentType.word()).executes(this::executeMove)))
+                        .then(Cmd.argument("name", StringArgumentType.word()).executes(edits::executeMove)))
                 .then(Cmd.literal("delete")
-                        .then(Cmd.argument("name", StringArgumentType.word()).executes(this::executeDelete)))
+                        .then(Cmd.argument("name", StringArgumentType.word()).executes(edits::executeDelete)))
                 .then(Cmd.literal("lock")
                         .then(Cmd.argument("name", StringArgumentType.word())
-                                .executes(ctx -> executeSetLock(ctx, true))))
+                                .executes(ctx -> edits.executeSetLock(ctx, true))))
                 .then(Cmd.literal("unlock")
                         .then(Cmd.argument("name", StringArgumentType.word())
-                                .executes(ctx -> executeSetLock(ctx, false))))
+                                .executes(ctx -> edits.executeSetLock(ctx, false))))
                 .then(Cmd.literal("category")
                         .then(Cmd.argument("name", StringArgumentType.word())
                                 .then(Cmd.argument("category", StringArgumentType.word())
-                                        .executes(this::executeSetCategory))))
-                .then(Cmd.argument("name", StringArgumentType.word()).executes(this::executeGo));
+                                        .executes(edits::executeSetCategory))))
+                .then(Cmd.argument("name", StringArgumentType.word()).executes(visits::executeGo));
     }
 
     /**
@@ -307,175 +304,6 @@ public final class IslandWarpCommands {
     }
 
     /**
-     * {@code /is warp move <name>}: puts an existing warp where the player is standing.
-     *
-     * <p>relocateWarp was written with the warp work and had no caller anywhere, so a warp put down
-     * in the wrong place could only be deleted and made again, which loses whatever a visitor had
-     * bookmarked about it.
-     */
-    private int executeMove(CommandContext<CommandSourceStack> ctx) {
-        String rawName = StringArgumentType.getString(ctx, "name");
-        if (!(ctx.getSource().getSender() instanceof Player standing)) {
-            send(ctx.getSource().getSender(), "error.players_only");
-            return Cmd.OK;
-        }
-        Location at = standing.getLocation();
-        if (at == null || at.getWorld() == null) {
-            send(standing, "warp.location_unreadable");
-            return Cmd.OK;
-        }
-        // Read where the player is now, on the thread that owns them, before anything goes async.
-        WarpLocation where =
-                new WarpLocation(at.getWorld().getName(), at.getX(), at.getY(), at.getZ(), at.getYaw(), at.getPitch());
-
-        return onOwnIsland(ctx, (player, service, island) -> {
-            ProfileId profileId = activeProfile(player).orElse(null);
-            if (profileId == null) {
-                onEntity(player, () -> send(player, "error.session_not_active"));
-                return;
-            }
-            try {
-                IslandWarp moved = service.relocateWarp(island, profileId, WarpName.of(rawName), where);
-                onEntity(
-                        player,
-                        () -> send(
-                                player,
-                                "warp.moved",
-                                Placeholder.unparsed("name", moved.name().value())));
-            } catch (SecurityException denied) {
-                onEntity(player, () -> send(player, "warp.no_permission"));
-            } catch (WarpNotFoundException missing) {
-                onEntity(player, () -> send(player, "warp.unknown", Placeholder.unparsed("name", rawName)));
-            } catch (RuntimeException refused) {
-                tellRefusal(player, rawName, refused);
-            }
-        });
-    }
-
-    /**
-     * Tells a player why a warp was not made or moved, from the catalogue.
-     *
-     * <p>The refusal used to reach the player as the exception's own sentence, in English, with the
-     * island's id and bounds in it. The kind of refusal picks the line now; anything unexpected is a
-     * line saying it could not be saved, and the sentence goes to the log.
-     */
-    private void tellRefusal(Player player, String rawName, RuntimeException refused) {
-        String name = rawName;
-        switch (refused) {
-            case InvalidWarpNameException _ -> onEntity(player, () -> send(player, "warp.bad_name"));
-            case WarpOutsideIslandException _ -> onEntity(player, () -> send(player, "warp.outside_island"));
-            case DuplicateWarpNameException _ ->
-                onEntity(player, () -> send(player, "warp.name_taken", Placeholder.unparsed("name", name)));
-            case WarpLimitExceededException full ->
-                onEntity(
-                        player,
-                        () -> send(
-                                player,
-                                "warp.limit_reached",
-                                Placeholder.unparsed("max", Integer.toString(full.maxAllowed()))));
-            default -> {
-                LOGGER.log(java.util.logging.Level.WARNING, "A warp could not be saved", refused);
-                onEntity(player, () -> send(player, "warp.failed"));
-            }
-        }
-    }
-
-    private int executeCreateWithCategory(CommandContext<CommandSourceStack> ctx) {
-        String raw = StringArgumentType.getString(ctx, "category");
-        for (WarpCategory category : WarpCategory.values()) {
-            if (category.name().equalsIgnoreCase(raw)) {
-                return executeCreate(ctx, category);
-            }
-        }
-        send(
-                ctx.getSource().getSender(),
-                "warp.unknown_category",
-                Placeholder.unparsed("category", raw),
-                Placeholder.unparsed("categories", categoryNames()));
-        return Cmd.OK;
-    }
-
-    private int executeCreate(CommandContext<CommandSourceStack> ctx, WarpCategory category) {
-        String rawName = StringArgumentType.getString(ctx, "name");
-        if (!(ctx.getSource().getSender() instanceof Player standing)) {
-            send(ctx.getSource().getSender(), "error.players_only");
-            return Cmd.OK;
-        }
-        Location at = standing.getLocation();
-        if (at == null || at.getWorld() == null) {
-            send(standing, "warp.location_unreadable");
-            return Cmd.OK;
-        }
-        // Read where the player is now, on the thread that owns them, before anything goes async.
-        WarpLocation where =
-                new WarpLocation(at.getWorld().getName(), at.getX(), at.getY(), at.getZ(), at.getYaw(), at.getPitch());
-
-        return onOwnIsland(ctx, (player, service, island) -> {
-            ProfileId profileId = activeProfile(player).orElse(null);
-            if (profileId == null) {
-                onEntity(player, () -> send(player, "error.session_not_active"));
-                return;
-            }
-            try {
-                IslandWarp warp = service.createWarp(
-                        island, profileId, WarpName.of(rawName), where, category, category.defaultIconMaterial());
-                activityLog.recordForMembers(
-                        island.id(),
-                        profileId,
-                        ActivityEventType.WARP_CREATED,
-                        "activity.warp_created",
-                        java.util.Map.of(
-                                "player",
-                                player.getName(),
-                                "name",
-                                warp.name().value(),
-                                "category",
-                                // Stored as its key, so each reader of the feed sees their own word.
-                                messages.stored(
-                                        "warp.categories",
-                                        warp.category().name(),
-                                        warp.category().name())));
-                onEntity(
-                        player,
-                        () -> send(
-                                player,
-                                "warp.created",
-                                Placeholder.unparsed("name", warp.name().value()),
-                                Placeholder.unparsed(
-                                        "category",
-                                        messages.named(
-                                                player,
-                                                "warp.categories",
-                                                warp.category().name(),
-                                                warp.category().name()))));
-            } catch (SecurityException denied) {
-                onEntity(player, () -> send(player, "warp.no_permission"));
-            } catch (RuntimeException refused) {
-                tellRefusal(player, rawName, refused);
-            }
-        });
-    }
-
-    private int executeDelete(CommandContext<CommandSourceStack> ctx) {
-        String rawName = StringArgumentType.getString(ctx, "name");
-        return onOwnIsland(ctx, (player, service, island) -> {
-            ProfileId profileId = activeProfile(player).orElse(null);
-            if (profileId == null) {
-                onEntity(player, () -> send(player, "error.session_not_active"));
-                return;
-            }
-            try {
-                service.deleteWarp(island, profileId, WarpName.of(rawName));
-                onEntity(player, () -> send(player, "warp.deleted", Placeholder.unparsed("name", rawName)));
-            } catch (SecurityException denied) {
-                onEntity(player, () -> send(player, "warp.no_permission"));
-            } catch (RuntimeException refused) {
-                onEntity(player, () -> send(player, "warp.unknown", Placeholder.unparsed("name", rawName)));
-            }
-        });
-    }
-
-    /**
      * {@code /is warplock <name>}: the short form the design document publishes.
      *
      * <p>Shutting one warp to visitors while the others stay open is a rule the visit gate has read
@@ -484,144 +312,19 @@ public final class IslandWarpCommands {
      */
     public LiteralArgumentBuilder<CommandSourceStack> buildWarpLock() {
         return Cmd.literal("warplock")
-                .then(Cmd.argument("name", StringArgumentType.word()).executes(ctx -> executeSetLock(ctx, true)));
+                .then(Cmd.argument("name", StringArgumentType.word()).executes(ctx -> edits.executeSetLock(ctx, true)));
     }
 
     /** {@code /is warpunlock <name>}: the other half of the short form. */
     public LiteralArgumentBuilder<CommandSourceStack> buildWarpUnlock() {
         return Cmd.literal("warpunlock")
-                .then(Cmd.argument("name", StringArgumentType.word()).executes(ctx -> executeSetLock(ctx, false)));
-    }
-
-    /**
-     * Shuts one warp to visitors, or opens it again.
-     *
-     * <p>{@code IslandWarpService.setWarpLock} had no caller anywhere in the plugin, so
-     * {@code warp.isLocked()} was a column the visit gate read and nothing ever wrote: every warp on
-     * every island was open, whatever the owner wanted.
-     */
-    private int executeSetLock(CommandContext<CommandSourceStack> ctx, boolean locked) {
-        String rawName = StringArgumentType.getString(ctx, "name");
-        return onOwnIsland(ctx, (player, service, island) -> {
-            try {
-                service.setWarpLock(island, ownerProfileOf(island, player), WarpName.of(rawName), locked);
-                onEntity(
-                        player,
-                        () -> send(
-                                player,
-                                locked ? "warp.locked" : "warp.unlocked",
-                                Placeholder.unparsed("name", rawName)));
-            } catch (SecurityException denied) {
-                onEntity(player, () -> send(player, "warp.no_permission"));
-            } catch (RuntimeException missing) {
-                onEntity(player, () -> send(player, "warp.unknown", Placeholder.unparsed("name", rawName)));
-            }
-        });
-    }
-
-    /**
-     * Moves a warp between the directory categories a visitor browses by.
-     *
-     * <p>{@code setWarpCategory} was the other half of the same dead pair: a warp could be created
-     * in a category and never moved out of it.
-     */
-    private int executeSetCategory(CommandContext<CommandSourceStack> ctx) {
-        String rawName = StringArgumentType.getString(ctx, "name");
-        String rawCategory = StringArgumentType.getString(ctx, "category");
-        WarpCategory category = null;
-        for (WarpCategory candidate : WarpCategory.values()) {
-            if (candidate.name().equalsIgnoreCase(rawCategory)) {
-                category = candidate;
-            }
-        }
-        if (category == null) {
-            send(
-                    ctx.getSource().getSender(),
-                    "warp.unknown_category",
-                    Placeholder.unparsed("category", rawCategory),
-                    Placeholder.unparsed("categories", categoryNames()));
-            return Cmd.OK;
-        }
-
-        WarpCategory chosen = category;
-        return onOwnIsland(ctx, (player, service, island) -> {
-            try {
-                service.setWarpCategory(island, ownerProfileOf(island, player), WarpName.of(rawName), chosen);
-                onEntity(
-                        player,
-                        () -> send(
-                                player,
-                                "warp.category_changed",
-                                Placeholder.unparsed("name", rawName),
-                                Placeholder.unparsed(
-                                        "category",
-                                        messages.named(player, "warp.categories", chosen.name(), chosen.name()))));
-            } catch (SecurityException denied) {
-                onEntity(player, () -> send(player, "warp.no_permission"));
-            } catch (RuntimeException missing) {
-                onEntity(player, () -> send(player, "warp.unknown", Placeholder.unparsed("name", rawName)));
-            }
-        });
+                .then(Cmd.argument("name", StringArgumentType.word())
+                        .executes(ctx -> edits.executeSetLock(ctx, false)));
     }
 
     /** The caller's own profile on this island, which onOwnIsland has already proved they have. */
-    private ProfileId ownerProfileOf(Island island, Player player) {
+    ProfileId ownerProfileOf(Island island, Player player) {
         return activeProfile(player).orElse(island.ownerProfileId());
-    }
-
-    private int executeGo(CommandContext<CommandSourceStack> ctx) {
-        String rawName = StringArgumentType.getString(ctx, "name");
-        return onOwnIsland(ctx, (player, service, island) -> {
-            Optional<IslandWarp> optWarp = service.getWarp(island.id(), WarpName.of(rawName));
-            if (optWarp.isEmpty()) {
-                onEntity(player, () -> send(player, "warp.unknown", Placeholder.unparsed("name", rawName)));
-                return;
-            }
-            WarpLocation where = optWarp.get().location();
-            onEntity(player, () -> {
-                org.bukkit.World world = org.bukkit.Bukkit.getWorld(where.worldName());
-                if (world == null) {
-                    send(player, "warp.world_unloaded", Placeholder.unparsed("world", where.worldName()));
-                    return;
-                }
-                Location target = new Location(world, where.x(), where.y(), where.z(), where.yaw(), where.pitch());
-                var unused = player.teleportAsync(target);
-                send(player, "warp.travelled", Placeholder.unparsed("name", rawName));
-            });
-        });
-    }
-
-    /**
-     * {@code /is warp visit <owner> <name>}: travelling to somebody else's public warp.
-     *
-     * <p>{@code /is warp browse} has listed public warps since the warp work and a player could not
-     * go to a single one of them. The ban list, the island lock, the per warp lock and the anti trap
-     * safe spot search all sat behind {@code prepareVisit}, which nothing in the plugin ever called,
-     * so the whole visitor security surface was dead code around a listing nobody could act on.
-     *
-     * <p>The gate and the warp row are storage, so they are read on the scheduler thread. The safe
-     * spot search reads blocks, and under Folia a block belongs to the region thread that owns it,
-     * so that is a second hop rather than part of the first.
-     */
-    private int executeVisitWarp(CommandContext<CommandSourceStack> ctx) {
-        String owner = StringArgumentType.getString(ctx, "owner");
-        String rawName = StringArgumentType.getString(ctx, "name");
-
-        return withService(
-                ctx,
-                (player, service, profileId) -> schedulerPort.async(() -> {
-                    Optional<IslandId> optTarget =
-                            IslandAdminCommands.resolveIslandId(sessionCoordinator, islandLocationService, owner);
-                    Optional<Island> optIsland = optTarget.flatMap(islandLocationService::findIsland);
-                    if (optIsland.isEmpty()) {
-                        onEntity(
-                                player,
-                                () -> send(player, "warp.island_unknown", Placeholder.unparsed("owner", owner)));
-                        return;
-                    }
-
-                    visitResolvedIsland(player, service, profileId, optIsland.get(), owner, rawName);
-                }));
     }
 
     /**
@@ -702,7 +405,7 @@ public final class IslandWarpCommands {
                 .orElseGet(() -> islandId.value().toString());
     }
 
-    private static String categoryNames() {
+    static String categoryNames() {
         StringBuilder out = new StringBuilder();
         for (WarpCategory category : WarpCategory.values()) {
             if (out.length() > 0) {
@@ -715,16 +418,16 @@ public final class IslandWarpCommands {
 
     /** What a warp command needs: a player, the service, and the island they belong to. */
     @FunctionalInterface
-    private interface IslandAction {
+    interface IslandAction {
         void run(Player player, IslandWarpService service, Island island);
     }
 
     @FunctionalInterface
-    private interface ServiceAction {
+    interface ServiceAction {
         void run(Player player, IslandWarpService service, ProfileId profileId);
     }
 
-    private int withService(CommandContext<CommandSourceStack> ctx, ServiceAction action) {
+    int withService(CommandContext<CommandSourceStack> ctx, ServiceAction action) {
         if (!(ctx.getSource().getSender() instanceof Player player)) {
             send(ctx.getSource().getSender(), "error.players_only");
             return Cmd.OK;
@@ -744,7 +447,7 @@ public final class IslandWarpCommands {
     }
 
     /** Resolves the caller's own island off the thread, then hands it back with the service. */
-    private int onOwnIsland(CommandContext<CommandSourceStack> ctx, IslandAction action) {
+    int onOwnIsland(CommandContext<CommandSourceStack> ctx, IslandAction action) {
         return withService(
                 ctx,
                 (player, service, profileId) -> schedulerPort.async(() -> {
@@ -762,7 +465,7 @@ public final class IslandWarpCommands {
                 }));
     }
 
-    private void onEntity(Player player, Runnable work) {
+    void onEntity(Player player, Runnable work) {
         schedulerPort.onEntity(new PlayerUuid(player.getUniqueId()), () -> {
             if (player.isOnline()) {
                 work.run();
@@ -770,14 +473,14 @@ public final class IslandWarpCommands {
         });
     }
 
-    private Optional<ProfileId> activeProfile(Player player) {
+    Optional<ProfileId> activeProfile(Player player) {
         if (sessionCoordinator == null) {
             return Optional.empty();
         }
         return sessionCoordinator.activeProfile(player.getUniqueId());
     }
 
-    private void send(Audience audience, String key, TagResolver... resolvers) {
+    void send(Audience audience, String key, TagResolver... resolvers) {
         Component line = messages.render(audience, key, resolvers);
         if (audience instanceof Player player) {
             schedulerPort.onEntity(new PlayerUuid(player.getUniqueId()), () -> {
