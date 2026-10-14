@@ -445,6 +445,19 @@ class AContestIsPlayedOnThePlotsTest extends MockBukkitHarness {
     }
 
     @Test
+    @DisplayName("The plots command opens the gallery, and says there is none while Brix gives it none")
+    void thePlotsCommand() throws Exception {
+        assertThat(run(ann, "island plots")).contains("There is no Brix plot yet.");
+        tree.useBrixGallery(new BrixGallery(
+                service, held, id -> Optional.ofNullable(stored.get(id)), scheduler, Messages.bundled(), id -> null));
+        players = new CommandDispatcher<>();
+        players.register(tree.buildRoot());
+        assertThat(run(ann, "island plots"))
+                .describedAs("two plots and no window handed to it")
+                .contains("The plots window is missing");
+    }
+
+    @Test
     @DisplayName("An operator with no theme written and none configured is told to name one")
     void noTheme() throws Exception {
         BrixContestPlay bare = new BrixContestPlay(

@@ -350,6 +350,8 @@ final class IslandCommandWiring {
             tree.usePlotSky(gameplay.brixWiring().skyCommands());
             tree.usePlotReset(gameplay.brixWiring().reset());
             tree.useBrixContests(gameplay.brixWiring().contests());
+            gameplay.brixWiring().gallery().useMenuEngine(integration.menuEngine());
+            tree.useBrixGallery(gameplay.brixWiring().gallery());
         }
         // A Poseidon island's lore: a book on Java, a form on Bedrock, pages from the language files.
         if (gameplay.poseidonWiring().enabled()) {

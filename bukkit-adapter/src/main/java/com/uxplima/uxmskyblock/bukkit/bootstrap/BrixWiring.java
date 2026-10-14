@@ -27,6 +27,7 @@ public final class BrixWiring implements AutoCloseable {
     private final com.uxplima.uxmskyblock.bukkit.brix.PlotSkyCommands skyCommands;
     private final com.uxplima.uxmskyblock.bukkit.brix.PlotReset reset;
     private final com.uxplima.uxmskyblock.bukkit.brix.BrixContestPlay contests;
+    private final com.uxplima.uxmskyblock.bukkit.brix.BrixGallery gallery;
     private @org.jspecify.annotations.Nullable AutoCloseable beat;
     private @org.jspecify.annotations.Nullable AutoCloseable contestBeat;
 
@@ -67,9 +68,18 @@ public final class BrixWiring implements AutoCloseable {
                 config.rules(),
                 () -> persistence.gridAllocator().gridSpacing(),
                 config.ground().radius());
-        this.contests = new com.uxplima.uxmskyblock.bukkit.brix.BrixContestPlay(
+        com.uxplima.uxmskyblock.core.application.brix.BrixContests held =
                 new com.uxplima.uxmskyblock.core.application.brix.BrixContests(
-                        persistence.brixContestsPort(), java.time.Clock.systemUTC()),
+                        persistence.brixContestsPort(), java.time.Clock.systemUTC());
+        this.gallery = new com.uxplima.uxmskyblock.bukkit.brix.BrixGallery(
+                service,
+                held,
+                persistence.islandStoragePort()::findIslandById,
+                scheduler,
+                configuration.messages(),
+                id -> org.bukkit.Bukkit.getOfflinePlayer(id).getName());
+        this.contests = new com.uxplima.uxmskyblock.bukkit.brix.BrixContestPlay(
+                held,
                 service,
                 islands,
                 persistence.islandStoragePort()::findIslandById,
@@ -115,6 +125,11 @@ public final class BrixWiring implements AutoCloseable {
     /** {@code /is plot reset}. */
     public com.uxplima.uxmskyblock.bukkit.brix.PlotReset reset() {
         return reset;
+    }
+
+    /** {@code /is plots}. */
+    public com.uxplima.uxmskyblock.bukkit.brix.BrixGallery gallery() {
+        return gallery;
     }
 
     /** The build contests: their commands, their beat and their payouts. */

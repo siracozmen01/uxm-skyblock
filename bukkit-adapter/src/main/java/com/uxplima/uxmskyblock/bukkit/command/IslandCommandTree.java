@@ -345,6 +345,12 @@ public final class IslandCommandTree {
 
     private com.uxplima.uxmskyblock.bukkit.brix.@Nullable PlotReset plotReset;
     private com.uxplima.uxmskyblock.bukkit.brix.@Nullable BrixContestPlay brixContests;
+    private com.uxplima.uxmskyblock.bukkit.brix.@Nullable BrixGallery brixGallery;
+
+    /** {@code /is plots}, while Brix is enabled. */
+    public void useBrixGallery(com.uxplima.uxmskyblock.bukkit.brix.@Nullable BrixGallery gallery) {
+        this.brixGallery = gallery;
+    }
 
     /** {@code /is contest}, while Brix is enabled. */
     public void useBrixContests(com.uxplima.uxmskyblock.bukkit.brix.@Nullable BrixContestPlay contests) {
@@ -819,6 +825,7 @@ public final class IslandCommandTree {
                                                         com.mojang.brigadier.arguments.IntegerArgumentType.getInteger(
                                                                 ctx, "number")))))))
                 .then(Cmd.literal("courses").executes(this::executeCourses))
+                .then(Cmd.literal("plots").executes(this::executePlots))
                 .then(Cmd.literal("contest")
                         .executes(ctx -> brixContest(ctx, com.uxplima.uxmskyblock.bukkit.brix.BrixContestPlay::show))
                         .then(Cmd.literal("join")
@@ -1044,6 +1051,20 @@ public final class IslandCommandTree {
             return Cmd.OK;
         }
         courses.open(player);
+        return Cmd.OK;
+    }
+
+    private int executePlots(CommandContext<CommandSourceStack> ctx) {
+        if (!(ctx.getSource().getSender() instanceof Player player)) {
+            send(ctx.getSource().getSender(), "error.players_only");
+            return Cmd.OK;
+        }
+        com.uxplima.uxmskyblock.bukkit.brix.BrixGallery gallery = this.brixGallery;
+        if (gallery == null) {
+            send(player, "brix.gallery.none");
+            return Cmd.OK;
+        }
+        gallery.open(player);
         return Cmd.OK;
     }
 

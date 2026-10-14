@@ -30,6 +30,11 @@ public final class BrixService {
         islands.add(islandId);
     }
 
+    /** Every Brix plot. Memory only. */
+    public Set<IslandId> all() {
+        return Set.copyOf(islands);
+    }
+
     /** Whether the island is a Brix plot. Memory only. */
     public boolean isPlot(IslandId islandId) {
         return islands.contains(islandId);
