@@ -13,7 +13,6 @@ import com.uxplima.uxmskyblock.core.application.bank.IslandBankPort;
 import com.uxplima.uxmskyblock.core.application.bank.IslandBankService;
 import com.uxplima.uxmskyblock.core.application.island.IslandAuthorityPort;
 import com.uxplima.uxmskyblock.core.domain.bank.BankTransactionOutcome;
-import com.uxplima.uxmskyblock.core.domain.bank.IslandBank;
 import com.uxplima.uxmskyblock.core.domain.chunkblock.ChunkPayments;
 import com.uxplima.uxmskyblock.core.domain.chunkblock.ChunkPos;
 import com.uxplima.uxmskyblock.core.domain.chunkblock.ChunkRequirement;
@@ -22,7 +21,6 @@ import com.uxplima.uxmskyblock.core.domain.chunkblock.ChunkTier;
 import com.uxplima.uxmskyblock.core.domain.chunkblock.ChunkTiers;
 import com.uxplima.uxmskyblock.core.domain.identity.IslandId;
 import com.uxplima.uxmskyblock.core.domain.identity.PlayerUuid;
-import com.uxplima.uxmskyblock.core.domain.island.IslandAuthorityRecord;
 import com.uxplima.uxmskyblock.core.domain.island.IslandBounds;
 import com.uxplima.uxmskyblock.core.domain.session.ServerNodeId;
 
@@ -36,6 +34,9 @@ import com.uxplima.uxmskyblock.core.domain.session.ServerNodeId;
  * stays open whatever the level does. Every call reads or writes rows, off the main thread.
  */
 public final class ChunkUnlocks {
+
+    /** What a chunk costs as it opens: the price taken from a purse or the island's bank, points spent, and the chunk opened. */
+    private final ChunkCharges charges = new ChunkCharges(this);
 
     private static final Logger LOGGER = Logger.getLogger(ChunkUnlocks.class.getName());
 
@@ -123,12 +124,12 @@ public final class ChunkUnlocks {
         }
     }
 
-    private final ChunkBlockService service;
-    private final ChunkPaymentPort payments;
+    final ChunkBlockService service;
+    final ChunkPaymentPort payments;
     private final ChunkTiers tiers;
-    private final IslandBankPort bank;
+    final IslandBankPort bank;
     private final IslandBankService bankMoves;
-    private final IslandAuthorityPort authorities;
+    final IslandAuthorityPort authorities;
 
     /**
      * @param bank where the island's bank is read; a balance moves only through {@code bankMoves}, or together with
@@ -235,13 +236,14 @@ public final class ChunkUnlocks {
             Optional<Result> paid =
                     switch (line) {
                         case ChunkRequirement.Points points ->
-                            Optional.of(spendPoints(islandId, chunk, line, remaining));
+                            Optional.of(charges.spendPoints(islandId, chunk, line, remaining));
                         case ChunkRequirement.Money money
                         when money.from() == ChunkRequirement.Source.ISLAND ->
-                            Optional.of(charge(islandId, chunk, line, BankCurrencies.PRIMARY_COLUMN, remaining, payer));
+                            Optional.of(charges.charge(
+                                    islandId, chunk, line, BankCurrencies.PRIMARY_COLUMN, remaining, payer));
                         case ChunkRequirement.Currency currency
                         when currency.from() == ChunkRequirement.Source.ISLAND ->
-                            Optional.of(charge(
+                            Optional.of(charges.charge(
                                     islandId, chunk, line, BankCurrencies.columnOf(currency.id()), remaining, payer));
                         default -> Optional.empty();
                     };
@@ -271,7 +273,8 @@ public final class ChunkUnlocks {
                 boolean paidUp = offer.tier().cost().stream().allMatch(line -> offer.remaining(line) == 0);
                 return Result.of(paidUp ? Outcome.LEVEL_TOO_LOW : Outcome.PAID);
             }
-            return openNow(islandId, chunk, bounds, offer.tier(), offer.tier().held(), 0, 0);
+            return charges.openNow(
+                    islandId, chunk, bounds, offer.tier(), offer.tier().held(), 0, 0);
         }
     }
 
@@ -309,7 +312,8 @@ public final class ChunkUnlocks {
                 }
                 Result paid =
                         switch (line) {
-                            case ChunkRequirement.Points points -> spendPoints(islandId, null, line, line.amount());
+                            case ChunkRequirement.Points points ->
+                                charges.spendPoints(islandId, null, line, line.amount());
                             case ChunkRequirement.Money money
                             when money.from() == ChunkRequirement.Source.ISLAND ->
                                 chargeOnly(islandId, line, BankCurrencies.PRIMARY_COLUMN, line.amount(), payer);
@@ -325,7 +329,7 @@ public final class ChunkUnlocks {
                 }
                 undo.add(() -> giveBack(islandId, line, line.amount(), payer));
             }
-            Result opened = openNow(islandId, chunk, bounds, offer.tier(), false, 0, 0);
+            Result opened = charges.openNow(islandId, chunk, bounds, offer.tier(), false, 0, 0);
             if (opened.outcome() != Outcome.OPENED) {
                 undo.forEach(Runnable::run);
                 return Result.of(opened.outcome());
@@ -363,121 +367,12 @@ public final class ChunkUnlocks {
         if (!now.meets(offer.tier().cost(), level, offer.ladder())) {
             return new Result(Outcome.PAID, counted, excess, Optional.empty());
         }
-        return openNow(islandId, chunk, bounds, offer.tier(), offer.tier().held(), counted, excess);
-    }
-
-    private Result openNow(
-            IslandId islandId,
-            ChunkPos chunk,
-            IslandBounds bounds,
-            ChunkTier tier,
-            boolean held,
-            long counted,
-            long excess) {
-        // A chunk held by the level closes when the level falls. Opened again, it gives nothing again.
-        boolean rewardedBefore = payments.find(islandId, chunk).paid().containsKey(REWARDED);
-        ChunkBlockService.UnlockResult opened = service.open(islandId, chunk, bounds, held);
-        if (opened.outcome() != ChunkBlockService.Outcome.UNLOCKED) {
-            return new Result(Outcome.valueOf(opened.outcome().name()), counted, excess, Optional.empty());
-        }
-        try {
-            payments.clear(islandId, chunk);
-            payments.add(islandId, chunk, REWARDED, 1);
-            if (!rewardedBefore && tier.points() > 0) {
-                payments.addPoints(islandId, tier.points());
-            }
-        } catch (RuntimeException failed) {
-            // The chunk is open. What was paid toward it is only bookkeeping now, and the points a reward.
-            LOGGER.log(
-                    Level.WARNING,
-                    failed,
-                    () -> "A chunk of island " + islandId
-                            + " opened, and what was paid toward it or the points it gives could not be written.");
-        }
-        return new Result(Outcome.OPENED, counted, excess, Optional.of(tier), !rewardedBefore);
-    }
-
-    /** Spends up to {@code wanted} chunk points, and records them toward {@code chunk} when there is one. */
-    private Result spendPoints(
-            IslandId islandId, @org.jspecify.annotations.Nullable ChunkPos chunk, ChunkRequirement line, long wanted) {
-        long spend = chunk == null ? wanted : Math.min(wanted, payments.points(islandId));
-        if (spend <= 0 || !payments.spendPoints(islandId, spend)) {
-            return Result.of(Outcome.NOTHING_TAKEN);
-        }
-        if (chunk != null) {
-            try {
-                payments.add(islandId, chunk, line.key(), spend);
-            } catch (RuntimeException failed) {
-                payments.addPoints(islandId, spend);
-                LOGGER.log(
-                        Level.WARNING,
-                        failed,
-                        () -> "Points paid toward a chunk of island " + islandId
-                                + " could not be recorded, so they went back.");
-                return Result.of(Outcome.FAILED);
-            }
-        }
-        return new Result(Outcome.PAID, spend, 0, Optional.empty());
-    }
-
-    /**
-     * Charges up to {@code wanted} of {@code column} out of the island's bank and records it toward the chunk, in one
-     * transaction where the store can do that, and in two steps where it cannot.
-     */
-    private Result charge(
-            IslandId islandId, ChunkPos chunk, ChunkRequirement line, String column, long wanted, IslandPayer payer) {
-        IslandBank held = bank.findBankByIslandId(islandId).orElseGet(() -> bank.createBank(islandId));
-        long balance =
-                BankCurrencies.PRIMARY_COLUMN.equals(column) ? held.primaryBalanceMinorUnits() : held.heldOf(column);
-        long amount = Math.min(wanted, balance);
-        if (amount <= 0) {
-            return Result.of(Outcome.NOTHING_TAKEN);
-        }
-        Optional<IslandAuthorityRecord> holder = authorities.findAuthority(islandId);
-        if (holder.isEmpty() || !holder.get().authoritativeNode().equals(payer.node())) {
-            return Result.of(Outcome.BANK_REFUSED);
-        }
-        UUID operation = UUID.randomUUID();
-        ChunkIslandCharge charge = new ChunkIslandCharge(
-                islandId,
-                chunk,
-                line.key(),
-                payer.actor(),
-                column,
-                scaleOf(column),
-                amount,
-                "Chunk " + chunk.x() + "," + chunk.z(),
-                payer.node().value(),
-                holder.get().authorityEpoch(),
-                held.version(),
-                operation,
-                "chunk-" + chunk.x() + "-" + chunk.z() + "-" + operation);
-        Optional<BankTransactionOutcome> together = payments.chargeIslandAndRecord(charge);
-        if (together.isPresent()) {
-            return together.get() instanceof BankTransactionOutcome.Success
-                    ? new Result(Outcome.PAID, amount, 0, Optional.empty())
-                    : Result.of(Outcome.BANK_REFUSED);
-        }
-        Result charged = chargeOnly(islandId, line, column, amount, payer);
-        if (charged.outcome() != Outcome.PAID) {
-            return charged;
-        }
-        try {
-            payments.add(islandId, chunk, line.key(), amount);
-        } catch (RuntimeException failed) {
-            giveBack(islandId, line, amount, payer);
-            LOGGER.log(
-                    Level.WARNING,
-                    failed,
-                    () -> "A bank payment toward a chunk of island " + islandId
-                            + " could not be recorded, so it went back.");
-            return Result.of(Outcome.FAILED);
-        }
-        return charged;
+        return charges.openNow(
+                islandId, chunk, bounds, offer.tier(), offer.tier().held(), counted, excess);
     }
 
     /** Charges {@code amount} of {@code column} out of the island's bank, recording nothing toward a chunk. */
-    private Result chargeOnly(IslandId islandId, ChunkRequirement line, String column, long amount, IslandPayer payer) {
+    Result chargeOnly(IslandId islandId, ChunkRequirement line, String column, long amount, IslandPayer payer) {
         BankTransactionOutcome outcome = bankMoves.move(
                 islandId, new PlayerUuid(payer.actor()), column, -amount, "Chunk " + line.key(), payer.node());
         if (outcome instanceof BankTransactionOutcome.Success) {
@@ -490,7 +385,7 @@ public final class ChunkUnlocks {
     }
 
     /** Gives back to the island what was paid out of it for {@code line}. */
-    private void giveBack(IslandId islandId, ChunkRequirement line, long amount, IslandPayer payer) {
+    void giveBack(IslandId islandId, ChunkRequirement line, long amount, IslandPayer payer) {
         try {
             switch (line) {
                 case ChunkRequirement.Points points -> payments.addPoints(islandId, amount);
@@ -517,7 +412,7 @@ public final class ChunkUnlocks {
         }
     }
 
-    private static int scaleOf(String column) {
+    static int scaleOf(String column) {
         return BankCurrencies.PRIMARY_COLUMN.equals(column) ? BankCurrencies.PRIMARY_SCALE : 0;
     }
 }
