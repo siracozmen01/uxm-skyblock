@@ -25,6 +25,7 @@ public final class BrixWiring implements AutoCloseable {
     private final com.uxplima.uxmskyblock.bukkit.brix.BrixRules rules;
     private final com.uxplima.uxmskyblock.core.application.brix.BrixSkies skies;
     private final com.uxplima.uxmskyblock.bukkit.brix.PlotSkyCommands skyCommands;
+    private final com.uxplima.uxmskyblock.bukkit.brix.PlotReset reset;
     private @org.jspecify.annotations.Nullable AutoCloseable beat;
 
     public BrixWiring(
@@ -50,6 +51,14 @@ public final class BrixWiring implements AutoCloseable {
                 skies);
         this.skyCommands = new com.uxplima.uxmskyblock.bukkit.brix.PlotSkyCommands(
                 service, skies, islands, scheduler, configuration.messages());
+        this.reset = new com.uxplima.uxmskyblock.bukkit.brix.PlotReset(
+                service,
+                islands,
+                persistence.islandStoragePort()::findLocationByIslandId,
+                scheduler,
+                config.ground(),
+                configuration.messages(),
+                java.time.Clock.systemUTC());
         this.rules = new com.uxplima.uxmskyblock.bukkit.brix.BrixRules(service, islands, config.rules());
         if (config.enabled()) {
             this.beat = modes.start();
@@ -77,6 +86,11 @@ public final class BrixWiring implements AutoCloseable {
     /** {@code /is plot time} and {@code /is plot weather}. */
     public com.uxplima.uxmskyblock.bukkit.brix.PlotSkyCommands skyCommands() {
         return skyCommands;
+    }
+
+    /** {@code /is plot reset}. */
+    public com.uxplima.uxmskyblock.bukkit.brix.PlotReset reset() {
+        return reset;
     }
 
     /** What cannot happen on a plot. */

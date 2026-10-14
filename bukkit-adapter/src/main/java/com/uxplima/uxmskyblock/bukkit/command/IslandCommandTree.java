@@ -343,6 +343,13 @@ public final class IslandCommandTree {
 
     private com.uxplima.uxmskyblock.bukkit.brix.@Nullable PlotSkyCommands plotSky;
 
+    private com.uxplima.uxmskyblock.bukkit.brix.@Nullable PlotReset plotReset;
+
+    /** What {@code /is plot reset} clears, while islands can be Brix plots. */
+    public void usePlotReset(com.uxplima.uxmskyblock.bukkit.brix.@Nullable PlotReset reset) {
+        this.plotReset = reset;
+    }
+
     /** What {@code /is plot time} and {@code /is plot weather} set, while islands can be Brix plots. */
     public void usePlotSky(com.uxplima.uxmskyblock.bukkit.brix.@Nullable PlotSkyCommands sky) {
         this.plotSky = sky;
@@ -807,6 +814,9 @@ public final class IslandCommandTree {
                                                                 ctx, "number")))))))
                 .then(Cmd.literal("courses").executes(this::executeCourses))
                 .then(Cmd.literal("plot")
+                        .then(Cmd.literal("reset")
+                                .executes(ctx -> plotReset(ctx, false))
+                                .then(Cmd.literal("confirm").executes(ctx -> plotReset(ctx, true))))
                         .then(Cmd.literal("time")
                                 .then(Cmd.argument("value", StringArgumentType.word())
                                         .executes(ctx -> plotSky(
@@ -1014,6 +1024,22 @@ public final class IslandCommandTree {
             return Cmd.OK;
         }
         courses.open(player);
+        return Cmd.OK;
+    }
+
+    private int plotReset(CommandContext<CommandSourceStack> ctx, boolean confirmed) {
+        if (!(ctx.getSource().getSender() instanceof Player player)) {
+            send(ctx.getSource().getSender(), "error.players_only");
+            return Cmd.OK;
+        }
+        com.uxplima.uxmskyblock.bukkit.brix.PlotReset reset = this.plotReset;
+        if (reset == null) {
+            send(player, "brix.not_plot");
+        } else if (confirmed) {
+            reset.confirm(player);
+        } else {
+            reset.ask(player);
+        }
         return Cmd.OK;
     }
 

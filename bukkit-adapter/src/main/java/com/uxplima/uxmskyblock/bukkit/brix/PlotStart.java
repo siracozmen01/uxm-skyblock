@@ -91,7 +91,7 @@ public final class PlotStart implements CreationActionProvider<IslandStart> {
         }
     }
 
-    private static void lay(World world, int fromX, int toX, int fromZ, int toZ, int top, List<Material> layers) {
+    static void lay(World world, int fromX, int toX, int fromZ, int toZ, int top, List<Material> layers) {
         int lowest = Math.max(world.getMinHeight(), top - layers.size() + 1);
         for (int x = fromX; x <= toX; x++) {
             for (int z = fromZ; z <= toZ; z++) {

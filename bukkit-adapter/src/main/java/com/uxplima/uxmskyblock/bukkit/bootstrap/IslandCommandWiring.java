@@ -348,6 +348,7 @@ final class IslandCommandWiring {
         // A Brix plot's time and weather.
         if (gameplay.brixWiring().enabled()) {
             tree.usePlotSky(gameplay.brixWiring().skyCommands());
+            tree.usePlotReset(gameplay.brixWiring().reset());
         }
         // A Poseidon island's lore: a book on Java, a form on Bedrock, pages from the language files.
         if (gameplay.poseidonWiring().enabled()) {
