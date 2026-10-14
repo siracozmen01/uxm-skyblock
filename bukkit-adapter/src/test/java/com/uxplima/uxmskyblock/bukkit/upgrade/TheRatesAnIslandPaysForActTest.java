@@ -26,11 +26,17 @@ import org.bukkit.block.CreatureSpawner;
 import org.bukkit.block.data.Ageable;
 import org.bukkit.damage.DamageSource;
 import org.bukkit.damage.DamageType;
+import org.bukkit.entity.ArmorStand;
+import org.bukkit.entity.Donkey;
 import org.bukkit.entity.LivingEntity;
+import org.bukkit.entity.Mob;
 import org.bukkit.entity.Player;
+import org.bukkit.entity.Zombie;
 import org.bukkit.event.block.BlockGrowEvent;
 import org.bukkit.event.entity.EntityDeathEvent;
 import org.bukkit.event.entity.SpawnerSpawnEvent;
+import org.bukkit.inventory.EntityEquipment;
+import org.bukkit.inventory.EquipmentSlot;
 import org.bukkit.inventory.ItemStack;
 
 import com.uxplima.uxmskyblock.bukkit.test.MockBukkitHarness;
@@ -236,34 +242,99 @@ class TheRatesAnIslandPaysForActTest extends MockBukkitHarness {
         verify(short_).setDelay(1);
     }
 
+    private Mob mob(Class<? extends Mob> kind, ItemStack held, Class<?>... more) {
+        Mob mob = more.length == 0
+                ? mock(kind)
+                : mock(kind, org.mockito.Mockito.withSettings().extraInterfaces(more));
+        when(mob.getLocation()).thenReturn(new Location(world, 5, 64, 5));
+        EntityEquipment equipment = mock(EntityEquipment.class);
+        when(equipment.getItem(any(EquipmentSlot.class))).thenReturn(new ItemStack(Material.AIR));
+        when(equipment.getItem(EquipmentSlot.HAND)).thenReturn(held);
+        when(mob.getEquipment()).thenReturn(equipment);
+        return mob;
+    }
+
+    private static List<ItemStack> drops(ItemStack... stacks) {
+        return new ArrayList<>(List.of(stacks));
+    }
+
+    private void die(LivingEntity dead, List<ItemStack> drops) {
+        rates().onDeath(new EntityDeathEvent(
+                dead, DamageSource.builder(DamageType.GENERIC).build(), drops));
+    }
+
+    private static List<String> said(List<ItemStack> drops) {
+        return drops.stream()
+                .map(stack -> stack.getType() + " " + stack.getAmount())
+                .toList();
+    }
+
     @Test
-    @DisplayName("A mob killed on the island drops the rate's worth of each stack, split into full stacks")
+    @DisplayName("A mob killed on the island drops the rate's worth of its loot, split into full stacks")
     void mobsDropMore() {
         bought.put(IslandRates.MOB_DROPS, 1);
-        LivingEntity zombie = mock(LivingEntity.class);
-        when(zombie.getLocation()).thenReturn(new Location(world, 5, 64, 5));
-        List<ItemStack> drops = new ArrayList<>(
-                List.of(new ItemStack(Material.ROTTEN_FLESH, 2), new ItemStack(Material.COBBLESTONE, 40)));
+        List<ItemStack> loot = drops(new ItemStack(Material.ROTTEN_FLESH, 2), new ItemStack(Material.COBBLESTONE, 40));
+        die(mob(Zombie.class, new ItemStack(Material.AIR)), loot);
+        assertThat(said(loot)).containsExactly("ROTTEN_FLESH 4", "COBBLESTONE 64", "COBBLESTONE 16");
 
-        rates().onDeath(new EntityDeathEvent(
-                zombie, DamageSource.builder(DamageType.GENERIC).build(), drops));
+        bought.put(IslandRates.MOB_DROPS, 0);
+        List<ItemStack> plain = drops(new ItemStack(Material.BONE, 2));
+        die(mob(Zombie.class, new ItemStack(Material.AIR)), plain);
+        assertThat(said(plain)).containsExactly("BONE 2");
+    }
 
-        assertThat(drops)
-                .extracting(stack -> stack.getType() + " " + stack.getAmount())
-                .containsExactly("ROTTEN_FLESH 4", "COBBLESTONE 64", "COBBLESTONE 16");
+    @Test
+    @DisplayName(
+            "What a mob carried drops once: a picked up diamond, a donkey's chest; and no player or stand is a mob")
+    void whatWasCarriedIsNotMadeMore() {
+        bought.put(IslandRates.MOB_DROPS, 1);
+        List<ItemStack> zombie = drops(new ItemStack(Material.DIAMOND, 1), new ItemStack(Material.ROTTEN_FLESH, 1));
+        die(mob(Zombie.class, new ItemStack(Material.DIAMOND, 1)), zombie);
+        assertThat(said(zombie)).containsExactly("DIAMOND 1", "ROTTEN_FLESH 2");
+
+        Mob donkey = mob(Donkey.class, new ItemStack(Material.AIR));
+        org.bukkit.inventory.AbstractHorseInventory chest = mock(org.bukkit.inventory.AbstractHorseInventory.class);
+        when(chest.getContents()).thenReturn(new ItemStack[] {new ItemStack(Material.COBBLESTONE, 20), null});
+        when(((Donkey) donkey).getInventory()).thenReturn(chest);
+        List<ItemStack> borne = drops(new ItemStack(Material.COBBLESTONE, 30), new ItemStack(Material.LEATHER, 1));
+        die(donkey, borne);
+        assertThat(said(borne))
+                .describedAs("the twenty it bore once, the ten of its own loot made more")
+                .containsExactly("COBBLESTONE 40", "LEATHER 2");
+
+        ArmorStand stand = mock(ArmorStand.class);
+        when(stand.getLocation()).thenReturn(new Location(world, 5, 64, 5));
+        List<ItemStack> worn = drops(new ItemStack(Material.DIAMOND_HELMET, 1));
+        die(stand, worn);
+        assertThat(said(worn)).containsExactly("DIAMOND_HELMET 1");
 
         Player player = mock(Player.class);
         when(player.getLocation()).thenReturn(new Location(world, 5, 64, 5));
-        List<ItemStack> theirs = new ArrayList<>(List.of(new ItemStack(Material.DIAMOND, 3)));
-        rates().onDeath(new EntityDeathEvent(
-                player, DamageSource.builder(DamageType.GENERIC).build(), theirs));
-        assertThat(theirs).describedAs("a player's own things are not doubled").hasSize(1);
-        assertThat(theirs.getFirst().getAmount()).isEqualTo(3);
+        List<ItemStack> theirs = drops(new ItemStack(Material.DIAMOND, 3));
+        die(player, theirs);
+        assertThat(said(theirs)).containsExactly("DIAMOND 3");
+    }
 
-        bought.put(IslandRates.MOB_DROPS, 0);
-        List<ItemStack> plain = new ArrayList<>(List.of(new ItemStack(Material.BONE, 2)));
-        rates().onDeath(new EntityDeathEvent(
-                zombie, DamageSource.builder(DamageType.GENERIC).build(), plain));
-        assertThat(plain.getFirst().getAmount()).isEqualTo(2);
+    @Test
+    @DisplayName("What was carried is taken off a drop like it, across stacks, and only once")
+    void carriedIsTakenOnce() {
+        List<ItemStack> carried = new ArrayList<>(List.of(
+                new ItemStack(Material.DIAMOND, 1),
+                new ItemStack(Material.COBBLESTONE, 20),
+                new ItemStack(Material.COBBLESTONE, 5)));
+
+        assertThat(IslandRates.takeCarried(carried, new ItemStack(Material.ROTTEN_FLESH, 3)))
+                .isZero();
+        assertThat(IslandRates.takeCarried(carried, new ItemStack(Material.COBBLESTONE, 22)))
+                .isEqualTo(22);
+        assertThat(carried.get(1).getAmount()).isZero();
+        assertThat(carried.get(2).getAmount()).describedAs("two of five taken").isEqualTo(3);
+        assertThat(IslandRates.takeCarried(carried, new ItemStack(Material.COBBLESTONE, 10)))
+                .describedAs("what is left of it, once")
+                .isEqualTo(3);
+        assertThat(IslandRates.takeCarried(carried, new ItemStack(Material.DIAMOND, 4)))
+                .isEqualTo(1);
+        assertThat(IslandRates.takeCarried(carried, new ItemStack(Material.DIAMOND, 4)))
+                .isZero();
     }
 }

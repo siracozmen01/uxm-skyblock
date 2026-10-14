@@ -17,13 +17,16 @@ import org.bukkit.block.BlockState;
 import org.bukkit.block.CreatureSpawner;
 import org.bukkit.block.data.Ageable;
 import org.bukkit.block.data.BlockData;
-import org.bukkit.entity.Player;
+import org.bukkit.entity.Mob;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 import org.bukkit.event.block.BlockGrowEvent;
 import org.bukkit.event.entity.EntityDeathEvent;
 import org.bukkit.event.entity.SpawnerSpawnEvent;
+import org.bukkit.inventory.EntityEquipment;
+import org.bukkit.inventory.EquipmentSlot;
+import org.bukkit.inventory.InventoryHolder;
 import org.bukkit.inventory.ItemStack;
 
 import com.uxplima.uxmskyblock.core.application.scheduler.SchedulerPort;
@@ -153,19 +156,27 @@ public final class IslandRates implements Listener {
         }
     }
 
-    /** A mob killed on the island drops the rate's worth of each stack it drops. */
+    /**
+     * A mob killed on the island drops the rate's worth of its loot.
+     *
+     * <p>Only what the mob's own loot gave is made more. What it carried, the armour it wore, an item it picked up,
+     * the chest a donkey bore, drops once as it was: a rate that doubled those would double a player's diamonds handed
+     * to a zombie and back. Anything not a mob, an armour stand or a player, is left be.
+     */
     @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
     public void onDeath(EntityDeathEvent event) {
-        if (event.getEntity() instanceof Player) {
+        if (!(event.getEntity() instanceof Mob mob)) {
             return;
         }
-        double rate = rateAt(event.getEntity().getLocation(), MOB_DROPS, null);
+        double rate = rateAt(mob.getLocation(), MOB_DROPS, null);
         if (rate <= 1.0) {
             return;
         }
+        List<ItemStack> carried = carried(mob);
         List<ItemStack> more = new ArrayList<>();
         for (ItemStack drop : event.getDrops()) {
-            int count = times(drop.getAmount(), rate, random.getAsDouble());
+            int own = drop.getAmount() - takeCarried(carried, drop);
+            int count = drop.getAmount() - own + times(own, rate, random.getAsDouble());
             int max = Math.max(1, drop.getMaxStackSize());
             while (count > 0) {
                 ItemStack stack = drop.clone();
@@ -176,5 +187,42 @@ public final class IslandRates implements Listener {
         }
         event.getDrops().clear();
         event.getDrops().addAll(more);
+    }
+
+    /** Everything a mob carries: what it wears and holds, and the inventory of one that has one. */
+    static List<ItemStack> carried(Mob mob) {
+        List<ItemStack> carried = new ArrayList<>();
+        EntityEquipment equipment = mob.getEquipment();
+        for (EquipmentSlot slot : EquipmentSlot.values()) {
+            try {
+                ItemStack worn = equipment.getItem(slot);
+                if (!worn.isEmpty()) {
+                    carried.add(worn.clone());
+                }
+            } catch (IllegalArgumentException noSuchSlot) {
+                // A slot this mob does not have, the body of a mob that wears none.
+            }
+        }
+        if (mob instanceof InventoryHolder holder) {
+            for (ItemStack held : holder.getInventory().getContents()) {
+                if (held != null && !held.isEmpty()) {
+                    carried.add(held.clone());
+                }
+            }
+        }
+        return carried;
+    }
+
+    /** How much of {@code drop} the mob carried, taken off what is left of {@code carried}. */
+    static int takeCarried(List<ItemStack> carried, ItemStack drop) {
+        int taken = 0;
+        for (ItemStack held : carried) {
+            if (held.isSimilar(drop)) {
+                int take = Math.min(held.getAmount(), drop.getAmount() - taken);
+                held.setAmount(held.getAmount() - take);
+                taken += take;
+            }
+        }
+        return taken;
     }
 }
