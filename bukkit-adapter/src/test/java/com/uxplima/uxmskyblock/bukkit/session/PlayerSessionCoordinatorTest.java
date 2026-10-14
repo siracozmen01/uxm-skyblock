@@ -200,6 +200,13 @@ class PlayerSessionCoordinatorTest extends MockBukkitHarness {
         eventuallyTick(() ->
                 assertThat(coordinator.getActiveSession(player.getUniqueId())).isNotNull());
 
+        // A checkpoint is skipped while another write of the player is landing, and the next one writes after it.
+        // The join writes the player once; under a loaded build that write can still be landing here, so the
+        // checkpoint is taken once it is done.
+        eventuallyTick(() -> assertThat(Objects.requireNonNull(coordinator.getActiveSession(player.getUniqueId()))
+                        .writes()
+                        .isLocked())
+                .isFalse());
         player.getInventory().setItem(0, new ItemStack(Material.DIAMOND, 10));
         coordinator.checkpointPlayer(new PlayerUuid(player.getUniqueId()));
 
