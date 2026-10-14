@@ -2,7 +2,6 @@ package com.uxplima.uxmskyblock.rest.server;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
-import java.time.Duration;
 import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -13,16 +12,12 @@ import java.util.Optional;
 import java.util.UUID;
 import java.util.logging.Logger;
 
-import com.google.gson.JsonObject;
-import com.google.gson.JsonParser;
 import com.uxplima.uxmskyblock.core.application.bank.IslandBankService;
 import com.uxplima.uxmskyblock.core.application.event.OutboxEventConsumer;
 import com.uxplima.uxmskyblock.core.application.health.ServerHealthPort;
 import com.uxplima.uxmskyblock.core.application.island.IslandStoragePort;
 import com.uxplima.uxmskyblock.core.application.leaderboard.IslandLeaderboardService;
-import com.uxplima.uxmskyblock.core.domain.bank.BankTransactionOutcome;
 import com.uxplima.uxmskyblock.core.domain.identity.IslandId;
-import com.uxplima.uxmskyblock.core.domain.identity.PlayerUuid;
 import com.uxplima.uxmskyblock.core.domain.island.Island;
 import com.uxplima.uxmskyblock.core.domain.leaderboard.LeaderboardCategory;
 import com.uxplima.uxmskyblock.core.domain.leaderboard.LeaderboardEntry;
@@ -40,12 +35,15 @@ import org.jspecify.annotations.Nullable;
  */
 public final class RestServer implements AutoCloseable {
 
+    /** {@code POST} of a bank deposit: the request checked, held once under its idempotency key, and the money moved into the island's bank. */
+    private final BankDepositHandler deposits = new BankDepositHandler(this);
+
     private static final Logger LOGGER = Logger.getLogger(RestServer.class.getName());
 
-    private final RestConfiguration config;
-    private final ServerNodeId serverNodeId;
+    final RestConfiguration config;
+    final ServerNodeId serverNodeId;
     private final IslandStoragePort islandStoragePort;
-    private final IslandBankService bankService;
+    final IslandBankService bankService;
     private final IslandLeaderboardService leaderboardService;
     private final @Nullable ServerHealthPort healthPort;
     private final LiveEventFeed liveEventFeed = new LiveEventFeed();
@@ -112,7 +110,7 @@ public final class RestServer implements AutoCloseable {
         app.get("/api/v1/top/{metric}", this::handleGetLeaderboard);
 
         // 5. Bank Deposit (Tebex / CraftingStore Webstore)
-        app.post("/api/v1/islands/{id}/bank/deposit", this::handleBankDeposit);
+        app.post("/api/v1/islands/{id}/bank/deposit", deposits::handleBankDeposit);
 
         // 6. Live event feed for map overlays.
         app.ws("/api/v1/events", ws -> {
@@ -254,7 +252,7 @@ public final class RestServer implements AutoCloseable {
     private static final java.util.regex.Pattern ULID_PATTERN =
             java.util.regex.Pattern.compile("^[0123456789ABCDEFGHJKMNPQRSTVWXYZabcdefghjkmnpqrstvwxyz]{26}$");
 
-    private static boolean isValidIdempotencyKey(String key) {
+    static boolean isValidIdempotencyKey(String key) {
         if (key == null) {
             return false;
         }
@@ -266,7 +264,7 @@ public final class RestServer implements AutoCloseable {
             IslandId islandId, long amount, String reason, HttpStatus status, Map<String, Object> responseBody) {}
 
     /** A remembered deposit and when it was remembered. */
-    private record RememberedDeposit(IdempotentDepositRecord record, Instant storedAt) {}
+    record RememberedDeposit(IdempotentDepositRecord record, Instant storedAt) {}
 
     /**
      * Deposits already made, so a retry is answered rather than made again.
@@ -276,35 +274,15 @@ public final class RestServer implements AutoCloseable {
      * process. It is bounded twice now: by how long a key is worth remembering, and by how many a
      * node will hold at once whatever the clock says.
      */
-    private final java.util.concurrent.ConcurrentMap<String, RememberedDeposit> idempotencyCache =
+    final java.util.concurrent.ConcurrentMap<String, RememberedDeposit> idempotencyCache =
             new java.util.concurrent.ConcurrentHashMap<>();
 
-    /** Drops what is too old, and then the oldest of what is left if there is still too much. */
-    private void pruneIdempotency(Instant now) {
-        Duration retention = config.idempotencyRetention();
-        idempotencyCache
-                .entrySet()
-                .removeIf(entry -> entry.getValue().storedAt().plus(retention).isBefore(now));
-
-        int capacity = config.idempotencyCapacity();
-        int over = idempotencyCache.size() - capacity;
-        if (over <= 0) {
-            return;
-        }
-        idempotencyCache.entrySet().stream()
-                .sorted(java.util.Comparator.comparing(entry -> entry.getValue().storedAt()))
-                .limit(over)
-                .map(Map.Entry::getKey)
-                .toList()
-                .forEach(idempotencyCache::remove);
-    }
-
     /** Remembers a deposit's answer, and drops what has aged out or overflowed the ceiling. */
-    private void rememberDeposit(String idempotencyKey, IdempotentDepositRecord record) {
+    void rememberDeposit(String idempotencyKey, IdempotentDepositRecord record) {
         Instant now = Instant.now();
         idempotencyCache.put(idempotencyKey, new RememberedDeposit(record, now));
         // Pruned after the write, so the ceiling holds after every one of them rather than before.
-        pruneIdempotency(now);
+        deposits.pruneIdempotency(now);
     }
 
     /** Remembers one deposit, for a test that drives the bound rather than the endpoint. */
@@ -315,180 +293,6 @@ public final class RestServer implements AutoCloseable {
     /** How many deposits this node is remembering, for a caller that wants to say so. */
     int idempotencyEntries() {
         return idempotencyCache.size();
-    }
-
-    private void handleBankDeposit(Context ctx) {
-        String rawId = ctx.pathParam("id");
-        IslandId islandId;
-        try {
-            islandId = IslandId.of(UUID.fromString(rawId));
-        } catch (IllegalArgumentException e) {
-            ctx.status(HttpStatus.BAD_REQUEST).json(Map.of("error", "Invalid island UUID format"));
-            return;
-        }
-
-        JsonObject body;
-        try {
-            body = JsonParser.parseString(ctx.body()).getAsJsonObject();
-        } catch (Exception e) {
-            ctx.status(HttpStatus.BAD_REQUEST).json(Map.of("error", "Malformed JSON body"));
-            return;
-        }
-
-        if (!body.has("amount")) {
-            ctx.status(HttpStatus.BAD_REQUEST).json(Map.of("error", "Missing required field: amount"));
-            return;
-        }
-
-        var amountElem = body.get("amount");
-        if (!amountElem.isJsonPrimitive() || !amountElem.getAsJsonPrimitive().isNumber()) {
-            ctx.status(HttpStatus.BAD_REQUEST).json(Map.of("error", "Amount must be a numeric integer"));
-            return;
-        }
-
-        long amount;
-        try {
-            java.math.BigDecimal bd = new java.math.BigDecimal(amountElem.getAsString());
-            if (bd.scale() > 0 && bd.stripTrailingZeros().scale() > 0) {
-                ctx.status(HttpStatus.BAD_REQUEST)
-                        .json(Map.of("error", "Amount must be an integer, fractional values are not allowed"));
-                return;
-            }
-            java.math.BigInteger bi = bd.toBigIntegerExact();
-            if (bi.compareTo(java.math.BigInteger.ZERO) <= 0) {
-                ctx.status(HttpStatus.BAD_REQUEST).json(Map.of("error", "Amount must be strictly positive"));
-                return;
-            }
-            if (bi.compareTo(java.math.BigInteger.valueOf(Long.MAX_VALUE)) > 0) {
-                ctx.status(HttpStatus.BAD_REQUEST).json(Map.of("error", "Amount exceeds maximum supported value"));
-                return;
-            }
-            amount = bi.longValueExact();
-        } catch (Exception e) {
-            ctx.status(HttpStatus.BAD_REQUEST).json(Map.of("error", "Invalid numeric amount format"));
-            return;
-        }
-
-        String reason = body.has("reason") ? body.get("reason").getAsString() : "web_store_deposit";
-
-        String rawIdempotencyKey = ctx.header("Idempotency-Key");
-        if (rawIdempotencyKey == null || rawIdempotencyKey.isBlank()) {
-            ctx.status(HttpStatus.BAD_REQUEST).json(Map.of("error", "Missing required header: Idempotency-Key"));
-            return;
-        }
-
-        String idempotencyKey = rawIdempotencyKey.trim();
-        if (!isValidIdempotencyKey(idempotencyKey)) {
-            ctx.status(HttpStatus.BAD_REQUEST)
-                    .json(Map.of("error", "Invalid Idempotency-Key format: must be UUIDv4 or ULID"));
-            return;
-        }
-
-        RememberedDeposit remembered = idempotencyCache.get(idempotencyKey);
-        IdempotentDepositRecord cached = remembered != null ? remembered.record() : null;
-        if (cached != null) {
-            if (cached.islandId().equals(islandId)
-                    && cached.amount() == amount
-                    && Objects.equals(cached.reason(), reason)) {
-                // Replay cached response
-                ctx.status(cached.status()).json(cached.responseBody());
-                return;
-            } else {
-                // Conflict detected
-                ctx.status(HttpStatus.CONFLICT)
-                        .json(Map.of(
-                                "error",
-                                "Idempotency conflict: request payload differs from original request for key "
-                                        + idempotencyKey,
-                                "idempotencyKey",
-                                idempotencyKey));
-                return;
-            }
-        }
-
-        UUID operationId = UUID.randomUUID();
-        BankTransactionOutcome outcome = bankService.depositToIsland(
-                islandId,
-                PlayerUuid.WEBSTORE,
-                amount,
-                reason,
-                serverNodeId,
-                operationId,
-                idempotencyKey,
-                "REST_BANK_DEPOSIT");
-
-        if (outcome instanceof BankTransactionOutcome.Success success) {
-            Map<String, Object> resp = Map.of(
-                    "status", "SUCCESS",
-                    "islandId", islandId.value().toString(),
-                    "newBalanceMinorUnits", success.updatedBank().primaryBalanceMinorUnits(),
-                    "transactionId", success.transaction().transactionId().toString());
-            rememberDeposit(idempotencyKey, new IdempotentDepositRecord(islandId, amount, reason, HttpStatus.OK, resp));
-            ctx.status(HttpStatus.OK).json(resp);
-        } else if (outcome instanceof BankTransactionOutcome.DuplicateOperation dup) {
-            if ("APPLIED".equalsIgnoreCase(dup.status()) && dup.resultPayload() != null) {
-                try {
-                    JsonObject cachedJson =
-                            JsonParser.parseString(dup.resultPayload()).getAsJsonObject();
-                    boolean islandMatch = cachedJson.has("islandId")
-                            && cachedJson
-                                    .get("islandId")
-                                    .getAsString()
-                                    .equals(islandId.value().toString());
-                    boolean amountMatch = !cachedJson.has("amount")
-                            || cachedJson.get("amount").getAsLong() == amount;
-                    boolean reasonMatch = !cachedJson.has("reason")
-                            || Objects.equals(cachedJson.get("reason").getAsString(), reason);
-                    boolean actorMatch = !cachedJson.has("actorId")
-                            || Objects.equals(cachedJson.get("actorId").getAsString(), PlayerUuid.WEBSTORE.toString());
-
-                    if (islandMatch && amountMatch && reasonMatch && actorMatch) {
-                        Map<String, Object> resp = Map.of(
-                                "status", "SUCCESS",
-                                "islandId", islandId.value().toString(),
-                                "newBalanceMinorUnits",
-                                        cachedJson.get("newBalanceMinorUnits").getAsLong(),
-                                "transactionId", cachedJson.get("transactionId").getAsString());
-                        rememberDeposit(
-                                idempotencyKey,
-                                new IdempotentDepositRecord(islandId, amount, reason, HttpStatus.OK, resp));
-                        ctx.status(HttpStatus.OK).json(resp);
-                        return;
-                    } else {
-                        ctx.status(HttpStatus.CONFLICT)
-                                .json(Map.of(
-                                        "error",
-                                        "Idempotency conflict: request payload differs from original persisted request for key "
-                                                + idempotencyKey,
-                                        "idempotencyKey",
-                                        idempotencyKey));
-                        return;
-                    }
-                } catch (Exception ignored) {
-                    // Fallthrough to conflict
-                }
-            }
-            if ("PENDING".equalsIgnoreCase(dup.status())) {
-                ctx.status(HttpStatus.CONFLICT)
-                        .json(Map.of(
-                                "error",
-                                "Operation in progress for idempotency key: " + idempotencyKey,
-                                "idempotencyKey",
-                                idempotencyKey));
-                return;
-            }
-            ctx.status(HttpStatus.CONFLICT)
-                    .json(Map.of("error", "Idempotency conflict: " + dup.message(), "idempotencyKey", idempotencyKey));
-        } else {
-            Map<String, Object> resp = Map.of(
-                    "status", "FAILED",
-                    "islandId", islandId.value().toString(),
-                    "error", outcome.toString());
-            rememberDeposit(
-                    idempotencyKey,
-                    new IdempotentDepositRecord(islandId, amount, reason, HttpStatus.UNPROCESSABLE_CONTENT, resp));
-            ctx.status(HttpStatus.UNPROCESSABLE_CONTENT).json(resp);
-        }
     }
 
     /**
