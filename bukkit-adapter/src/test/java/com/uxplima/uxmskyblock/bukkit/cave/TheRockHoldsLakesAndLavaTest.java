@@ -193,10 +193,21 @@ class TheRockHoldsLakesAndLavaTest extends MockBukkitHarness {
     @DisplayName("Pools lie anywhere from the room's reach to three inside the shell, at every depth they allow")
     void wherePoolsLie() {
         IslandStart start = start(server.addSimpleWorld("pools_planned"));
-        List<CavernStart.Pocket> lakes = planned(
-                start,
-                new CaveBlockConfiguration.Pool(
-                        "WATER", 400, 4, 0.5, 4, 10, List.of(CaveBlockConfiguration.OVERWORLD)));
+        // One lake each for four hundred islands, so no lake has to stand apart from another.
+        List<CavernStart.Pocket> lakes = new ArrayList<>();
+        List<CavernStart.Pocket> anyDepth = new ArrayList<>();
+        for (long seed = 0; seed < 400; seed++) {
+            lakes.addAll(planned(
+                    start,
+                    new CaveBlockConfiguration.Pool(
+                            "WATER", 1, 4, 0.5, 4, 10, List.of(CaveBlockConfiguration.OVERWORLD)),
+                    seed));
+            anyDepth.addAll(planned(
+                    start,
+                    new CaveBlockConfiguration.Pool(
+                            "WATER", 1, 4, 0.5, -30, 30, List.of(CaveBlockConfiguration.OVERWORLD)),
+                    seed));
+        }
         // From the room's 3, three blocks and the lake's 4 out; to the rock's 24, three blocks and 4 in.
         assertThat(lakes.stream()
                         .mapToInt(CavernStart.Pocket::distance)
@@ -211,13 +222,7 @@ class TheRockHoldsLakesAndLavaTest extends MockBukkitHarness {
                         .toArray())
                 .containsExactly(4, 5, 6, 7, 8, 9, 10);
         // Below 20, three blocks and the lake's 2 up, is the deepest; above 8, three and 2 down, the highest.
-        assertThat(planned(
-                                start,
-                                new CaveBlockConfiguration.Pool(
-                                        "WATER", 400, 4, 0.5, -30, 30, List.of(CaveBlockConfiguration.OVERWORLD)))
-                        .stream()
-                        .mapToInt(pocket -> Y - pocket.y())
-                        .summaryStatistics())
+        assertThat(anyDepth.stream().mapToInt(pocket -> Y - pocket.y()).summaryStatistics())
                 .returns(-3, java.util.IntSummaryStatistics::getMin)
                 .returns(15, java.util.IntSummaryStatistics::getMax);
         for (CavernStart.Pocket lake : lakes) {
@@ -243,6 +248,56 @@ class TheRockHoldsLakesAndLavaTest extends MockBukkitHarness {
                                 "WATER", 1, 4, 0, 4, 10, List.of(CaveBlockConfiguration.OVERWORLD)))
                 .getFirst();
         assertThat(empty.surface()).describedAs("nothing but air").isEqualTo(empty.y() - empty.high() - 1);
+    }
+
+    @Test
+    @DisplayName("No two pools touch: each is turned round the island until it stands apart, or is not laid")
+    void poolsStandApart() {
+        IslandStart start = start(server.addSimpleWorld("pools_apart"));
+        int laid = 0;
+        for (long seed = 0; seed < 60; seed++) {
+            List<CavernStart.Pocket> pools = planned(
+                    start,
+                    new CaveBlockConfiguration.Pool(
+                            "WATER", 6, 4, 0.5, 4, 10, List.of(CaveBlockConfiguration.OVERWORLD)),
+                    seed);
+            laid += pools.size();
+            for (int one = 0; one < pools.size(); one++) {
+                for (int other = one + 1; other < pools.size(); other++) {
+                    CavernStart.Pocket a = pools.get(one);
+                    CavernStart.Pocket b = pools.get(other);
+                    boolean apartAcross = Math.hypot(a.x() - b.x(), a.z() - b.z()) >= a.radius() + b.radius() + 2;
+                    boolean apartUp = Math.abs(a.y() - b.y()) > a.high() + b.high() + 1;
+                    assertThat(apartAcross || apartUp)
+                            .describedAs(
+                                    "seed %d: pools at %d,%d,%d and %d,%d,%d",
+                                    seed, a.x(), a.y(), a.z(), b.x(), b.y(), b.z())
+                            .isTrue();
+                }
+            }
+        }
+        assertThat(laid).describedAs("most still find room").isGreaterThan(60 * 3);
+        assertThat(laid).describedAs("not all six find room every time").isLessThan(60 * 6);
+        for (long seed = 0; seed < 60; seed++) {
+            assertThat(planned(
+                            start,
+                            new CaveBlockConfiguration.Pool(
+                                    "WATER", 2, 4, 0.5, 4, 10, List.of(CaveBlockConfiguration.OVERWORLD)),
+                            seed))
+                    .describedAs("seed %d: two lakes always find room, the second turned away from the first", seed)
+                    .hasSize(2);
+        }
+        CavernStart.Pocket here = new CavernStart.Pocket(10, 0, 0, 0, 4, 2, Material.WATER, 0);
+        assertThat(here.touches(new CavernStart.Pocket(10, 9, 0, 0, 4, 2, Material.WATER, 0)))
+                .describedAs("one block of rock between the rims")
+                .isTrue();
+        assertThat(here.touches(new CavernStart.Pocket(10, 10, 0, 0, 4, 2, Material.WATER, 0)))
+                .isFalse();
+        assertThat(here.touches(new CavernStart.Pocket(10, 0, 5, 0, 4, 2, Material.WATER, 0)))
+                .describedAs("a block of rock between, one above the other")
+                .isTrue();
+        assertThat(here.touches(new CavernStart.Pocket(10, 0, 6, 0, 4, 2, Material.WATER, 0)))
+                .isFalse();
     }
 
     private List<CavernStart.Pocket> planned(IslandStart start, CaveBlockConfiguration.Pool pool) {

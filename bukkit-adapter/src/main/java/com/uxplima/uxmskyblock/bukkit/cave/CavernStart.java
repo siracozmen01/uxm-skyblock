@@ -226,9 +226,13 @@ public final class CavernStart implements CreationActionProvider<IslandStart> {
         return null;
     }
 
+    /** How many ways round the island a pool is tried before it is left out. */
+    private static final int TURNS = 24;
+
     /**
      * The pools of the world's dimension, each laid where the island's seed puts it: round the island beyond the room,
-     * inside the rock with two blocks to spare before the shell. One that cannot fit there is not laid.
+     * inside the rock with two blocks to spare before the shell, and apart from every other pool. One that cannot fit
+     * there is not laid.
      */
     List<Pocket> pockets(World world, IslandStart start, long seed) {
         CavePlan.Shape shape = config.shape();
@@ -251,15 +255,29 @@ public final class CavernStart implements CreationActionProvider<IslandStart> {
                 int distance = nearest + random.nextInt(farthest - nearest + 1);
                 int middleY = start.y() - (highest + random.nextInt(deepest - highest + 1));
                 int surface = middleY - high - 1 + (int) Math.round(pool.fill() * (2 * high + 1));
-                pockets.add(new Pocket(
-                        distance,
-                        start.centerX() + (int) Math.round(Math.cos(angle) * distance),
-                        middleY,
-                        start.centerZ() + (int) Math.round(Math.sin(angle) * distance),
-                        pool.radius(),
-                        high,
-                        liquid,
-                        surface));
+                // Two pools that touch share their blocks and each its own surface: water would stand on air. A pool
+                // is turned round the island until it touches none, and one that touches each way is not laid.
+                Pocket laid = null;
+                for (int turn = 0; turn < TURNS && laid == null; turn++) {
+                    double at = angle + turn * Math.PI * 2 / TURNS;
+                    Pocket tried = new Pocket(
+                            distance,
+                            start.centerX() + (int) Math.round(Math.cos(at) * distance),
+                            middleY,
+                            start.centerZ() + (int) Math.round(Math.sin(at) * distance),
+                            pool.radius(),
+                            high,
+                            liquid,
+                            surface);
+                    if (pockets.stream().noneMatch(tried::touches)) {
+                        laid = tried;
+                    }
+                }
+                if (laid == null) {
+                    LOGGER.fine(() -> "A pool of '" + pool.block() + "' found no room apart from the others.");
+                    continue;
+                }
+                pockets.add(laid);
             }
         }
         return List.copyOf(pockets);
@@ -270,6 +288,12 @@ public final class CavernStart implements CreationActionProvider<IslandStart> {
      * including {@code surface}, air above.
      */
     record Pocket(int distance, int x, int y, int z, int radius, int high, Material liquid, int surface) {
+
+        /** Whether the two share a block or stand side by side, a block of rock between them at the least. */
+        boolean touches(Pocket other) {
+            double apart = Math.hypot(x - other.x, z - other.z);
+            return apart < radius + other.radius + 2 && Math.abs(y - other.y) <= high + other.high + 1;
+        }
 
         boolean holds(int atX, int atY, int atZ) {
             double across = (Math.pow(atX - x, 2) + Math.pow(atZ - z, 2)) / ((double) radius * radius);
