@@ -1,15 +1,12 @@
 package com.uxplima.uxmskyblock.bukkit.tradewinds;
 
 import java.util.Arrays;
-import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
-import java.util.OptionalLong;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Function;
 import java.util.function.Predicate;
 import java.util.logging.Level;
@@ -33,7 +30,6 @@ import com.uxplima.uxmskyblock.bukkit.trade.OnThePlayersThread;
 import com.uxplima.uxmskyblock.bukkit.trade.PlayerTradeSide;
 import com.uxplima.uxmskyblock.core.application.scheduler.SchedulerPort;
 import com.uxplima.uxmskyblock.core.application.trade.TradeExchange;
-import com.uxplima.uxmskyblock.core.application.tradewinds.CargoJournalPort;
 import com.uxplima.uxmskyblock.core.application.tradewinds.CargoTransfer;
 import com.uxplima.uxmskyblock.core.application.tradewinds.Ranks;
 import com.uxplima.uxmskyblock.core.application.tradewinds.VesselLease;
@@ -62,6 +58,9 @@ import org.jspecify.annotations.Nullable;
  */
 public final class CargoHolds {
 
+    /** A move in or out of a vessel's cargo hold, journalled under the hold's lock, and every open window of the hold drawn again after it. */
+    private final CargoMoves moves = new CargoMoves(this);
+
     private static final Logger LOGGER = Logger.getLogger(CargoHolds.class.getName());
 
     /** Whose session a move is written under, and how a player is taken off the server. */
@@ -88,7 +87,7 @@ public final class CargoHolds {
 
         private final IslandId vessel;
         private final int slots;
-        private volatile byte[] items;
+        volatile byte[] items;
         private @Nullable Inventory inventory;
 
         View(IslandId vessel) {
@@ -122,25 +121,26 @@ public final class CargoHolds {
     }
 
     private final VesselService vessels;
-    private final VesselsPort holds;
-    private final VesselLease lease;
-    private final CargoTransfer transfer;
+    final VesselsPort holds;
+    final VesselLease lease;
+    final CargoTransfer transfer;
     private final Function<Location, Optional<Island>> islandAt;
-    private final Sessions sessions;
-    private final SchedulerPort scheduler;
+    final Sessions sessions;
+    final SchedulerPort scheduler;
     private final Messages messages;
     private final Predicate<Player> sealed;
-    private final Function<IslandId, Ranks.Rank> rankOf;
-    private final OnThePlayersThread thread;
+    final Function<IslandId, Ranks.Rank> rankOf;
+    final OnThePlayersThread thread;
     private final Crew crew;
     private final Set<UUID> moving = ConcurrentHashMap.newKeySet();
-    private @Nullable SkyblockMenuEngine engine;
+
+    @Nullable SkyblockMenuEngine engine;
 
     /** Whether the file was found unable to show a hold, said once rather than on every open. */
     private final java.util.concurrent.atomic.AtomicBoolean saidTheFileCannotShowAHold =
             new java.util.concurrent.atomic.AtomicBoolean();
 
-    private final Map<IslandId, Set<UUID>> viewers = new ConcurrentHashMap<>();
+    final Map<IslandId, Set<UUID>> viewers = new ConcurrentHashMap<>();
 
     @SuppressWarnings("TooManyParameters")
     public CargoHolds(
@@ -345,12 +345,12 @@ public final class CargoHolds {
         viewers.values().forEach(watching -> watching.remove(player));
     }
 
-    private enum Direction {
+    enum Direction {
         PUT,
         TAKE
     }
 
-    private void move(Player player, IslandId vessel, Direction direction, int slot, ItemStack item) {
+    void move(Player player, IslandId vessel, Direction direction, int slot, ItemStack item) {
         UUID who = player.getUniqueId();
         if (!moving.add(who)) {
             return;
@@ -358,7 +358,7 @@ public final class CargoHolds {
         scheduler.async(() -> {
             Result<InventoryMutationOperationId, String> done;
             try {
-                done = moveLocked(player, vessel, direction, slot, item);
+                done = moves.moveLocked(player, vessel, direction, slot, item);
             } catch (RuntimeException e) {
                 LOGGER.log(Level.SEVERE, "A cargo move of " + who + " on vessel " + vessel + " failed", e);
                 done = Result.err(TradeExchange.NOT_SAVED);
@@ -369,116 +369,11 @@ public final class CargoHolds {
             if (!outcome.isOk()) {
                 scheduler.onEntity(PlayerUuid.of(who), () -> messages.send(player, keyOf(outcome.errorOrThrow())));
             }
-            redraw(vessel);
+            moves.redraw(vessel);
         });
     }
 
-    private Result<InventoryMutationOperationId, String> moveLocked(
-            Player player, IslandId vessel, Direction direction, int slot, ItemStack item) {
-        UUID who = player.getUniqueId();
-        ActiveSession session = sessions.session(who);
-        if (session == null) {
-            return Result.err("trade.left");
-        }
-        ReentrantLock writes = session.writes();
-        writes.lock();
-        try {
-            OptionalLong epoch = lease.hold(vessel);
-            if (epoch.isEmpty()) {
-                return Result.err("tradewinds.hold.elsewhere");
-            }
-            Optional<VesselsPort.Cargo> cargo = holds.cargo(vessel);
-            if (cargo.isEmpty()) {
-                return Result.err("tradewinds.hold.not_vessel");
-            }
-            byte[] stored = cargo.get().items();
-            ItemStack[] hold = stacks(stored, rankOf.apply(vessel).holdSlots());
-            List<PlayerTradeSide.Given> gives;
-            List<ItemStack> receives;
-            CargoTransfer.Cargo after;
-            if (direction == Direction.PUT) {
-                gives = List.of(new PlayerTradeSide.Given(slot, item));
-                receives = List.of();
-                after = snapshot -> {
-                    ItemStack[] filled = copy(hold);
-                    return stow(filled, item.clone())
-                            ? Result.ok(BukkitInventorySerializer.serializeItemStacks(filled))
-                            : Result.err("tradewinds.hold.full");
-                };
-            } else {
-                ItemStack there = slot < hold.length ? hold[slot] : null;
-                if (there == null || !there.isSimilar(item) || there.getAmount() != item.getAmount()) {
-                    return Result.err("tradewinds.hold.moved");
-                }
-                gives = List.of();
-                receives = List.of(there.clone());
-                after = snapshot -> {
-                    ItemStack[] emptied = copy(hold);
-                    emptied[slot] = null;
-                    return Result.ok(BukkitInventorySerializer.serializeItemStacks(emptied));
-                };
-            }
-            PlayerTradeSide side = new PlayerTradeSide(
-                    player,
-                    session,
-                    gives,
-                    receives,
-                    thread,
-                    () -> sessions.fence(who, "a cargo move nobody can tell was written"));
-            return transfer.move(
-                    side,
-                    new CargoJournalPort.Hold(vessel, epoch.getAsLong()),
-                    cargo.get().version(),
-                    stored,
-                    after);
-        } finally {
-            writes.unlock();
-        }
-    }
-
-    private void redraw(IslandId vessel) {
-        Set<UUID> watching = viewers.get(vessel);
-        if (watching == null || watching.isEmpty()) {
-            return;
-        }
-        Optional<VesselsPort.Cargo> cargo;
-        try {
-            cargo = holds.cargo(vessel);
-        } catch (RuntimeException e) {
-            LOGGER.log(Level.WARNING, e, () -> "The cargo hold of vessel " + vessel + " could not be read.");
-            return;
-        }
-        if (cargo.isEmpty()) {
-            return;
-        }
-        byte[] items = cargo.get().items();
-        for (UUID viewer : List.copyOf(watching)) {
-            scheduler.onEntity(PlayerUuid.of(viewer), () -> {
-                Player online = Bukkit.getPlayer(viewer);
-                if (online == null) {
-                    forget(vessel, viewer);
-                    return;
-                }
-                Inventory top = online.getOpenInventory().getTopInventory();
-                if (top != null
-                        && top.getHolder() instanceof View view
-                        && view.vessel().equals(vessel)) {
-                    top.setContents(window(items, top.getSize()));
-                } else if (top != null
-                        && top.getHolder() instanceof com.uxplima.uxmlib.menu.runtime.MenuHolder menu
-                        && menu.ctx().subjectRaw().orElse(null) instanceof View drawn
-                        && drawn.vessel().equals(vessel)
-                        && engine != null) {
-                    drawn.items = items.clone();
-                    engine.menus().redraw(online, FILE);
-                } else {
-                    forget(vessel, viewer);
-                }
-            });
-        }
-    }
-
-    private void forget(IslandId vessel, UUID player) {
+    void forget(IslandId vessel, UUID player) {
         Set<UUID> watching = viewers.get(vessel);
         if (watching != null) {
             watching.remove(player);
@@ -486,14 +381,14 @@ public final class CargoHolds {
     }
 
     /** The hold's items, at least {@code slots} of them: more when it holds more than its rank shows. */
-    private static ItemStack[] stacks(byte[] stored, int slots) {
+    static ItemStack[] stacks(byte[] stored, int slots) {
         ItemStack[] items =
                 stored.length == 0 ? new ItemStack[0] : BukkitInventorySerializer.deserializeItemStacks(stored);
         return items.length >= slots ? items : Arrays.copyOf(items, slots);
     }
 
     /** The hold's items as a window of {@code size} slots shows them. */
-    private static ItemStack[] window(byte[] stored, int size) {
+    static ItemStack[] window(byte[] stored, int size) {
         return Arrays.copyOf(stacks(stored, size), size);
     }
 
@@ -525,7 +420,7 @@ public final class CargoHolds {
         return remaining == 0;
     }
 
-    private static ItemStack[] copy(ItemStack[] contents) {
+    static ItemStack[] copy(ItemStack[] contents) {
         ItemStack[] copy = new ItemStack[contents.length];
         for (int i = 0; i < contents.length; i++) {
             copy[i] = contents[i] == null ? null : contents[i].clone();
