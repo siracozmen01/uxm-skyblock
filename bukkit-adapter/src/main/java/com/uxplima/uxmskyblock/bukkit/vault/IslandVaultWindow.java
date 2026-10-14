@@ -25,13 +25,10 @@ import com.uxplima.uxmskyblock.core.application.vault.IslandVaultService;
 import com.uxplima.uxmskyblock.core.domain.identity.IslandId;
 import com.uxplima.uxmskyblock.core.domain.identity.PlayerUuid;
 import com.uxplima.uxmskyblock.core.domain.identity.ProfileId;
-import com.uxplima.uxmskyblock.core.domain.inventory.PlayerStateWrite;
 import com.uxplima.uxmskyblock.core.domain.island.Island;
 import com.uxplima.uxmskyblock.core.domain.island.IslandMember;
 import com.uxplima.uxmskyblock.core.domain.island.IslandPermission;
 import com.uxplima.uxmskyblock.core.domain.island.IslandRole;
-import com.uxplima.uxmskyblock.core.domain.vault.VaultAuditLogEntry;
-import com.uxplima.uxmskyblock.core.domain.vault.VaultPage;
 import com.uxplima.uxmskyblock.core.domain.vault.VaultPageBusyException;
 import com.uxplima.uxmskyblock.core.domain.vault.VaultPageLimitExceededException;
 import com.uxplima.uxmskyblock.core.domain.vault.VaultPermissionDeniedException;
@@ -49,11 +46,20 @@ import org.jspecify.annotations.Nullable;
  */
 public final class IslandVaultWindow {
 
+    /** One page of the island vault drawn in its window: the stored items, the page tiles and the lease the page is held under. */
+    private final VaultPages drawer = new VaultPages(this);
+
+    /** {@code /is vault log}: the last moves in and out of the island vault, each with who made it and when. */
+    private final VaultLog log = new VaultLog(this);
+
+    /** What the island vault writes back when its window closes, before the server stops or the lease runs out, and how a refused write is settled. */
+    final VaultCommits commits = new VaultCommits(this);
+
     private static final java.util.logging.Logger LOGGER =
             java.util.logging.Logger.getLogger(IslandVaultWindow.class.getName());
 
     /** How a moment is written in the log, in the server's own zone. */
-    private static final java.time.format.DateTimeFormatter WHEN = java.time.format.DateTimeFormatter.ofPattern(
+    static final java.time.format.DateTimeFormatter WHEN = java.time.format.DateTimeFormatter.ofPattern(
                     "yyyy-MM-dd HH:mm", Locale.ROOT)
             .withZone(java.time.ZoneId.systemDefault());
 
@@ -200,13 +206,14 @@ public final class IslandVaultWindow {
     /** The verb that writes the page and opens the one it names. */
     public static final String TURN = "skyblock:vault-open";
 
-    private final IslandVaultService vaultService;
-    private final IslandStoragePort islandStoragePort;
-    private final SchedulerPort schedulerPort;
-    private final VaultConfiguration configuration;
-    private final Messages messages;
+    final IslandVaultService vaultService;
+    final IslandStoragePort islandStoragePort;
+    final SchedulerPort schedulerPort;
+    final VaultConfiguration configuration;
+    final Messages messages;
     private final @Nullable PlayerSessionCoordinator sessionCoordinator;
-    private @Nullable SkyblockMenuEngine engine;
+
+    @Nullable SkyblockMenuEngine engine;
 
     /** Whether the file was found unable to hold a page, said once rather than on every open. */
     private final java.util.concurrent.atomic.AtomicBoolean saidTheFileCannotHoldAPage =
@@ -284,7 +291,7 @@ public final class IslandVaultWindow {
                 int pages = vaultService.getMaxAllowedPages(island.id());
                 schedulerPort.onEntity(
                         playerUuid,
-                        () -> show(
+                        () -> drawer.show(
                                 player,
                                 island.id(),
                                 new Opened(page, pages, opened),
@@ -311,69 +318,12 @@ public final class IslandVaultWindow {
     }
 
     /**
-     * Sends the island's management what the vault has seen.
-     *
-     * <p>The audit entries were written and no one could read them: the service call that returns
-     * them had no caller anywhere. A record nobody can look at is not a record.
-     *
-     * <p>The bar is the island's management permission, not the one that opens the vault. Every
-     * member can open the chest; who took what out of it is the owner's question.
-     */
-    public void showLog(Player player, int limit) {
-        Objects.requireNonNull(player, "player must not be null");
-        PlayerUuid playerUuid = new PlayerUuid(player.getUniqueId());
-        Optional<ProfileId> optProfile = activeProfile(player);
-        if (optProfile.isEmpty()) {
-            messages.send(player, "error.session_not_active");
-            return;
-        }
-        ProfileId profileId = optProfile.get();
-
-        schedulerPort.async(() -> {
-            Optional<Island> optIsland =
-                    islandStoragePort.findIslandIdByProfileId(profileId).flatMap(islandStoragePort::findIslandById);
-            if (optIsland.isEmpty()) {
-                schedulerPort.onEntity(playerUuid, () -> messages.send(player, "error.no_island"));
-                return;
-            }
-            Island island = optIsland.get();
-            if (!roleOf(island, profileId).hasPermission(IslandPermission.SETTINGS_MODIFY)) {
-                schedulerPort.onEntity(playerUuid, () -> messages.send(player, "vault.log_no_permission"));
-                return;
-            }
-
-            List<VaultAuditLogEntry> entries = vaultService.getRecentAuditLogs(island.id(), limit);
-            schedulerPort.onEntity(playerUuid, () -> sendLog(player, island, entries));
-        });
-    }
-
-    private void sendLog(Player player, Island island, List<VaultAuditLogEntry> entries) {
-        if (entries.isEmpty()) {
-            messages.send(player, "vault.log_empty");
-            return;
-        }
-        messages.send(player, "vault.log_header", Placeholder.unparsed("count", Integer.toString(entries.size())));
-        for (VaultAuditLogEntry entry : entries) {
-            messages.send(
-                    player,
-                    "vault.log_entry",
-                    Placeholder.unparsed("actor", nameOf(island, entry.actorProfileId())),
-                    Placeholder.unparsed("action", entry.actionType().name().toLowerCase(Locale.ROOT)),
-                    Placeholder.unparsed("quantity", Integer.toString(entry.quantity())),
-                    Placeholder.unparsed("item", entry.itemSummary()),
-                    Placeholder.unparsed("page", Integer.toString(entry.page())),
-                    Placeholder.unparsed("slot", Integer.toString(entry.slot())),
-                    Placeholder.unparsed("when", WHEN.format(entry.createdAt())));
-        }
-    }
-
-    /**
      * The name behind a profile id, or the id itself when the island no longer holds that member.
      *
      * <p>The island is already in hand, so this costs no lookup. A member who has left keeps their
      * entries: a record that forgets who did something is worth less than the id.
      */
-    private static String nameOf(Island island, String actorProfileId) {
+    static String nameOf(Island island, String actorProfileId) {
         for (IslandMember member : island.members().values()) {
             if (member.profileId().toString().equals(actorProfileId)) {
                 String name =
@@ -385,59 +335,7 @@ public final class IslandVaultWindow {
     }
 
     /** A page the service leased, which page it is and how many the island has. */
-    private record Opened(int page, int pages, IslandVaultService.VaultOpenResult result) {}
-
-    private void show(
-            Player player,
-            IslandId islandId,
-            Opened opened,
-            ProfileId profileId,
-            boolean mayDeposit,
-            boolean mayWithdraw) {
-        if (!player.isOnline()) {
-            vaultService.abortVaultPage(opened.result().session().sessionId());
-            return;
-        }
-        int page = opened.page();
-        VaultPage vaultPage = opened.result().page();
-        @Nullable ItemStack[] stored = BukkitInventorySerializer.deserializeItemStacks(vaultPage.contentsNbt());
-        int shown = configuration.slotsPerPage();
-        SkyblockMenuEngine files = this.engine;
-        List<Integer> fileSlots = files == null ? null : pageSlotsOf(files);
-        VaultHolder holder = new VaultHolder(
-                islandId,
-                page,
-                profileId,
-                opened.result().session().sessionId().value().toString(),
-                WhatThePageOwes.openedWith(stored, shown),
-                mayDeposit,
-                mayWithdraw,
-                fileSlots != null
-                        ? fileSlots
-                        : java.util.stream.IntStream.range(0, shown).boxed().toList(),
-                WhatThePageOwes.beyond(stored, shown),
-                new java.util.concurrent.atomic.AtomicBoolean());
-        if (!holder.beyond().isEmpty()) {
-            LOGGER.warning(() -> "Vault page " + page + " of island " + islandId + " holds items past the " + shown
-                    + " slots a page has now. They are kept, and shown again when slots-per-page is raised.");
-        }
-        if (files != null
-                && fileSlots != null
-                && files.openHolding(player, FILE, holder, valuesOf(holder, opened.pages()))) {
-            closeBeforeTheLeaseRunsOut(player, holder);
-            return;
-        }
-        Inventory inventory = Bukkit.createInventory(
-                holder,
-                shown,
-                messages.renderPlain(player, "vault.title", Placeholder.unparsed("page", Integer.toString(page))));
-
-        for (int slot = 0; slot < Math.min(stored.length, inventory.getSize()); slot++) {
-            inventory.setItem(slot, stored[slot]);
-        }
-        player.openInventory(inventory);
-        closeBeforeTheLeaseRunsOut(player, holder);
-    }
+    record Opened(int page, int pages, IslandVaultService.VaultOpenResult result) {}
 
     /**
      * The slots of the file that hold a page, or null when the file is gone or holds a page of another
@@ -484,31 +382,6 @@ public final class IslandVaultWindow {
     }
 
     /**
-     * Closes the window while its lease still holds, so what it saves is saved.
-     *
-     * <p>The lease was never renewed and the window never closed, so a player who left it open past
-     * the lease closed it onto a refused commit. The page kept what it held, the player kept what
-     * they had taken out of it, and opening it again handed the same items over a second time. The
-     * window now closes at five sixths of the lease, which is when the save still lands.
-     */
-    void closeBeforeTheLeaseRunsOut(Player player, VaultHolder holder) {
-        java.time.Duration lease = configuration.leaseDuration();
-        java.time.Duration closeAt = lease.multipliedBy(5).dividedBy(6);
-        PlayerUuid playerUuid = new PlayerUuid(player.getUniqueId());
-        schedulerPort.asyncAfter(
-                closeAt,
-                () -> schedulerPort.onEntity(playerUuid, () -> {
-                    if (player.isOnline()
-                            && VaultHolder.of(player.getOpenInventory().getTopInventory())
-                                            .orElse(null)
-                                    == holder) {
-                        messages.send(player, "vault.closed_to_save");
-                        player.closeInventory();
-                    }
-                }));
-    }
-
-    /**
      * Tells a player their role does not let them move items that way.
      *
      * <p>The two directions read differently to the player: one says they may not take anything
@@ -519,117 +392,14 @@ public final class IslandVaultWindow {
         messages.send(player, takingOut ? "vault.no_withdraw" : "vault.no_deposit");
     }
 
-    /**
-     * Writes the window back under its lease. A lease that expired while the window was open is
-     * refused by the service, and the player is told rather than silently losing the edit.
-     */
-    public void commit(Player player, VaultHolder holder, ItemStack[] contents) {
-        Objects.requireNonNull(holder, "holder must not be null");
-        byte[] serialized = BukkitInventorySerializer.serializeItemStacks(holder.stored(contents));
-        List<VaultAuditLogEntry> auditTrail = VaultAuditTrail.of(holder, contents);
-        PlayerAtClose playerState = stateOf(player, holder);
-        if (playerState != null) {
-            playerState.session().selfWriteBegun();
-        }
-        schedulerPort.async(() -> {
-            try {
-                commitPage(holder, serialized, playerState, auditTrail);
-                landed(playerState);
-            } catch (RuntimeException e) {
-                // The window is already closed and what it held is nowhere: not in the page, because
-                // the commit was refused, and not with the player, because they put it in the vault.
-                // Telling them it was refused and keeping the items is losing them.
-                schedulerPort.onEntity(new PlayerUuid(player.getUniqueId()), () -> {
-                    try {
-                        messages.send(player, "vault.commit_refused");
-                        settleTheRefusedCommit(player, holder, contents);
-                    } finally {
-                        landed(playerState);
-                    }
-                });
-            }
-        });
-    }
-
-    /**
-     * Writes a window the player still has open when the server stops, on the stopping thread.
-     *
-     * <p>The plugin is disabled before players are disconnected, so the close event of a window open
-     * at a stop never reached the listener: the page kept what it held, and the stop wrote the player
-     * holding what they had taken out of it. The page and the player are now written together here,
-     * before the stop writes the player; a refused write puts the player back where the page says
-     * they are. The window stays open, so nothing is written twice.
-     */
-    public void writeBeforeStop(Player player) {
-        org.bukkit.inventory.Inventory top = player.getOpenInventory().getTopInventory();
-        VaultHolder holder = VaultHolder.of(top).orElse(null);
-        if (top == null || holder == null || !holder.takeTheWrite()) {
-            return;
-        }
-        @Nullable ItemStack[] contents = holder.pageOf(top);
-        PlayerAtClose playerState = stateOf(player, holder);
-        try {
-            commitPage(
-                    holder,
-                    BukkitInventorySerializer.serializeItemStacks(holder.stored(contents)),
-                    playerState,
-                    VaultAuditTrail.of(holder, contents));
-        } catch (RuntimeException e) {
-            LOGGER.log(
-                    java.util.logging.Level.WARNING,
-                    "The vault page open for " + player.getName()
-                            + " could not be written at a stop; the player is put back as the page stands",
-                    e);
-            settleTheRefusedCommit(player, holder, contents);
-        }
-    }
-
-    /**
-     * Writes the page, and the player with it, under the session's write lock.
-     *
-     * <p>The player is written over the version the session stands at when the lock is taken, not the
-     * one it stood at when the window closed: a checkpoint that landed in between moved it on, and a
-     * save over the older version was refused and handed the page's items back.
-     */
-    private void commitPage(
-            VaultHolder holder,
-            byte[] serialized,
-            @Nullable PlayerAtClose player,
-            List<VaultAuditLogEntry> auditTrail) {
-        com.uxplima.uxmskyblock.core.domain.vault.VaultSessionId sessionId =
-                com.uxplima.uxmskyblock.core.domain.vault.VaultSessionId.fromString(holder.sessionId());
-        if (player == null) {
-            vaultService.commitVaultPage(
-                    sessionId, serialized, holder.profileId().toString(), null, auditTrail);
-            return;
-        }
-        ActiveSession session = player.session();
-        session.writes().lock();
-        try {
-            long version = session.lastDurableVersion();
-            PlayerStateWrite write = new PlayerStateWrite(
-                    session.playerUuid(),
-                    player.node(),
-                    session.sessionEpoch(),
-                    version,
-                    player.state().withInventoryNbt(version, player.state().inventoryNbt()));
-            vaultService.commitVaultPage(
-                    sessionId, serialized, holder.profileId().toString(), write, auditTrail);
-            // The session now stands at the version the commit wrote, so the next checkpoint builds on it.
-            session.setLastDurableVersion(write.writtenVersion());
-        } finally {
-            session.writes().unlock();
-        }
-    }
-
-    private static void landed(@Nullable PlayerAtClose playerState) {
+    static void landed(@Nullable PlayerAtClose playerState) {
         if (playerState != null) {
             playerState.session().selfWriteLanded();
         }
     }
 
     /** What the player holds as the window closes, and the session it is written under. */
-    private record PlayerAtClose(
+    record PlayerAtClose(
             ActiveSession session,
             com.uxplima.uxmskyblock.core.domain.session.ServerNodeId node,
             com.uxplima.uxmskyblock.core.domain.inventory.ProfileInventoryRecord state) {}
@@ -642,7 +412,7 @@ public final class IslandVaultWindow {
      * they had taken out. Both are now written in one transaction, under the player's session. A
      * player with no session here has nothing to write, and the page is written alone as before.
      */
-    private @Nullable PlayerAtClose stateOf(Player player, VaultHolder holder) {
+    @Nullable PlayerAtClose stateOf(Player player, VaultHolder holder) {
         PlayerSessionCoordinator sessions = this.sessionCoordinator;
         if (sessions == null) {
             return null;
@@ -658,12 +428,12 @@ public final class IslandVaultWindow {
                         player, session.activeProfileId(), session.lastDurableVersion()));
     }
 
-    private IslandRole roleOf(Island island, ProfileId profileId) {
+    IslandRole roleOf(Island island, ProfileId profileId) {
         IslandMember member = island.members().get(profileId);
         return member != null ? member.role() : IslandRole.VISITOR;
     }
 
-    private Optional<ProfileId> activeProfile(Player player) {
+    Optional<ProfileId> activeProfile(Player player) {
         if (sessionCoordinator == null) {
             return Optional.empty();
         }
@@ -671,34 +441,48 @@ public final class IslandVaultWindow {
     }
 
     /**
-     * Puts the player back where the stored page says they are, after a refused commit.
-     *
-     * <p>A refused commit leaves the page as it was when the window opened. What the window held at
-     * close and the page did not is what the player put in, and it goes back to them. What the page
-     * held and the window no longer did is what the player took out, and the page still holds it, so
-     * it comes back out of the player's inventory. Handing back only what was put in let a player take
-     * a page's items, let the commit be refused, and take them again.
-     *
-     * <p>What does not fit is dropped where they stand. What the player no longer holds cannot be
-     * taken back, and is written to the log with who and what, for an administrator to settle.
+     * Writes the window back under its lease. A lease that expired while the window was open is
+     * refused by the service, and the player is told rather than silently losing the edit.
      */
-    private void settleTheRefusedCommit(Player player, VaultHolder holder, ItemStack[] atClose) {
-        WhatThePageOwes.Moved moved = WhatThePageOwes.between(holder.openedWith(), atClose);
-        List<ItemStack> stillInThePage = moved.takenOut();
-        List<ItemStack> putIn = moved.putIn();
+    public void commit(Player player, VaultHolder holder, ItemStack[] contents) {
+        commits.commit(player, holder, contents);
+    }
 
-        // What the player took out, the page still holds.
-        for (ItemStack takenOut : stillInThePage) {
-            for (ItemStack kept : player.getInventory().removeItem(takenOut).values()) {
-                LOGGER.warning(() -> player.getName() + " took " + kept.getAmount() + " " + kept.getType()
-                        + " out of vault page " + holder.page() + " of island " + holder.islandId()
-                        + " under a refused save and no longer holds them. The page still holds them.");
-            }
-        }
-        for (ItemStack owed : putIn) {
-            for (ItemStack overflow : player.getInventory().addItem(owed).values()) {
-                player.getWorld().dropItemNaturally(player.getLocation(), overflow);
-            }
-        }
+    /**
+     * Writes a window the player still has open when the server stops, on the stopping thread.
+     *
+     * <p>The plugin is disabled before players are disconnected, so the close event of a window open
+     * at a stop never reached the listener: the page kept what it held, and the stop wrote the player
+     * holding what they had taken out of it. The page and the player are now written together here,
+     * before the stop writes the player; a refused write puts the player back where the page says
+     * they are. The window stays open, so nothing is written twice.
+     */
+    public void writeBeforeStop(Player player) {
+        commits.writeBeforeStop(player);
+    }
+
+    /**
+     * Closes the window while its lease still holds, so what it saves is saved.
+     *
+     * <p>The lease was never renewed and the window never closed, so a player who left it open past
+     * the lease closed it onto a refused commit. The page kept what it held, the player kept what
+     * they had taken out of it, and opening it again handed the same items over a second time. The
+     * window now closes at five sixths of the lease, which is when the save still lands.
+     */
+    void closeBeforeTheLeaseRunsOut(Player player, VaultHolder holder) {
+        commits.closeBeforeTheLeaseRunsOut(player, holder);
+    }
+
+    /**
+     * Sends the island's management what the vault has seen.
+     *
+     * <p>The audit entries were written and no one could read them: the service call that returns
+     * them had no caller anywhere. A record nobody can look at is not a record.
+     *
+     * <p>The bar is the island's management permission, not the one that opens the vault. Every
+     * member can open the chest; who took what out of it is the owner's question.
+     */
+    public void showLog(Player player, int limit) {
+        log.showLog(player, limit);
     }
 }
