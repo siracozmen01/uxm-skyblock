@@ -13,7 +13,6 @@ import java.util.logging.Logger;
 
 import org.bukkit.Material;
 import org.bukkit.entity.Player;
-import org.bukkit.inventory.ItemStack;
 
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.minimessage.tag.resolver.Placeholder;
@@ -55,18 +54,23 @@ import org.jspecify.annotations.Nullable;
  */
 public final class Harbour {
 
+    /** A port's market window: the stall an island's vessel trades at, its goods and their prices, and one trade bought or sold. */
+    private final HarbourMarket marketWindow = new HarbourMarket(this);
+
     private static final Logger LOGGER = Logger.getLogger(Harbour.class.getName());
 
-    private final PortMarket market;
-    private final TradeWindsConfiguration config;
-    private final VesselsPort holds;
-    private final PortMarket.Goods goods;
-    private final Crew crew;
+    final PortMarket market;
+    final TradeWindsConfiguration config;
+    final VesselsPort holds;
+    final PortMarket.Goods goods;
+    final Crew crew;
     private final SchedulerPort scheduler;
-    private final Messages messages;
+    final Messages messages;
     private final Clock clock;
-    private @Nullable BedrockFormService forms;
-    private volatile @Nullable SkyblockMenuEngine menuEngine;
+
+    @Nullable BedrockFormService forms;
+
+    volatile @Nullable SkyblockMenuEngine menuEngine;
     private volatile @Nullable InteractionEffectPlayer effectPlayer;
     private volatile InteractionEffects effects = InteractionEffects.none();
     private volatile @Nullable SeaWatch sea;
@@ -139,7 +143,8 @@ public final class Harbour {
         MenuRow.handle(ctx.context(), Choice.class)
                 .filter(choice -> buying ? choice.good().sold() : choice.good().bought())
                 .ifPresent(choice -> vesselOf(ctx.context())
-                        .ifPresent(vessel -> trade(ctx.player(), vessel, choice.port(), choice.good(), buying)));
+                        .ifPresent(vessel ->
+                                marketWindow.trade(ctx.player(), vessel, choice.port(), choice.good(), buying)));
     }
 
     private static Optional<IslandId> vesselOf(com.uxplima.uxmlib.menu.runtime.MenuContext ctx) {
@@ -148,7 +153,7 @@ public final class Harbour {
     }
 
     /** The port's name as a row word: the language file's line for it, or its id when no file names it. */
-    private String portWord(Player player, Port port) {
+    String portWord(Player player, Port port) {
         String key = "tradewinds.ports." + port.id();
         return messages.raw(player, key) == null ? port.id() : "<key:" + key + ">";
     }
@@ -173,7 +178,7 @@ public final class Harbour {
     }
 
     /** One row per good the port trades: its prices for a lot, what the hold has, and the clicks it takes. */
-    private static List<MenuRow> goodRows(Stall stall) {
+    static List<MenuRow> goodRows(Stall stall) {
         List<MenuRow> rows = new ArrayList<>();
         for (Offer offer : stall.offers()) {
             rows.add(new MenuRow(
@@ -192,7 +197,7 @@ public final class Harbour {
     }
 
     /** A port that only sells, or only buys, draws the one price and the one click it has. */
-    private static String factsOf(Offer offer) {
+    static String factsOf(Offer offer) {
         boolean sold = offer.good().sold();
         boolean bought = offer.good().bought();
         StringBuilder facts = new StringBuilder();
@@ -248,55 +253,27 @@ public final class Harbour {
             return;
         }
         IslandId vessel = aboard.orElseThrow();
-        off(player, () -> stall(vessel), found -> {
+        off(player, () -> marketWindow.stall(vessel), found -> {
             if (!found.isOk()) {
                 messages.send(player, found.errorOrThrow());
                 return;
             }
-            openMarket(player, vessel, found.orElseThrow());
+            marketWindow.openMarket(player, vessel, found.orElseThrow());
         });
     }
 
     /** What a trade made, and the vessel's rank before and after it. */
-    private record Trade(Result<PortMarket.Deal, String> made, Ranks.Rank before, Ranks.Rank after) {}
+    record Trade(Result<PortMarket.Deal, String> made, Ranks.Rank before, Ranks.Rank after) {}
 
     /**
      * One good of the market as a vessel sees it: its prices to that vessel and how many its hold has.
      *
      * @param demand how many percent more the port pays for it today, 0 when it does not want it more
      */
-    private record Offer(Port.Good good, long pays, long asks, int held, long demand) {}
+    record Offer(Port.Good good, long pays, long asks, int held, long demand) {}
 
     /** The market of the port a vessel lies in, as the vessel sees it. */
-    private record Stall(Port port, List<Offer> offers) {}
-
-    private Result<Stall, String> stall(IslandId vessel) {
-        PortMarket.Where where = market.where(vessel);
-        if (!(where instanceof PortMarket.Where.Docked docked)) {
-            return Result.err(
-                    where instanceof PortMarket.Where.Sailing
-                            ? "tradewinds.market.at_sea"
-                            : "tradewinds.market.not_docked");
-        }
-        Optional<Port> port = config.port(docked.portId());
-        if (port.isEmpty()) {
-            // A port the operator took out of the file: the vessel has to sail on.
-            return Result.err("tradewinds.market.not_docked");
-        }
-        byte[] hold = holds.cargo(vessel).map(VesselsPort.Cargo::items).orElse(new byte[0]);
-        List<Offer> offers = new ArrayList<>();
-        for (Port.Good good : port.get().goods()) {
-            offers.add(new Offer(
-                    good,
-                    market.pays(vessel, port.get(), good),
-                    market.asks(vessel, port.get(), good),
-                    goods.count(hold, good.item()),
-                    good.bought() && market.wanted(port.get(), good.item())
-                            ? Math.round(config.demand().bonus() * 100)
-                            : 0));
-        }
-        return Result.ok(new Stall(port.get(), offers));
-    }
+    record Stall(Port port, List<Offer> offers) {}
 
     private void openSail(Player player, IslandId vessel, PortMarket.Where where) {
         BedrockFormService bedrock = forms;
@@ -396,135 +373,18 @@ public final class Harbour {
                 });
     }
 
-    private void openMarket(Player player, IslandId vessel, Stall stall) {
-        BedrockFormService bedrock = forms;
-        if (bedrock != null && bedrock.isBedrock(player)) {
-            List<BedrockFormService.Choice> choices = new ArrayList<>();
-            for (Offer offer : stall.offers()) {
-                if (offer.good().sold()) {
-                    choices.add(new BedrockFormService.Choice(
-                            legacy(messages.renderPlain(player, "tradewinds.market.form_buy", offerTags(offer))),
-                            () -> onThread(player, () -> trade(player, vessel, stall.port(), offer.good(), true))));
-                }
-                if (offer.good().bought()) {
-                    choices.add(new BedrockFormService.Choice(
-                            legacy(messages.renderPlain(player, "tradewinds.market.form_sell", offerTags(offer))),
-                            () -> onThread(player, () -> trade(player, vessel, stall.port(), offer.good(), false))));
-                }
-            }
-            bedrock.openChoiceForm(player, "tradewinds.market.form_title", "tradewinds.market.form_body", choices);
-            return;
-        }
-        SkyblockMenuEngine engine = this.menuEngine;
-        if (engine != null
-                && engine.open(
-                        player,
-                        MARKET_FILE,
-                        Map.of("vessel", vessel.value().toString(), "port", portWord(player, stall.port())),
-                        Map.of(GOODS, goodRows(stall)))) {
-            return;
-        }
-        int rows = Math.min(6, Math.max(1, (stall.offers().size() + 8) / 9));
-        SimpleGui gui = Guis.gui()
-                .title(MenuTitles.centre(messages.renderPlain(
-                        player,
-                        "tradewinds.market.title",
-                        Names.of(
-                                messages,
-                                player,
-                                "argument_port",
-                                "ports",
-                                stall.port().id()))))
-                .rows(rows)
-                .build();
-        SkyblockTiles tiles = new SkyblockTiles(messages);
-        int slot = 0;
-        for (Offer offer : stall.offers()) {
-            if (slot >= rows * 9) {
-                break;
-            }
-            ItemStack icon = tiles.item(
-                    material(offer.good().item()),
-                    player,
-                    "tile:money @tradewinds.market.good " + factsOf(offer),
-                    offerTags(offer));
-            gui.set(slot++, GuiItem.button(icon, event -> {
-                event.setCancelled(true);
-                boolean buying = event.isLeftClick();
-                if (buying ? offer.good().sold() : offer.good().bought()) {
-                    trade(player, vessel, stall.port(), offer.good(), buying);
-                }
-            }));
-        }
-        gui.open(player);
-    }
-
     private static TagResolver[] withTag(TagResolver[] tags, TagResolver more) {
         TagResolver[] all = java.util.Arrays.copyOf(tags, tags.length + 1);
         all[tags.length] = more;
         return all;
     }
 
-    void trade(Player player, IslandId vessel, Port port, Port.Good good, boolean buying) {
-        // Buying spends the island bank; selling takes the island's goods out of the hold.
-        Result<IslandId, String> still = crew.aboard(
-                player,
-                vessel,
-                IslandPermission.SHOP_ACCESS,
-                buying ? IslandPermission.BANK_WITHDRAW : IslandPermission.VAULT_WITHDRAW);
-        if (!still.isOk()) {
-            messages.send(player, still.errorOrThrow());
-            player.closeInventory();
-            return;
-        }
-        PlayerUuid actor = PlayerUuid.of(player.getUniqueId());
-        off(
-                player,
-                () -> {
-                    Ranks.Rank before = market.rank(vessel);
-                    Result<PortMarket.Deal, String> made =
-                            buying ? market.buy(vessel, actor, port, good) : market.sell(vessel, actor, port, good);
-                    return new Trade(made, before, market.rank(vessel));
-                },
-                trade -> {
-                    Result<PortMarket.Deal, String> done = trade.made();
-                    if (!done.isOk()) {
-                        messages.send(player, done.errorOrThrow(), ItemNames.placeholder("item", good.item()));
-                        return;
-                    }
-                    PortMarket.Deal deal = done.orElseThrow();
-                    messages.send(
-                            player,
-                            buying ? "tradewinds.market.bought" : "tradewinds.market.sold",
-                            ItemNames.placeholder("item", deal.item()),
-                            Placeholder.unparsed("count", Integer.toString(deal.count())),
-                            Placeholder.unparsed("price", MoneyText.of(deal.amount())));
-                    if (!trade.after().equals(trade.before())) {
-                        messages.send(
-                                player,
-                                "tradewinds.market.ranked_up",
-                                Names.of(
-                                        messages,
-                                        player,
-                                        "vessel_rank",
-                                        "ranks",
-                                        trade.after().id()),
-                                Placeholder.unparsed(
-                                        "rows", Integer.toString(trade.after().holdRows())));
-                    }
-                    // Prices and the hold moved: the window shows them as they are now.
-                    if (forms == null || !Objects.requireNonNull(forms).isBedrock(player)) {
-                        market(player);
-                    }
-                });
-    }
-
-    private void onThread(Player player, Runnable work) {
+    void onThread(Player player, Runnable work) {
         scheduler.onEntity(PlayerUuid.of(player.getUniqueId()), work);
     }
 
     /** Runs {@code work} off the player's thread and hands its answer back to it. */
-    private <T> void off(Player player, java.util.function.Supplier<T> work, java.util.function.Consumer<T> then) {
+    <T> void off(Player player, java.util.function.Supplier<T> work, java.util.function.Consumer<T> then) {
         PlayerUuid who = PlayerUuid.of(player.getUniqueId());
         scheduler.async(() -> {
             T answer;
@@ -566,7 +426,7 @@ public final class Harbour {
         };
     }
 
-    private static TagResolver[] offerTags(Offer offer) {
+    static TagResolver[] offerTags(Offer offer) {
         String lot = Integer.toString(offer.good().lot());
         String buy = MoneyText.of(offer.asks() * offer.good().lot());
         String sell = MoneyText.of(offer.pays() * offer.good().lot());
@@ -597,12 +457,16 @@ public final class Harbour {
         return DurationText.of(messages, player, left.isNegative() ? Duration.ZERO : left);
     }
 
-    private static Material material(String name) {
+    static Material material(String name) {
         Material material = Material.matchMaterial(name);
         return material == null || material.isAir() ? Material.OAK_BOAT : material;
     }
 
-    private static String legacy(Component line) {
+    static String legacy(Component line) {
         return com.uxplima.uxmskyblock.bukkit.bedrock.FormText.of(line);
+    }
+
+    void trade(Player player, IslandId vessel, Port port, Port.Good good, boolean buying) {
+        marketWindow.trade(player, vessel, port, good, buying);
     }
 }
