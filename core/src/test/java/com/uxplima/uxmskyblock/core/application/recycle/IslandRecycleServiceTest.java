@@ -375,8 +375,8 @@ class IslandRecycleServiceTest {
             seen.add("cleared");
             return CompletableFuture.completedFuture(null);
         });
-        service.useBeforeDelete(gone -> {
-            seen.add("before " + gone.id().value());
+        service.useBeforeDelete((gone, byItsOwner) -> {
+            seen.add("before " + gone.id().value() + " by owner " + byItsOwner);
             throw new IllegalStateException("the wallet is down");
         });
 
@@ -384,15 +384,27 @@ class IslandRecycleServiceTest {
                 .join();
 
         assertThat(result).isInstanceOf(RecycleResult.Success.class);
-        assertThat(seen).containsExactly("cleared", "before " + islandId.value());
+        assertThat(seen).containsExactly("cleared", "before " + islandId.value() + " by owner false");
         verify(islandStoragePort).deleteIsland(eq(islandId), any());
+    }
+
+    @Test
+    @DisplayName("The owner's own delete tells the step so")
+    void theOwnersDeleteIsSaid() {
+        java.util.List<Boolean> seen = new java.util.ArrayList<>();
+        service.useBeforeDelete((gone, byItsOwner) -> seen.add(byItsOwner));
+        ResetChallenge challenge = service.generateResetChallenge(ownerProfileId, islandId);
+
+        service.executeReset(ownerProfileId, islandId, challenge.code(), false).join();
+
+        assertThat(seen).containsExactly(true);
     }
 
     @Test
     @DisplayName("A reset that fails before the delete runs no step before it")
     void aFailedResetRunsNoStep() {
         java.util.List<Object> seen = new java.util.ArrayList<>();
-        service.useBeforeDelete(seen::add);
+        service.useBeforeDelete((gone, byItsOwner) -> seen.add(gone));
         CompletableFuture<Void> failedFuture = new CompletableFuture<>();
         failedFuture.completeExceptionally(new RuntimeException("Folia region timeout"));
         when(voidingPort.voidIslandChunks(any(), any(), any())).thenReturn(failedFuture);

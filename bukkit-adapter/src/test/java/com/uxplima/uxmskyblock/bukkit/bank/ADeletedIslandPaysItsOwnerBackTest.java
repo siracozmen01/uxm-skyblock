@@ -55,6 +55,10 @@ class ADeletedIslandPaysItsOwnerBackTest {
     }
 
     private void delete() {
+        delete(true);
+    }
+
+    private void delete(boolean byItsOwner) {
         new DeleteRefund(
                         banks,
                         bank,
@@ -67,7 +71,7 @@ class ADeletedIslandPaysItsOwnerBackTest {
                             return false;
                         },
                         ServerNodeId.of("node-a"))
-                .accept(island);
+                .run(island, byItsOwner);
     }
 
     @Test
@@ -116,6 +120,30 @@ class ADeletedIslandPaysItsOwnerBackTest {
         when(bank.depositToIsland(any(), any(), anyLong(), anyString(), any(), any(), anyString(), anyString()))
                 .thenReturn(new BankTransactionOutcome.StaleVersion(1, 2));
         delete();
+        assertThat(paid).isEmpty();
+    }
+
+    @Test
+    @DisplayName("A delete asked again, whose share already left the bank, pays the wallet nothing more")
+    void aRetriedDeletePaysOnce() {
+        when(bank.depositToIsland(any(), any(), anyLong(), anyString(), any(), any(), anyString(), anyString()))
+                .thenReturn(mock(BankTransactionOutcome.Success.class))
+                .thenReturn(new BankTransactionOutcome.DuplicateOperation(
+                        UUID.randomUUID(), "delete-refund", "APPLIED", null, null));
+
+        delete();
+        delete();
+
+        assertThat(paid).containsExactly(500L);
+    }
+
+    @Test
+    @DisplayName("An island staff deleted pays nobody back")
+    void staffDeletesPayNothing() {
+        delete(false);
+
+        verify(bank, never())
+                .depositToIsland(any(), any(), anyLong(), anyString(), any(), any(), anyString(), anyString());
         assertThat(paid).isEmpty();
     }
 }

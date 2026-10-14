@@ -87,14 +87,25 @@ public final class IslandRecycleService {
         this.wipeAreas = java.util.Objects.requireNonNull(areas, "areas must not be null");
     }
 
+    /** What is done with an island just before its record is deleted. */
+    @FunctionalInterface
+    public interface BeforeDelete {
+        /**
+         * Does this step with {@code island}.
+         *
+         * @param byItsOwner whether the island's owner deleted it, rather than staff
+         */
+        void run(Island island, boolean byItsOwner);
+    }
+
     /** What is done with an island just before its record is deleted: nothing, until the wiring says. */
-    private volatile java.util.function.Consumer<Island> beforeDelete = island -> {};
+    private volatile BeforeDelete beforeDelete = (island, byItsOwner) -> {};
 
     /**
      * Has {@code step} done with every island just before its record is deleted, once its world is cleared. A step
      * that fails is logged and the delete goes on.
      */
-    public void useBeforeDelete(java.util.function.Consumer<Island> step) {
+    public void useBeforeDelete(BeforeDelete step) {
         this.beforeDelete = java.util.Objects.requireNonNull(step, "step must not be null");
     }
 
@@ -341,7 +352,8 @@ public final class IslandRecycleService {
             return CompletableFuture.completedFuture(new RecycleResult.AlreadyRunning(islandId));
         }
         try {
-            return runReset(island, islandId).whenComplete((result, error) -> resetsInFlight.remove(islandId));
+            return runReset(island, islandId, !adminBypass)
+                    .whenComplete((result, error) -> resetsInFlight.remove(islandId));
         } catch (RuntimeException e) {
             resetsInFlight.remove(islandId);
             throw e;
@@ -349,7 +361,7 @@ public final class IslandRecycleService {
     }
 
     /** The erasure itself, with the island's slot already taken. */
-    private CompletableFuture<RecycleResult> runReset(Island island, IslandId islandId) {
+    private CompletableFuture<RecycleResult> runReset(Island island, IslandId islandId, boolean byItsOwner) {
         Optional<IslandLocation> optLocation = islandStoragePort.findLocationByIslandId(islandId);
         if (optLocation.isEmpty()) {
             return CompletableFuture.completedFuture(
@@ -442,7 +454,7 @@ public final class IslandRecycleService {
             areas.cleared(islandId);
 
             try {
-                beforeDelete.accept(island);
+                beforeDelete.run(island, byItsOwner);
             } catch (RuntimeException failed) {
                 java.util.logging.Logger.getLogger(IslandRecycleService.class.getName())
                         .warning(() -> "The step before deleting island " + islandId.value() + " failed: "
