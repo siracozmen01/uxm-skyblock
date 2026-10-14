@@ -59,7 +59,12 @@ public final class BrixWiring implements AutoCloseable {
                 config.ground(),
                 configuration.messages(),
                 java.time.Clock.systemUTC());
-        this.rules = new com.uxplima.uxmskyblock.bukkit.brix.BrixRules(service, islands, config.rules());
+        this.rules = new com.uxplima.uxmskyblock.bukkit.brix.BrixRules(
+                service,
+                islands,
+                config.rules(),
+                () -> persistence.gridAllocator().gridSpacing(),
+                config.ground().radius());
         if (config.enabled()) {
             this.beat = modes.start();
         }

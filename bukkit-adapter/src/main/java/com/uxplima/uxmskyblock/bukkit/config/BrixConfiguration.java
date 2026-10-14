@@ -36,9 +36,14 @@ public record BrixConfiguration(boolean enabled, Ground ground, Modes modes, Rul
      * @param noDamage whether nothing hurts a player on a plot, but the void below it
      * @param noHunger whether nobody goes hungry on a plot
      */
-    public record Rules(boolean noDamage, boolean noHunger) {
+    public record Rules(boolean noDamage, boolean noHunger, boolean noSpawning) {
 
-        public static final Rules SHIPPED = new Rules(true, true);
+        public static final Rules SHIPPED = new Rules(true, true, true);
+
+        /** Rules where no creature comes of itself. */
+        public Rules(boolean noDamage, boolean noHunger) {
+            this(noDamage, noHunger, true);
+        }
     }
 
     /**
@@ -130,7 +135,8 @@ public record BrixConfiguration(boolean enabled, Ground ground, Modes modes, Rul
         ConfigurationNode rule = root.node("rules");
         Rules rules = new Rules(
                 rule.node("no-damage").getBoolean(Rules.SHIPPED.noDamage()),
-                rule.node("no-hunger").getBoolean(Rules.SHIPPED.noHunger()));
+                rule.node("no-hunger").getBoolean(Rules.SHIPPED.noHunger()),
+                rule.node("no-spawning").getBoolean(Rules.SHIPPED.noSpawning()));
         return new BrixConfiguration(root.node("enabled").getBoolean(true), ground, modes, rules);
     }
 

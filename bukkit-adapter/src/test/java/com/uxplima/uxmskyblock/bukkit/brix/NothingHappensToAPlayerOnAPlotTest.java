@@ -6,12 +6,14 @@ import static org.mockito.Mockito.when;
 
 import java.time.Instant;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 
 import org.bukkit.Location;
 import org.bukkit.World;
 import org.bukkit.entity.Item;
+import org.bukkit.event.entity.CreatureSpawnEvent;
 import org.bukkit.event.entity.EntityDamageEvent;
 import org.bukkit.event.entity.EntityDamageEvent.DamageCause;
 import org.bukkit.event.entity.FoodLevelChangeEvent;
@@ -154,11 +156,85 @@ class NothingHappensToAPlayerOnAPlotTest extends MockBukkitHarness {
     }
 
     @Test
+    @DisplayName("No creature comes of itself onto a plot; one a player brings comes, and elsewhere all come")
+    void noCreatureComesOfItself() {
+        BrixRules rules = rules(BrixConfiguration.Rules.SHIPPED);
+        for (CreatureSpawnEvent.SpawnReason unbidden : List.of(
+                CreatureSpawnEvent.SpawnReason.NATURAL,
+                CreatureSpawnEvent.SpawnReason.JOCKEY,
+                CreatureSpawnEvent.SpawnReason.MOUNT,
+                CreatureSpawnEvent.SpawnReason.PATROL,
+                CreatureSpawnEvent.SpawnReason.RAID,
+                CreatureSpawnEvent.SpawnReason.REINFORCEMENTS,
+                CreatureSpawnEvent.SpawnReason.VILLAGE_INVASION,
+                CreatureSpawnEvent.SpawnReason.TRAP)) {
+            assertThat(came(rules, PLOT, unbidden))
+                    .describedAs("%s on the plot", unbidden)
+                    .isFalse();
+            assertThat(came(rules, ELSEWHERE, unbidden))
+                    .describedAs("%s elsewhere", unbidden)
+                    .isTrue();
+        }
+        for (CreatureSpawnEvent.SpawnReason brought : List.of(
+                CreatureSpawnEvent.SpawnReason.SPAWNER_EGG,
+                CreatureSpawnEvent.SpawnReason.SPAWNER,
+                CreatureSpawnEvent.SpawnReason.COMMAND,
+                CreatureSpawnEvent.SpawnReason.BREEDING,
+                CreatureSpawnEvent.SpawnReason.CUSTOM)) {
+            assertThat(came(rules, PLOT, brought))
+                    .describedAs("%s on the plot", brought)
+                    .isTrue();
+        }
+        // The plot's bounds reach 40 from its centre at 8; its ground is laid to 60. The grid's point nearest a place
+        // past the bounds names the plot it is the ground of.
+        BrixRules grid = new BrixRules(service, islands, BrixConfiguration.Rules.SHIPPED, () -> 1000, 60);
+        assertThat(came(rules, 60, CreatureSpawnEvent.SpawnReason.NATURAL))
+                .describedAs("past the bounds, with no ground known")
+                .isTrue();
+        assertThat(came(grid, 60, CreatureSpawnEvent.SpawnReason.NATURAL))
+                .describedAs("on the ground past the bounds")
+                .isFalse();
+        assertThat(came(grid, 68, CreatureSpawnEvent.SpawnReason.NATURAL))
+                .describedAs("its last block")
+                .isFalse();
+        assertThat(came(grid, 69, CreatureSpawnEvent.SpawnReason.NATURAL))
+                .describedAs("past the ground")
+                .isTrue();
+        assertThat(came(grid, 60, CreatureSpawnEvent.SpawnReason.SPAWNER_EGG)).isTrue();
+        assertThat(came(grid, -50, CreatureSpawnEvent.SpawnReason.NATURAL))
+                .describedAs("past the bounds on the other side: the nearest point is the plot's")
+                .isFalse();
+        assertThat(came(grid, PLOT, 68, CreatureSpawnEvent.SpawnReason.NATURAL)).isFalse();
+        assertThat(came(grid, PLOT, -50, CreatureSpawnEvent.SpawnReason.NATURAL))
+                .isFalse();
+        assertThat(came(grid, PLOT, 69, CreatureSpawnEvent.SpawnReason.NATURAL))
+                .describedAs("past the ground along the other axis")
+                .isTrue();
+        assertThat(came(grid, ELSEWHERE + 45, CreatureSpawnEvent.SpawnReason.NATURAL))
+                .describedAs("the ground of an island that is no plot")
+                .isTrue();
+        assertThat(came(
+                        new BrixRules(service, islands, new BrixConfiguration.Rules(true, true, false), () -> 1000, 60),
+                        60,
+                        CreatureSpawnEvent.SpawnReason.NATURAL))
+                .isTrue();
+        assertThat(came(
+                        rules(new BrixConfiguration.Rules(true, true, false)),
+                        PLOT,
+                        CreatureSpawnEvent.SpawnReason.NATURAL))
+                .describedAs("written off")
+                .isTrue();
+    }
+
+    @Test
     @DisplayName("The rules are read from the file and both are on unless written off")
     void theRulesAreRead() throws Exception {
         assertThat(rulesWritten("")).isEqualTo(BrixConfiguration.Rules.SHIPPED);
         assertThat(rulesWritten("rules { no-damage = false }")).isEqualTo(new BrixConfiguration.Rules(false, true));
         assertThat(rulesWritten("rules { no-hunger = false }")).isEqualTo(new BrixConfiguration.Rules(true, false));
+        assertThat(rulesWritten("rules { no-spawning = false }"))
+                .isEqualTo(new BrixConfiguration.Rules(true, true, false));
+        assertThat(BrixConfiguration.Rules.SHIPPED.noSpawning()).isTrue();
     }
 
     private BrixRules rules(BrixConfiguration.Rules written) {
@@ -175,6 +251,18 @@ class NothingHappensToAPlayerOnAPlotTest extends MockBukkitHarness {
         FoodLevelChangeEvent event = new FoodLevelChangeEvent(player, level);
         rules.onHunger(event);
         return event.isCancelled();
+    }
+
+    private boolean came(BrixRules rules, int x, CreatureSpawnEvent.SpawnReason reason) {
+        return came(rules, x, 8, reason);
+    }
+
+    private boolean came(BrixRules rules, int x, int z, CreatureSpawnEvent.SpawnReason reason) {
+        org.bukkit.entity.Zombie zombie = mock(org.bukkit.entity.Zombie.class);
+        when(zombie.getLocation()).thenReturn(new Location(world, x + 0.5, 101, z + 0.5));
+        CreatureSpawnEvent event = new CreatureSpawnEvent(zombie, reason);
+        rules.onSpawn(event);
+        return !event.isCancelled();
     }
 
     private boolean spawned(BrixRules rules, int x) {
