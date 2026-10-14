@@ -136,6 +136,7 @@ public final class GameplayWiring {
     private final com.uxplima.uxmskyblock.bukkit.arrival.ArrivalWatch arrivalWatch;
     private final com.uxplima.uxmskyblock.bukkit.fly.IslandFly islandFly;
     private final com.uxplima.uxmskyblock.bukkit.islandeffect.IslandEffects islandEffects;
+    private final com.uxplima.uxmskyblock.bukkit.upgrade.IslandRates islandRates;
     private @Nullable AutoCloseable effectRounds;
     private @Nullable AutoCloseable arrivalRounds;
     private final IslandBorderService borderService;
@@ -294,6 +295,14 @@ public final class GameplayWiring {
                 (interaction, player) -> flyEffects.fire(config.effectsConfig(), interaction, player),
                 java.time.Clock.systemUTC());
 
+        com.uxplima.uxmskyblock.bukkit.booster.IslandBoosterListener boosters = this.economicWiring.boosterListener();
+        this.islandRates = new com.uxplima.uxmskyblock.bukkit.upgrade.IslandRates(
+                protectionListener::findIslandAt,
+                cachedTiers::bought,
+                this.economicWiring.upgradeService()::definitions,
+                boosters == null ? (island, kind) -> 1.0 : boosters::cachedMultiplier,
+                scheduler,
+                () -> java.util.concurrent.ThreadLocalRandom.current().nextDouble());
         this.islandEffects = new com.uxplima.uxmskyblock.bukkit.islandeffect.IslandEffects(
                 config.islandEffectsConfig(),
                 protectionListener::findIslandAt,
@@ -539,6 +548,11 @@ public final class GameplayWiring {
     /** Which game mode instance each profile plays, and so which mode its island is. */
     public com.uxplima.uxmskyblock.core.application.gamemode.GameModeHierarchyService gameModeHierarchyService() {
         return creationWiring.gameModeHierarchyService();
+    }
+
+    /** The crop, spawner and drop rates an island pays for, at work. */
+    public com.uxplima.uxmskyblock.bukkit.upgrade.IslandRates islandRates() {
+        return islandRates;
     }
 
     /** {@code /is fly}, and the watch that sets a flier down off their island. */

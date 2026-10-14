@@ -224,7 +224,7 @@ public final class IslandBoosterListener implements Listener {
      * <p>Returns 1.0 while the first read is still running. A booster is a bonus, and briefly not
      * applying one is a smaller wrong than stalling the region thread on every mob that dies.
      */
-    private double cachedMultiplier(IslandId islandId, BoosterCategory category) {
+    public double cachedMultiplier(IslandId islandId, BoosterCategory category) {
         MultiplierKey key = new MultiplierKey(islandId, category);
         Instant now = clock.instant();
         CachedMultiplier cached = multiplierCache.get(key);

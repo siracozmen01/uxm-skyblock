@@ -120,6 +120,18 @@ public record UpgradesConfiguration(boolean enabled, Map<UpgradeId, UpgradeDefin
                                 new UpgradeTier(2, 90_000L, "PRIMARY", Map.of("rate_multiplier", 1.25)),
                                 new UpgradeTier(3, 250_000L, "PRIMARY", Map.of("rate_multiplier", 1.50)))));
 
+        // 8. More of every drop from the mobs killed on the island.
+        UpgradeId dropsId = UpgradeId.of("mob_drops");
+        defs.put(
+                dropsId,
+                new UpgradeDefinition(
+                        dropsId,
+                        "@upgrades.names.mob_drops",
+                        List.of(
+                                new UpgradeTier(1, 40_000L, "PRIMARY", Map.of("rate_multiplier", 1.25)),
+                                new UpgradeTier(2, 120_000L, "PRIMARY", Map.of("rate_multiplier", 1.5)),
+                                new UpgradeTier(3, 300_000L, "PRIMARY", Map.of("rate_multiplier", 2.0)))));
+
         // 8. The island's potion effects, each property an effect and its level.
         UpgradeId effectsId = UpgradeId.of("island_effects");
         defs.put(
