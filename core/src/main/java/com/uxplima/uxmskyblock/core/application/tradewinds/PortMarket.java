@@ -29,11 +29,14 @@ import com.uxplima.uxmskyblock.core.domain.session.ServerNodeId;
  */
 public final class PortMarket {
 
+    /** A market order stowed in the hold and paid under the bank's answer, and the orders a crash left open carried on. */
+    private final MarketOrders ordering = new MarketOrders(this);
+
     /** How many new keys one call asks the bank under before it leaves the order to recovery. */
     private static final int NEW_KEYS_PER_CALL = 3;
 
     /** How many times a purchase tries to stow what it paid for while the hold moves under it. */
-    private static final int STOW_TRIES = 3;
+    static final int STOW_TRIES = 3;
 
     /** The island bank, as the market asks it. */
     public interface Bank {
@@ -95,15 +98,15 @@ public final class PortMarket {
     /** What a lot sold or bought for. */
     public record Deal(String item, int count, long amount) {}
 
-    private final VesselsPort vessels;
+    final VesselsPort vessels;
     private final VoyagesPort voyages;
-    private final MarketOrdersPort orders;
-    private final VesselLease lease;
-    private final Bank bank;
-    private final Goods goods;
+    final MarketOrdersPort orders;
+    final VesselLease lease;
+    final Bank bank;
+    final Goods goods;
     private final Standing standing;
     private final Ranks ranks;
-    private final ServerNodeId node;
+    final ServerNodeId node;
     private final Clock clock;
     private final Map<IslandId, ReentrantLock> locks = new ConcurrentHashMap<>();
     private volatile MarketPrices prices = MarketPrices.none();
@@ -240,12 +243,12 @@ public final class PortMarket {
     }
 
     /** What the port pays for one {@code good} once {@code after} more were sold to it, before any cap. */
-    private long paid(Port port, Port.Good good, int after, long held) {
+    long paid(Port port, Port.Good good, int after, long held) {
         return standing.pays(demand.priced(port, prices.pricedAfter(port, good, after), clock.instant()), held);
     }
 
     /** What the port asks for one {@code good} once {@code after} more were sold to it, before any floor. */
-    private long asked(Port port, Port.Good good, int after, long held) {
+    long asked(Port port, Port.Good good, int after, long held) {
         return standing.asks(prices.pricedAfter(port, good, after), held);
     }
 
@@ -358,7 +361,7 @@ public final class PortMarket {
                 case LANDED -> {
                     // Paid for: the port asks more for the next.
                     prices.traded(port, good, -good.lot());
-                    yield stow(order);
+                    yield ordering.stow(order);
                 }
                 case NO_FUNDS -> {
                     orders.settle(order.id(), MarketOrdersPort.State.PAYING, MarketOrdersPort.State.CANCELLED);
@@ -371,46 +374,23 @@ public final class PortMarket {
         }
     }
 
-    /**
-     * Carries on every order of {@code vessel} a crash or a busy bank left open, while this node writes its
-     * bank. Answers how many it settled.
-     */
-    public int recover(IslandId vessel) {
-        if (!bank.here(vessel)) {
-            return 0;
-        }
-        ReentrantLock held = lockOf(vessel);
-        held.lock();
-        try {
-            int settled = 0;
-            for (MarketOrdersPort.Order order : orders.open(vessel)) {
-                if (carryOn(order)) {
-                    settled++;
-                }
-            }
-            return settled;
-        } finally {
-            held.unlock();
-        }
-    }
-
     /** Carries on every open order this node can, of every vessel. Answers how many it settled. */
     public int recoverAll() {
         int settled = 0;
         for (IslandId vessel : orders.vesselsWithOpenOrders()) {
-            settled += recover(vessel);
+            settled += ordering.recover(vessel);
         }
         return settled;
     }
 
-    private boolean carryOn(MarketOrdersPort.Order order) {
+    boolean carryOn(MarketOrdersPort.Order order) {
         return switch (order.state()) {
             case OWED ->
                 ask(order, order.amount(), 1) == Bank.Answer.LANDED
                         && orders.settle(order.id(), MarketOrdersPort.State.OWED, MarketOrdersPort.State.DONE);
             case PAYING ->
                 switch (ask(order, -order.amount(), 1)) {
-                    case LANDED -> stow(order).isOk();
+                    case LANDED -> ordering.stow(order).isOk();
                     case NO_FUNDS ->
                         orders.settle(order.id(), MarketOrdersPort.State.PAYING, MarketOrdersPort.State.CANCELLED);
                     case REFUSED, NOT_NOW, UNKNOWN -> false;
@@ -420,75 +400,17 @@ public final class PortMarket {
         };
     }
 
-    /** Stows what a paid purchase bought, or pays it back when the hold has no room for it. */
-    private Result<Deal, String> stow(MarketOrdersPort.Order order) {
-        for (int tried = 0; tried < STOW_TRIES; tried++) {
-            OptionalLong epoch = lease.hold(order.vessel());
-            Optional<VesselsPort.Cargo> cargo = vessels.cargo(order.vessel());
-            if (epoch.isEmpty() || cargo.isEmpty()) {
-                return Result.err("tradewinds.market.pending");
-            }
-            Optional<byte[]> after =
-                    goods.stow(cargo.get().items(), rank(order.vessel()).holdSlots(), order.item(), order.count());
-            if (after.isEmpty()) {
-                if (orders.settle(order.id(), MarketOrdersPort.State.PAYING, MarketOrdersPort.State.REFUNDING)) {
-                    refund(order);
-                }
-                return Result.err("tradewinds.market.refunded");
-            }
-            if (orders.deliver(
-                    order.id(),
-                    new MarketOrdersPort.HoldWrite(
-                            epoch.getAsLong(), node, cargo.get().version(), after.get()))) {
-                return Result.ok(new Deal(order.item(), order.count(), order.amount()));
-            }
-            // The hold moved under the purchase, or another hand delivered it: look again.
-            if (orders.find(order.id())
-                    .map(found -> found.state() == MarketOrdersPort.State.DONE)
-                    .orElse(false)) {
-                return Result.ok(new Deal(order.item(), order.count(), order.amount()));
-            }
-        }
-        return Result.err("tradewinds.market.pending");
-    }
-
-    private boolean refund(MarketOrdersPort.Order order) {
+    boolean refund(MarketOrdersPort.Order order) {
         MarketOrdersPort.Order refunding = orders.find(order.id()).orElse(order);
-        return askUnder(refunding, order.amount(), 1, "refund") == Bank.Answer.LANDED
+        return ordering.askUnder(refunding, order.amount(), 1, "refund") == Bank.Answer.LANDED
                 && orders.settle(order.id(), MarketOrdersPort.State.REFUNDING, MarketOrdersPort.State.REFUNDED);
     }
 
     private Bank.Answer ask(MarketOrdersPort.Order order, long delta, int newKeys) {
-        return askUnder(order, delta, newKeys, delta >= 0 ? "pay" : "charge");
+        return ordering.askUnder(order, delta, newKeys, delta >= 0 ? "pay" : "charge");
     }
 
-    /**
-     * Asks the bank for {@code delta} under the order's keys. Every key asked before is asked again first,
-     * and answers as it did; a new key is used only once every earlier one was refused outright, and is
-     * written down before it is used.
-     */
-    private Bank.Answer askUnder(MarketOrdersPort.Order order, long delta, int newKeys, String purpose) {
-        String reason = "TradeWinds " + (order.kind() == MarketOrdersPort.Kind.SALE ? "sale" : "purchase") + " at "
-                + order.portId();
-        int attempts = order.attempts();
-        for (int attempt = 1; attempt <= attempts; attempt++) {
-            Bank.Answer answer = askOnce(order, delta, reason, purpose, attempt);
-            if (answer != Bank.Answer.REFUSED) {
-                return answer;
-            }
-        }
-        for (int fresh = 0; fresh < newKeys; fresh++) {
-            attempts++;
-            orders.attempt(order.id(), attempts);
-            Bank.Answer answer = askOnce(order, delta, reason, purpose, attempts);
-            if (answer != Bank.Answer.REFUSED) {
-                return answer;
-            }
-        }
-        return Bank.Answer.REFUSED;
-    }
-
-    private Bank.Answer askOnce(MarketOrdersPort.Order order, long delta, String reason, String purpose, int attempt) {
+    Bank.Answer askOnce(MarketOrdersPort.Order order, long delta, String reason, String purpose, int attempt) {
         try {
             return bank.move(order.vessel(), order.actor(), delta, reason, order.id() + ":" + purpose + ":" + attempt);
         } catch (RuntimeException unanswered) {
@@ -513,7 +435,15 @@ public final class PortMarket {
         }
     }
 
-    private ReentrantLock lockOf(IslandId vessel) {
+    ReentrantLock lockOf(IslandId vessel) {
         return locks.computeIfAbsent(vessel, key -> new ReentrantLock());
+    }
+
+    /**
+     * Carries on every order of {@code vessel} a crash or a busy bank left open, while this node writes its
+     * bank. Answers how many it settled.
+     */
+    public int recover(IslandId vessel) {
+        return ordering.recover(vessel);
     }
 }
