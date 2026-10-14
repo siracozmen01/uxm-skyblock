@@ -34,13 +34,16 @@ public final class PoseidonWiring implements AutoCloseable {
             new com.uxplima.uxmskyblock.bukkit.poseidon.SchematicWreckTemplates(
                     new ServerWreckTemplates(),
                     com.uxplima.uxmskyblock.bukkit.poseidon.SchematicWreckTemplates::parseQuietly);
+    private final com.uxplima.uxmskyblock.bukkit.poseidon.DeepBoss boss;
     private @Nullable AutoCloseable beat;
+    private @Nullable AutoCloseable bossBeat;
 
     public PoseidonWiring(
             ConfigurationWiring configuration,
             PersistenceBootstrap persistence,
             SchedulerPort scheduler,
-            IslandProtectionListener islands) {
+            IslandProtectionListener islands,
+            org.bukkit.plugin.Plugin plugin) {
         this.config = Objects.requireNonNull(configuration.poseidonConfig(), "poseidonConfig must not be null");
         this.scheduler = Objects.requireNonNull(scheduler, "scheduler must not be null");
         this.service = new PoseidonService(persistence.poseidonIslandsPort());
@@ -52,8 +55,27 @@ public final class PoseidonWiring implements AutoCloseable {
                 configuration.effectsConfig(),
                 new InteractionEffectPlayer(scheduler, configuration.messages()),
                 Clock.systemUTC());
+        InteractionEffectPlayer effectPlayer = new InteractionEffectPlayer(scheduler, configuration.messages());
+        this.boss = new com.uxplima.uxmskyblock.bukkit.poseidon.DeepBoss(
+                config.boss(),
+                service,
+                islands,
+                scheduler,
+                configuration.messages(),
+                configuration::effectsConfig,
+                effectPlayer,
+                configuration::lootTables,
+                new com.uxplima.uxmskyblock.bukkit.loot.LootFiller(
+                        effectPlayer,
+                        configuration::effectsConfig,
+                        com.uxplima.uxmskyblock.bukkit.loot.LootFiller.SERVER),
+                (risen, after, task) -> risen.getScheduler()
+                        .runDelayed(plugin, ignored -> task.run(), task, Math.max(1, after.toMillis() / 50)),
+                Clock.systemUTC(),
+                new java.util.Random());
         if (config.enabled()) {
             this.beat = hazard.start();
+            this.bossBeat = boss.start();
         }
         scheduler.async(() -> {
             try {
@@ -82,6 +104,11 @@ public final class PoseidonWiring implements AutoCloseable {
                         com.uxplima.uxmskyblock.bukkit.poseidon.MonumentLayout.shipped(dataVersion))
                 .handle((written, failure) -> null)
                 .thenCompose(written -> templates.prime(files, keys));
+    }
+
+    /** The deep boss, whose death is heard while Poseidon is enabled. */
+    public com.uxplima.uxmskyblock.bukkit.poseidon.DeepBoss boss() {
+        return boss;
     }
 
     public PoseidonService service() {
@@ -117,6 +144,15 @@ public final class PoseidonWiring implements AutoCloseable {
     /** Stops the air hurting, before the server stops. */
     @Override
     public void close() {
+        AutoCloseable rising = bossBeat;
+        bossBeat = null;
+        if (rising != null) {
+            try {
+                rising.close();
+            } catch (Exception e) {
+                LOGGER.log(Level.WARNING, "Stopping the deep boss failed.", e);
+            }
+        }
         AutoCloseable running = beat;
         beat = null;
         if (running != null) {

@@ -147,6 +147,24 @@ public final class EffectsConfiguration {
                         "poseidon-still-drowns",
                         List.of("[sound] entity.player.hurt_drown 0.8 1.0", "[particle] BUBBLE 10 0.4")));
         defaults.put(
+                "poseidon-boss-rises",
+                parseAll(
+                        "poseidon-boss-rises",
+                        List.of(
+                                "[message] @poseidon.boss.rises",
+                                "[subtitle] @poseidon.boss.rises_title | @poseidon.boss.rises_subtitle",
+                                "[sound] entity.elder_guardian.curse 1.0 0.8")));
+        defaults.put(
+                "poseidon-boss-slain",
+                parseAll(
+                        "poseidon-boss-slain",
+                        List.of("[message] @poseidon.boss.slain", "[sound] ui.toast.challenge_complete 1.0 1.0")));
+        defaults.put(
+                "poseidon-boss-sinks",
+                parseAll(
+                        "poseidon-boss-sinks",
+                        List.of("[message] @poseidon.boss.sinks", "[sound] entity.elder_guardian.ambient 0.8 0.6")));
+        defaults.put(
                 "loot-rare",
                 parseAll(
                         "loot-rare",

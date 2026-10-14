@@ -206,7 +206,7 @@ public final class GameplayWiring {
         this.acidIslandWiring = new AcidIslandWiring(config, persistence, scheduler, protectionListener);
         this.boxedWiring = new BoxedWiring(
                 config, persistence, scheduler, protectionListener, authority.sessionCoordinator()::activeProfile);
-        this.poseidonWiring = new PoseidonWiring(config, persistence, scheduler, protectionListener);
+        this.poseidonWiring = new PoseidonWiring(config, persistence, scheduler, protectionListener, plugin);
         this.strangerRealmsWiring = new StrangerRealmsWiring(config, persistence, scheduler, protectionListener);
         // A creative place seals a player only once their session has put their own state on them.
         java.util.function.Predicate<org.bukkit.entity.Player> inPlay =

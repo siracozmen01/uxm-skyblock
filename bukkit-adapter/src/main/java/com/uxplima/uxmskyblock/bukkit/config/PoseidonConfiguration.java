@@ -1,5 +1,6 @@
 package com.uxplima.uxmskyblock.bukkit.config;
 
+import java.time.Duration;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -22,7 +23,8 @@ public record PoseidonConfiguration(
         PoseidonRules rules,
         List<String> waterEffects,
         Map<String, Wreck> wrecks,
-        List<String> chapters) {
+        List<String> chapters,
+        Boss boss) {
 
     private static final Logger LOGGER = Logger.getLogger(PoseidonConfiguration.class.getName());
 
@@ -71,6 +73,53 @@ public record PoseidonConfiguration(
     /** The shipped wrecks: a shipwreck, one big ruin, and a ring of small ones. */
     public static final Map<String, Wreck> SHIPPED_WRECKS = shippedWrecks();
 
+    /**
+     * The deep boss: now and then something rises from the deep under a Poseidon island where a player swims.
+     *
+     * @param enabled whether it rises at all
+     * @param entity the creature that rises, by its key, such as {@code elder_guardian}
+     * @param health the health it rises with
+     * @param checkEvery how often each player in the water on a Poseidon island is looked at
+     * @param chance the chance, from 0 to 1, that it rises at one look
+     * @param every the least time between two on one island
+     * @param lasts how long it stays before it sinks back
+     * @param loot the loot table in loot/ its slayer is given, by name; empty for none
+     */
+    public record Boss(
+            boolean enabled,
+            String entity,
+            double health,
+            Duration checkEvery,
+            double chance,
+            Duration every,
+            Duration lasts,
+            String loot) {
+
+        public static final Boss SHIPPED = new Boss(
+                true,
+                "elder_guardian",
+                160,
+                Duration.ofMinutes(1),
+                0.05,
+                Duration.ofHours(2),
+                Duration.ofMinutes(10),
+                "deep_boss");
+
+        public Boss {
+            Objects.requireNonNull(entity, "entity must not be null");
+            Objects.requireNonNull(loot, "loot must not be null");
+            if (!(health > 0)) {
+                throw new IllegalArgumentException("the health must be above 0");
+            }
+            if (!(chance >= 0 && chance <= 1)) {
+                throw new IllegalArgumentException("the chance must be from 0 to 1");
+            }
+            if (checkEvery.isNegative() || checkEvery.isZero() || every.isNegative() || !lasts.isPositive()) {
+                throw new IllegalArgumentException("check-every and lasts must be above 0, every not below");
+            }
+        }
+    }
+
     /** The wreck group a monument start lays, from the monument block of the file. */
     public static final String MONUMENT = "monument";
 
@@ -79,6 +128,7 @@ public record PoseidonConfiguration(
             List.of("poseidon_story_1", "poseidon_story_2", "poseidon_story_3", "poseidon_story_4", "poseidon_story_5");
 
     public PoseidonConfiguration {
+        Objects.requireNonNull(boss, "boss must not be null");
         // A mission is known by its id in lower case, as the missions file reads it.
         chapters = chapters.stream()
                 .map(chapter -> chapter.trim().toLowerCase(java.util.Locale.ROOT))
@@ -94,10 +144,10 @@ public record PoseidonConfiguration(
         this(enabled, ocean, PoseidonRules.shipped(), SHIPPED_WATER_EFFECTS, SHIPPED_WRECKS);
     }
 
-    /** The shipped chapters of the story. */
+    /** The shipped chapters of the story and the shipped boss. */
     public PoseidonConfiguration(
             boolean enabled, Ocean ocean, PoseidonRules rules, List<String> waterEffects, Map<String, Wreck> wrecks) {
-        this(enabled, ocean, rules, waterEffects, wrecks, SHIPPED_CHAPTERS);
+        this(enabled, ocean, rules, waterEffects, wrecks, SHIPPED_CHAPTERS, Boss.SHIPPED);
     }
 
     private static Map<String, Wreck> shippedWrecks() {
@@ -189,7 +239,26 @@ public record PoseidonConfiguration(
                 rules,
                 AcidIslandConfiguration.strings(hazard.node("water-effects"), SHIPPED_WATER_EFFECTS),
                 withMonument(wrecks(root.node("wrecks")), root.node("wrecks"), root.node("monument")),
-                AcidIslandConfiguration.strings(root.node("lore", "chapters"), SHIPPED_CHAPTERS));
+                AcidIslandConfiguration.strings(root.node("lore", "chapters"), SHIPPED_CHAPTERS),
+                boss(root.node("boss")));
+    }
+
+    private static Boss boss(ConfigurationNode node) {
+        Boss shipped = Boss.SHIPPED;
+        try {
+            return new Boss(
+                    node.node("enabled").getBoolean(shipped.enabled()),
+                    node.node("entity").getString(shipped.entity()).trim().toLowerCase(java.util.Locale.ROOT),
+                    node.node("health").getDouble(shipped.health()),
+                    AcidIslandConfiguration.durationOf(node.node("check-every").getString(""), shipped.checkEvery()),
+                    node.node("chance").getDouble(shipped.chance()),
+                    AcidIslandConfiguration.durationOf(node.node("every").getString(""), shipped.every()),
+                    AcidIslandConfiguration.durationOf(node.node("lasts").getString(""), shipped.lasts()),
+                    node.node("loot").getString(shipped.loot()).trim());
+        } catch (IllegalArgumentException e) {
+            LOGGER.warning(() -> "modules/poseidon.conf boss: " + e.getMessage() + ". The shipped boss is used.");
+            return shipped;
+        }
     }
 
     /**

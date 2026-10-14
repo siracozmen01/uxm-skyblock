@@ -75,7 +75,7 @@ public final class ConfigurationLoader {
     private static final Logger LOGGER = Logger.getLogger(ConfigurationLoader.class.getName());
 
     /** The loot tables a server is shipped with, under {@code loot/}. */
-    private static final List<String> SHIPPED_LOOT = List.of("treasure.conf");
+    private static final List<String> SHIPPED_LOOT = List.of("treasure.conf", "deep_boss.conf");
 
     /**
      * The menu files this plugin ships, written next to the server once and never over an edit.

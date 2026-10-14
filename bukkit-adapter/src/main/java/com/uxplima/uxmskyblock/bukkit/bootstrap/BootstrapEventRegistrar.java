@@ -127,6 +127,9 @@ public final class BootstrapEventRegistrar {
             pm.registerEvents(gameplayWiring.tradeWindsWiring().listener(), plugin);
             pm.registerEvents(gameplayWiring.tradeWindsWiring().holdStill(), plugin);
         }
+        if (gameplayWiring.poseidonWiring().enabled()) {
+            pm.registerEvents(gameplayWiring.poseidonWiring().boss(), plugin);
+        }
         if (gameplayWiring.parkourWiring().enabled()) {
             pm.registerEvents(gameplayWiring.parkourWiring().runs(), plugin);
             pm.registerEvents(gameplayWiring.parkourWiring().checks(), plugin);
