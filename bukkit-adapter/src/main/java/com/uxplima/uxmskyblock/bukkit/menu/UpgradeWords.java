@@ -49,6 +49,7 @@ public final class UpgradeWords {
     private final Supplier<Map<UpgradeId, UpgradeDefinition>> definitions;
     private final GeneratorsConfiguration generators;
     private final Map<LimitType, LimitQuota> quotas;
+    private volatile java.util.Set<UpgradeId> effectUpgrades = java.util.Set.of();
 
     public UpgradeWords(
             Messages messages,
@@ -70,6 +71,14 @@ public final class UpgradeWords {
         this.definitions = Objects.requireNonNull(definitions, "definitions must not be null");
         this.generators = Objects.requireNonNull(generators, "generators must not be null");
         this.quotas = Map.copyOf(Objects.requireNonNull(quotas, "quotas must not be null"));
+    }
+
+    /**
+     * Names the effect upgrades of {@code modules/island-effects.conf}, whose tier properties are potion effects:
+     * their line is given {@code <potions>}, each effect in the reader's words with its level.
+     */
+    public void useEffectUpgrades(java.util.Collection<UpgradeId> upgrades) {
+        this.effectUpgrades = java.util.Set.copyOf(upgrades);
     }
 
     /** The words of every upgrade for an island standing on {@code tiers}, keyed as a menu asks for them. */
@@ -114,6 +123,9 @@ public final class UpgradeWords {
         if (generator) {
             resolvers.add(Placeholder.unparsed("ores", ores(reader, tier)));
         }
+        if (effectUpgrades.contains(definition.id())) {
+            resolvers.add(Placeholder.unparsed("potions", potions(reader, properties)));
+        }
         String key = "upgrades.effects." + id;
         if (messages.has(key)) {
             return Optional.of(line(reader, key, resolvers.toArray(TagResolver[]::new)));
@@ -133,6 +145,21 @@ public final class UpgradeWords {
             }
         });
         return limits;
+    }
+
+    /** Every effect of an effect upgrade's tier, in the reader's words and with its level: "Haste II, Speed I". */
+    private String potions(Player reader, Map<String, Double> properties) {
+        List<String> worn = new ArrayList<>();
+        new java.util.TreeMap<>(properties)
+                .forEach((name, level) -> worn.add(
+                        messages.named(reader, "upgrades.potions", name, name) + " " + roman((int) Math.floor(level))));
+        return String.join(", ", worn);
+    }
+
+    /** A level as the game writes it, I to X, and a number past that. */
+    static String roman(int level) {
+        String[] written = {"I", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX", "X"};
+        return level >= 1 && level <= written.length ? written[level - 1] : Integer.toString(level);
     }
 
     /** Every block a generator of {@code tier} turns up, the likeliest first, each with its share. */

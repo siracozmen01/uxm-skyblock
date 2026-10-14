@@ -44,8 +44,8 @@ class EveryConfiguredNameIsSaidInTheReadersLanguageTest extends MockBukkitHarnes
         }
         assertThat(names)
                 .describedAs(
-                        "twenty-six missions, the packs of three modes among them, and fourteen upgrades, seven of them limits")
-                .hasSize(66);
+                        "twenty-six missions, the packs of three modes among them, and fifteen upgrades, seven of them limits and one of effects")
+                .hasSize(67);
         assertEveryNameIsAnsweredKey(names);
     }
 

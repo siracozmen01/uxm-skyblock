@@ -120,7 +120,23 @@ public record UpgradesConfiguration(boolean enabled, Map<UpgradeId, UpgradeDefin
                                 new UpgradeTier(2, 90_000L, "PRIMARY", Map.of("rate_multiplier", 1.25)),
                                 new UpgradeTier(3, 250_000L, "PRIMARY", Map.of("rate_multiplier", 1.50)))));
 
-        // 8. The limit upgrades: each tier raises every quota of the limits file that names it.
+        // 8. The island's potion effects, each property an effect and its level.
+        UpgradeId effectsId = UpgradeId.of("island_effects");
+        defs.put(
+                effectsId,
+                new UpgradeDefinition(
+                        effectsId,
+                        "@upgrades.names.island_effects",
+                        List.of(
+                                new UpgradeTier(1, 50_000L, "PRIMARY", Map.of("haste", 1.0)),
+                                new UpgradeTier(2, 150_000L, "PRIMARY", Map.of("haste", 1.0, "speed", 1.0)),
+                                new UpgradeTier(
+                                        3,
+                                        400_000L,
+                                        "PRIMARY",
+                                        Map.of("haste", 2.0, "speed", 1.0, "jump_boost", 1.0)))));
+
+        // 9. The limit upgrades: each tier raises every quota of the limits file that names it.
         Map<String, long[]> limitCosts = new LinkedHashMap<>();
         limitCosts.put("hopper_limit", new long[] {25_000L, 75_000L, 200_000L});
         limitCosts.put("piston_limit", new long[] {25_000L, 75_000L, 200_000L});

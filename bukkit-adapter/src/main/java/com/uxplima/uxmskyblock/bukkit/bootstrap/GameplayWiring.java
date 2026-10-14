@@ -135,6 +135,8 @@ public final class GameplayWiring {
     private final com.uxplima.uxmskyblock.bukkit.lifecycle.PlayerLifecycle playerLifecycle;
     private final com.uxplima.uxmskyblock.bukkit.arrival.ArrivalWatch arrivalWatch;
     private final com.uxplima.uxmskyblock.bukkit.fly.IslandFly islandFly;
+    private final com.uxplima.uxmskyblock.bukkit.islandeffect.IslandEffects islandEffects;
+    private @Nullable AutoCloseable effectRounds;
     private @Nullable AutoCloseable arrivalRounds;
     private final IslandBorderService borderService;
     private final IslandMembershipService membershipService;
@@ -288,6 +290,15 @@ public final class GameplayWiring {
                 config.messages(),
                 (interaction, player) -> flyEffects.fire(config.effectsConfig(), interaction, player),
                 java.time.Clock.systemUTC());
+
+        this.islandEffects = new com.uxplima.uxmskyblock.bukkit.islandeffect.IslandEffects(
+                config.islandEffectsConfig(),
+                protectionListener::findIslandAt,
+                authority.sessionCoordinator()::activeProfile,
+                this.economicWiring.upgradeService()::definitions,
+                this.economicWiring.upgradeService()::getCurrentTier,
+                scheduler,
+                org.bukkit.Bukkit::getOnlinePlayers);
 
         this.socialWiring = new SocialWiring(
                 config,
@@ -542,10 +553,23 @@ public final class GameplayWiring {
         if (arrivalRounds == null) {
             arrivalRounds = arrivalWatch.start();
         }
+        if (effectRounds == null) {
+            effectRounds = islandEffects.start();
+        }
     }
 
     /** Stops looking at where players are. */
     public void stopArrivals() {
+        AutoCloseable effects = effectRounds;
+        effectRounds = null;
+        if (effects != null) {
+            try {
+                effects.close();
+            } catch (Exception e) {
+                java.util.logging.Logger.getLogger(GameplayWiring.class.getName())
+                        .log(java.util.logging.Level.WARNING, "The island effects did not stop cleanly", e);
+            }
+        }
         AutoCloseable rounds = arrivalRounds;
         arrivalRounds = null;
         if (rounds != null) {

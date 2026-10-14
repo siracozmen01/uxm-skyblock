@@ -292,6 +292,8 @@ class BackupRestoreWiringTest {
                 .thenReturn(com.uxplima.uxmskyblock.bukkit.wall.WallConfiguration.defaultConfiguration());
         when(config.flyConfig())
                 .thenReturn(com.uxplima.uxmskyblock.bukkit.config.IslandFlyConfiguration.defaultConfiguration());
+        when(config.islandEffectsConfig())
+                .thenReturn(com.uxplima.uxmskyblock.bukkit.config.IslandEffectsConfiguration.defaultConfiguration());
         when(config.parkourConfig())
                 .thenReturn(com.uxplima.uxmskyblock.bukkit.config.ParkourConfiguration.defaultConfiguration());
         when(config.brixConfig())

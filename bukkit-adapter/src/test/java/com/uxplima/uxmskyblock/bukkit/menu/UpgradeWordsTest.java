@@ -180,4 +180,32 @@ class UpgradeWordsTest extends MockBukkitHarness {
                 .describedAs("with no words of its own, it names its own limits and no other upgrade's")
                 .containsEntry("dropper_extra_now", "dropper 64");
     }
+
+    @Test
+    @DisplayName("An effect upgrade names each effect in the reader's words, with its level as the game writes it")
+    void anEffectUpgradeNamesItsPotions() {
+        UpgradeId effects = UpgradeId.of("island_effects");
+        UpgradeWords potions = new UpgradeWords(
+                Messages.bundled(),
+                () -> Map.of(
+                        effects,
+                        new UpgradeDefinition(
+                                effects,
+                                "Effects",
+                                List.of(
+                                        new UpgradeTier(1, 100L, "PRIMARY", Map.of("haste", 1.0)),
+                                        new UpgradeTier(
+                                                2,
+                                                200L,
+                                                "PRIMARY",
+                                                Map.of("speed", 2.0, "haste", 1.0, "glowy", 12.0))))),
+                GeneratorsConfiguration.defaultConfiguration());
+        potions.useEffectUpgrades(List.of(effects));
+
+        assertThat(potions.values(reader, Map.of(effects, 1)))
+                .containsEntry("island_effects_now", "Haste I")
+                .containsEntry("island_effects_next", "glowy 12, Haste I, Speed II");
+        assertThat(UpgradeWords.roman(10)).isEqualTo("X");
+        assertThat(UpgradeWords.roman(11)).isEqualTo("11");
+    }
 }

@@ -471,6 +471,12 @@ public final class ConfigurationLoader {
                 "walls.conf",
                 com.uxplima.uxmskyblock.bukkit.wall.WallConfiguration::load,
                 com.uxplima.uxmskyblock.bukkit.wall.WallConfiguration.defaultConfiguration()));
+        wiring.useIslandEffectsConfig(loadConfig(
+                plugin,
+                dataDir,
+                "island-effects.conf",
+                com.uxplima.uxmskyblock.bukkit.config.IslandEffectsConfiguration::load,
+                com.uxplima.uxmskyblock.bukkit.config.IslandEffectsConfiguration.defaultConfiguration()));
         wiring.useFlyConfig(loadConfig(
                 plugin,
                 dataDir,

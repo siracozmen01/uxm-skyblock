@@ -601,6 +601,19 @@ public final class ConfigurationWiring {
         return acidIslandConfig;
     }
 
+    /** The islands' potion effects, {@code modules/island-effects.conf}, shipped until the loader hands it over. */
+    private volatile com.uxplima.uxmskyblock.bukkit.config.IslandEffectsConfiguration islandEffectsConfig =
+            com.uxplima.uxmskyblock.bukkit.config.IslandEffectsConfiguration.defaultConfiguration();
+
+    public com.uxplima.uxmskyblock.bukkit.config.IslandEffectsConfiguration islandEffectsConfig() {
+        return islandEffectsConfig;
+    }
+
+    /** Hands over {@code modules/island-effects.conf} as the server read it. */
+    public void useIslandEffectsConfig(com.uxplima.uxmskyblock.bukkit.config.IslandEffectsConfiguration config) {
+        this.islandEffectsConfig = Objects.requireNonNull(config, "config must not be null");
+    }
+
     /** Flight on islands, {@code modules/fly.conf}, the shipped one until the loader hands the file over. */
     private volatile com.uxplima.uxmskyblock.bukkit.config.IslandFlyConfiguration flyConfig =
             com.uxplima.uxmskyblock.bukkit.config.IslandFlyConfiguration.defaultConfiguration();
