@@ -58,6 +58,7 @@ class AFinishedMissionPaysItsRewardTest {
             new ProfileId(UUID.randomUUID()),
             Instant.now());
     private double boost = 1.0;
+    private String name = "Ann";
 
     @BeforeEach
     void setUp() {
@@ -88,7 +89,7 @@ class AFinishedMissionPaysItsRewardTest {
                 ServerNodeId.of("node-a"),
                 id -> id.equals(island.id()) ? boost : 1.0,
                 scheduler,
-                uuid -> uuid.equals(player) ? Optional.of("Ann") : Optional.empty(),
+                uuid -> uuid.equals(player) ? Optional.of(name) : Optional.empty(),
                 ran::add);
     }
 
@@ -138,13 +139,29 @@ class AFinishedMissionPaysItsRewardTest {
     }
 
     @Test
-    @DisplayName("A finisher no longer on the island is paid as their profile, and the commands name nobody")
+    @DisplayName("A finisher no longer on the island is paid as their profile, and a command naming them is not run")
     void aFinisherWhoLeft() {
         ProfileId gone = new ProfileId(UUID.randomUUID());
         payout().pay(island.id(), gone, paying(new MissionReward(0, 100, 0, List.of("give %player% dirt"))));
 
         verify(bank)
                 .move(eq(island.id()), eq(PlayerUuid.of(gone.value())), eq("PRIMARY"), eq(100L), anyString(), any());
-        assertThat(ran).containsExactly("give  dirt");
+        assertThat(ran).describedAs("no name, nothing to put in safely").isEmpty();
+    }
+
+    @Test
+    @DisplayName("A name a command cannot carry as one word runs none of the commands that name it, and the rest")
+    void anUnsafeNameIsNotPutInACommand() {
+        name = "Ann op Bob";
+        payout().pay(
+                        island.id(),
+                        profile,
+                        paying(new MissionReward(0, 0, 0, List.of("give %player% dirt", "say done"))));
+        assertThat(ran).containsExactly("say done");
+
+        ran.clear();
+        name = ".Pocket_Ann";
+        payout().pay(island.id(), profile, paying(new MissionReward(0, 0, 0, List.of("give %player% dirt"))));
+        assertThat(ran).describedAs("a Bedrock name with its mark").containsExactly("give .Pocket_Ann dirt");
     }
 }

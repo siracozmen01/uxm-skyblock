@@ -37,6 +37,9 @@ public final class MissionPayout implements IslandMissionRewardPort {
 
     private static final Logger LOGGER = Logger.getLogger(MissionPayout.class.getName());
 
+    /** A player name as a command reads it: letters, digits and the marks Java and Bedrock names carry. */
+    static final java.util.regex.Pattern SAFE_NAME = java.util.regex.Pattern.compile("[A-Za-z0-9_.*-]{1,32}");
+
     private final IslandBankService bank;
     private final IslandStoragePort islands;
     private final ServerNodeId node;
@@ -92,8 +95,16 @@ public final class MissionPayout implements IslandMissionRewardPort {
             return;
         }
         String name = player.flatMap(nameOf).orElse("");
+        // A name goes into a console command only if it is one a command reads as one word.
+        boolean speakable = SAFE_NAME.matcher(name).matches();
         scheduler.onGlobal(() -> {
             for (String command : commands) {
+                if (command.contains("%player%") && !speakable) {
+                    LOGGER.warning(() -> "A mission reward command for island " + islandId.value()
+                            + " names its player, whose name a command cannot carry safely, so it was not run: "
+                            + command);
+                    continue;
+                }
                 String line = command.replace("%player%", name)
                         .replace("%island%", islandId.value().toString());
                 console.accept(line.startsWith("/") ? line.substring(1) : line);
