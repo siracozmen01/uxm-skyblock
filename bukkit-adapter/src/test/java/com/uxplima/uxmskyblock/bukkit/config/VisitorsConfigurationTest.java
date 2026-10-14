@@ -58,4 +58,26 @@ class VisitorsConfigurationTest {
                 .describedAs("an alias the operator listed blocks the command it runs")
                 .contains("sh");
     }
+
+    @Test
+    @DisplayName("The most fee is read in money down to the cent, nothing below zero, and the shipped most without one")
+    void theMostFee() {
+        java.util.function.Function<String, Long> most = written -> {
+            try {
+                return VisitorsConfiguration.load(
+                                HoconConfigurationLoader.builder().buildAndLoadString(written))
+                        .mostFee();
+            } catch (Exception unreadable) {
+                throw new IllegalStateException(unreadable);
+            }
+        };
+        assertThat(most.apply("visitors { fee { most = 25.519 } }")).isEqualTo(2_551);
+        assertThat(most.apply("visitors { fee { most = -3 } }")).isZero();
+        assertThat(most.apply("visitors { fee { most = 0 } }")).isZero();
+        assertThat(most.apply("visitors { blocked-commands = [] }")).isEqualTo(1_000_000);
+        assertThat(most.apply("visitors { fee { most = 1e300 }, blocked-commands = [\"a\"] }"))
+                .isEqualTo(100_000_000_000_000_000L);
+        assertThat(new VisitorsConfiguration(List.of(), -5).mostFee()).isZero();
+        assertThat(VisitorsConfiguration.defaultConfiguration().mostFee()).isEqualTo(1_000_000);
+    }
 }

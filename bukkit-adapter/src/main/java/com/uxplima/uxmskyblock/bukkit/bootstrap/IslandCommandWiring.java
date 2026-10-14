@@ -7,6 +7,7 @@ import com.uxplima.uxmskyblock.bukkit.command.IslandFeatures;
 import com.uxplima.uxmskyblock.bukkit.health.SkyblockHealth;
 import com.uxplima.uxmskyblock.bukkit.world.IslandWorldCheck;
 import com.uxplima.uxmskyblock.core.application.flag.IslandFlagService;
+import com.uxplima.uxmskyblock.core.application.visit.IslandVisitFeeService;
 import com.uxplima.uxmskyblock.core.domain.session.ServerNodeId;
 import com.uxplima.uxmskyblock.persistence.bootstrap.PersistenceBootstrap;
 
@@ -509,7 +510,51 @@ final class IslandCommandWiring {
         tree.useMarkerSynchroniser(integration.markerSynchroniser());
         tree.setMissionService(gameplay.missionService());
         tree.useIslandFly(gameplay.islandFly());
+        tree.useVisitFees(visitFees(integration, config, persistence, gameplay, serverNodeId));
         return tree;
+    }
+
+    /** {@code /is visitfee} and the fee {@code /is visit} asks for, paid from the wallet into the island bank. */
+    private static com.uxplima.uxmskyblock.bukkit.visitor.VisitFees visitFees(
+            IntegrationWiring integration,
+            ConfigurationWiring config,
+            PersistenceBootstrap persistence,
+            GameplayWiring gameplay,
+            ServerNodeId serverNodeId) {
+        var economy = integration.economyBridge();
+        var bank = gameplay.bankService();
+        var locations = gameplay.locationService();
+        return new com.uxplima.uxmskyblock.bukkit.visitor.VisitFees(
+                new IslandVisitFeeService(persistence.visitFeeStoragePort(), gameplay.accessService()),
+                locations::findIsland,
+                locations::findIslandId,
+                new com.uxplima.uxmskyblock.bukkit.visitor.VisitFees.Wallet() {
+                    @Override
+                    public boolean available() {
+                        return economy.isEconomyAvailable();
+                    }
+
+                    @Override
+                    public boolean take(org.bukkit.entity.Player player, double amount) {
+                        return economy.withdrawWallet(player, amount);
+                    }
+
+                    @Override
+                    public boolean give(org.bukkit.entity.Player player, double amount) {
+                        return economy.depositWallet(player, amount);
+                    }
+
+                    @Override
+                    public String format(double amount) {
+                        return economy.format(amount);
+                    }
+                },
+                (island, payer, minorUnits) -> com.uxplima.uxmskyblock.core.application.bank.IslandBankService.landed(
+                        bank.depositToIsland(island, payer, minorUnits, "Visit fee", serverNodeId)),
+                () -> config.visitorsConfig().mostFee(),
+                gameplay.scheduler(),
+                config.messages(),
+                java.time.Clock.systemUTC());
     }
 
     /** {@code /isadmin}: a branch for each mode this server runs. */

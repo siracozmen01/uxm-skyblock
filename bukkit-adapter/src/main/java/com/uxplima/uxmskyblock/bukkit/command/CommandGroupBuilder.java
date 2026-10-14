@@ -182,6 +182,7 @@ final class CommandGroupBuilder {
                 () -> tree.warpService,
                 () -> tree.allianceService,
                 tree.messages);
+        navigationCommands.useVisitFees(tree::visitFees);
 
         IslandProgressionCommands progressionCommands = new IslandProgressionCommands(
                 tree.islandLocationService,

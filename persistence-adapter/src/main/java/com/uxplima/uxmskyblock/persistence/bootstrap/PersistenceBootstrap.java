@@ -162,6 +162,7 @@ public final class PersistenceBootstrap implements AutoCloseable {
     private final com.uxplima.uxmskyblock.persistence.parkour.SqlParkourTagsAdapter parkourTagsAdapter;
     private final com.uxplima.uxmskyblock.persistence.parkour.SqlParkourDirectoryAdapter parkourDirectoryAdapter;
     private final com.uxplima.uxmskyblock.persistence.parkour.SqlParkourSeasonsAdapter parkourSeasonsAdapter;
+    private final com.uxplima.uxmskyblock.persistence.visit.SqlVisitFeeAdapter visitFeeAdapter;
     private final com.uxplima.uxmskyblock.persistence.parkour.SqlParkourAdapter parkourAdapter;
     private final com.uxplima.uxmskyblock.persistence.leaderboard.SqlModeStandingsAdapter modeStandingsAdapter;
     private final com.uxplima.uxmskyblock.persistence.brix.SqlBrixPlotsAdapter brixPlotsAdapter;
@@ -283,6 +284,7 @@ public final class PersistenceBootstrap implements AutoCloseable {
                 new com.uxplima.uxmskyblock.persistence.parkour.SqlParkourDirectoryAdapter(database.dataSource());
         this.parkourSeasonsAdapter =
                 new com.uxplima.uxmskyblock.persistence.parkour.SqlParkourSeasonsAdapter(database.dataSource());
+        this.visitFeeAdapter = new com.uxplima.uxmskyblock.persistence.visit.SqlVisitFeeAdapter(database.dataSource());
         this.modeStandingsAdapter =
                 new com.uxplima.uxmskyblock.persistence.leaderboard.SqlModeStandingsAdapter(database.dataSource());
         this.brixPlotsAdapter = new com.uxplima.uxmskyblock.persistence.brix.SqlBrixPlotsAdapter(database.dataSource());
@@ -560,6 +562,11 @@ public final class PersistenceBootstrap implements AutoCloseable {
     /** The courses as the directory lists them. */
     public com.uxplima.uxmskyblock.core.application.parkour.ParkourDirectoryPort parkourDirectoryPort() {
         return parkourDirectoryAdapter;
+    }
+
+    /** The fee each island charges a visitor. */
+    public com.uxplima.uxmskyblock.core.application.visit.VisitFeeStoragePort visitFeeStoragePort() {
+        return visitFeeAdapter;
     }
 
     /** Each runner's best time on each course in each season. */

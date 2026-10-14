@@ -13,10 +13,20 @@ import org.spongepowered.configurate.ConfigurationNode;
  * member of cannot run.
  *
  * @param blockedCommands each a command, with the words after it that are blocked too, as {@code home set}
+ * @param mostFee the most an island may charge a visitor, in minor units; zero turns visit fees off
  */
-public record VisitorsConfiguration(List<String> blockedCommands) {
+public record VisitorsConfiguration(List<String> blockedCommands, long mostFee) {
+
+    /** The most an island may charge a visitor as shipped: 10,000.00. */
+    public static final long SHIPPED_MOST_FEE = 1_000_000L;
+
+    /** Blocks {@code blockedCommands} and lets an island charge the shipped most. */
+    public VisitorsConfiguration(List<String> blockedCommands) {
+        this(blockedCommands, SHIPPED_MOST_FEE);
+    }
 
     public VisitorsConfiguration {
+        mostFee = Math.max(0, mostFee);
         List<String> written = new ArrayList<>();
         for (String command : Objects.requireNonNull(blockedCommands, "blockedCommands must not be null")) {
             String line = words(command);
@@ -28,20 +38,26 @@ public record VisitorsConfiguration(List<String> blockedCommands) {
     }
 
     public static VisitorsConfiguration defaultConfiguration() {
-        return new VisitorsConfiguration(List.of("sethome", "setwarp"));
+        return new VisitorsConfiguration(List.of("sethome", "setwarp"), SHIPPED_MOST_FEE);
     }
 
     public static VisitorsConfiguration load(ConfigurationNode root) {
         Objects.requireNonNull(root, "root must not be null");
+        VisitorsConfiguration shipped = defaultConfiguration();
+        double most = root.node("visitors", "fee", "most").getDouble(shipped.mostFee() / 100.0);
+        long mostFee = java.math.BigDecimal.valueOf(Math.max(0, Math.min(most, 1e15)))
+                .setScale(2, java.math.RoundingMode.DOWN)
+                .movePointRight(2)
+                .longValue();
         ConfigurationNode written = root.node("visitors", "blocked-commands");
         if (written.virtual()) {
-            return defaultConfiguration();
+            return new VisitorsConfiguration(shipped.blockedCommands(), mostFee);
         }
         List<String> commands = new ArrayList<>();
         for (ConfigurationNode line : written.childrenList()) {
             commands.add(line.getString(""));
         }
-        return new VisitorsConfiguration(commands);
+        return new VisitorsConfiguration(commands, mostFee);
     }
 
     /**

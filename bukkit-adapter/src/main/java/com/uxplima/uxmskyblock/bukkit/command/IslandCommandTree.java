@@ -355,6 +355,19 @@ public final class IslandCommandTree {
     /** {@code /is contest}, while Brix is enabled. */
     private com.uxplima.uxmskyblock.bukkit.fly.@Nullable IslandFly islandFly;
 
+    /** {@code /is visitfee}, and the fee {@code /is visit} asks for, while the server charges one. */
+    private com.uxplima.uxmskyblock.bukkit.visitor.@Nullable VisitFees visitFees;
+
+    /** {@code /is visitfee}, and the fee {@code /is visit} asks for. */
+    public void useVisitFees(com.uxplima.uxmskyblock.bukkit.visitor.@Nullable VisitFees fees) {
+        this.visitFees = fees;
+    }
+
+    /** What {@code /is visit} asks of the visit fee, or nothing while the server charges none. */
+    com.uxplima.uxmskyblock.bukkit.visitor.@Nullable VisitFees visitFees() {
+        return visitFees;
+    }
+
     /** {@code /is fly}. */
     public void useIslandFly(com.uxplima.uxmskyblock.bukkit.fly.@Nullable IslandFly fly) {
         this.islandFly = fly;
@@ -834,6 +847,12 @@ public final class IslandCommandTree {
                 .then(Cmd.literal("courses").executes(this::executeCourses))
                 .then(Cmd.literal("plots").executes(this::executePlots))
                 .then(Cmd.literal("fly").executes(this::islandFly))
+                .then(Cmd.literal("visitfee")
+                        .executes(ctx -> visitFee(ctx, null))
+                        .then(Cmd.argument("amount", com.mojang.brigadier.arguments.DoubleArgumentType.doubleArg(0))
+                                .executes(ctx -> visitFee(
+                                        ctx,
+                                        com.mojang.brigadier.arguments.DoubleArgumentType.getDouble(ctx, "amount")))))
                 .then(Cmd.literal("contest")
                         .executes(ctx -> brixContest(ctx, com.uxplima.uxmskyblock.bukkit.brix.BrixContestPlay::show))
                         .then(Cmd.literal("join")
@@ -1073,6 +1092,26 @@ public final class IslandCommandTree {
             return Cmd.OK;
         }
         gallery.open(player);
+        return Cmd.OK;
+    }
+
+    private int visitFee(CommandContext<CommandSourceStack> ctx, @Nullable Double amount) {
+        if (!(ctx.getSource().getSender() instanceof Player player)) {
+            send(ctx.getSource().getSender(), "error.players_only");
+            return Cmd.OK;
+        }
+        com.uxplima.uxmskyblock.bukkit.visitor.VisitFees fees = this.visitFees;
+        if (fees == null) {
+            send(player, "visit_fee.disabled");
+            return Cmd.OK;
+        }
+        com.uxplima.uxmskyblock.core.domain.identity.ProfileId profile =
+                sessionCoordinator.activeProfile(player.getUniqueId()).orElse(null);
+        if (amount == null) {
+            fees.show(player, profile);
+        } else {
+            fees.set(player, profile, amount);
+        }
         return Cmd.OK;
     }
 

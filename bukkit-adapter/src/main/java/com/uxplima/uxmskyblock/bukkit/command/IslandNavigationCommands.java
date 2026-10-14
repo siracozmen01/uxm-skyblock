@@ -54,6 +54,9 @@ public final class IslandNavigationCommands {
     private final Supplier<@Nullable IslandAllianceService> allianceServiceProvider;
     private final Messages messages;
 
+    /** The visit fee {@code /is visit} asks for, while the server charges one. */
+    private Supplier<com.uxplima.uxmskyblock.bukkit.visitor.@Nullable VisitFeeGate> visitFees = () -> null;
+
     public IslandNavigationCommands(
             IslandLocationService islandLocationService,
             PlayerSessionCoordinator sessionCoordinator,
@@ -79,6 +82,11 @@ public final class IslandNavigationCommands {
         this.messages = Objects.requireNonNull(messages, "messages must not be null");
     }
 
+    /** Hands over the visit fee {@code /is visit} asks a visitor to agree to and pay. */
+    public void useVisitFees(Supplier<com.uxplima.uxmskyblock.bukkit.visitor.@Nullable VisitFeeGate> fees) {
+        this.visitFees = Objects.requireNonNull(fees, "fees must not be null");
+    }
+
     public LiteralArgumentBuilder<CommandSourceStack> buildHome() {
         return Cmd.literal("home").executes(this::executeHome);
     }
@@ -89,7 +97,10 @@ public final class IslandNavigationCommands {
 
     public LiteralArgumentBuilder<CommandSourceStack> buildVisit() {
         return Cmd.literal("visit")
-                .then(Cmd.argument("target", StringArgumentType.word()).executes(this::executeVisit));
+                .then(Cmd.argument("target", StringArgumentType.word())
+                        .executes(ctx -> executeVisit(ctx, false))
+                        // The word that agrees to the island's visit fee, after it was shown.
+                        .then(Cmd.literal("confirm").executes(ctx -> executeVisit(ctx, true))));
     }
 
     public LiteralArgumentBuilder<CommandSourceStack> buildNether() {
@@ -193,7 +204,7 @@ public final class IslandNavigationCommands {
         return Cmd.OK;
     }
 
-    private int executeVisit(CommandContext<CommandSourceStack> ctx) {
+    private int executeVisit(CommandContext<CommandSourceStack> ctx, boolean confirming) {
         if (!(ctx.getSource().getSender() instanceof Player player)) {
             send(ctx.getSource().getSender(), "error.players_only");
             return Cmd.OK;
@@ -217,6 +228,23 @@ public final class IslandNavigationCommands {
                 return;
             }
 
+            // The fee is read here and agreed to first; it is taken only once the visitor is about to be moved, so a
+            // visit routed to another server, or to an island with no place, costs nothing.
+            com.uxplima.uxmskyblock.bukkit.visitor.VisitFeeGate fees = visitFees.get();
+            long owed = fees == null ? 0 : fees.owed(islandId, player, optVisitor.orElse(null));
+            if (fees != null && owed > 0 && !(confirming && fees.agreed(player, islandId, owed))) {
+                String typed = ctx.getInput().strip();
+                fees.ask(player, islandId, owed, "/" + (confirming ? typed : typed + " confirm"));
+                return;
+            }
+            java.util.function.Consumer<Runnable> go = move -> {
+                if (fees == null || owed <= 0) {
+                    move.run();
+                } else {
+                    fees.pay(player, islandId, owed, move);
+                }
+            };
+
             IslandNetworkRouter networkRouter = networkRouterProvider.get();
             if (networkRouter == null) {
                 Optional<IslandLocation> optLoc = islandLocationService.findLocation(islandId);
@@ -225,8 +253,8 @@ public final class IslandNavigationCommands {
                         send(player, "navigation.no_location");
                         return;
                     }
-                    teleportToIslandLocation(
-                            player, optLoc.get(), "navigation.visit_success", Placeholder.unparsed("target", target));
+                    go.accept(() -> teleportToIslandLocation(
+                            player, optLoc.get(), "navigation.visit_success", Placeholder.unparsed("target", target)));
                 });
                 return;
             }
@@ -246,11 +274,11 @@ public final class IslandNavigationCommands {
                                 send(player, "navigation.no_location");
                                 return;
                             }
-                            teleportToIslandLocation(
+                            go.accept(() -> teleportToIslandLocation(
                                     player,
                                     localLocation.get(),
                                     "navigation.visit_success",
-                                    Placeholder.unparsed("target", target));
+                                    Placeholder.unparsed("target", target)));
                         }
                         case RouteOutcome.CrossServer cross -> {
                             send(
