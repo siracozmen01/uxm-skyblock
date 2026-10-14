@@ -116,6 +116,14 @@ public final class GameplayWiring {
     private final com.uxplima.uxmskyblock.bukkit.boundary.IslandEdgeWalls islandEdgeWalls;
     private final AcidIslandWiring acidIslandWiring;
     private final BoxedWiring boxedWiring;
+    /** The schematics the CaveBlock structures lay, read once the server is up. */
+    private final com.uxplima.uxmskyblock.bukkit.poseidon.SchematicWreckTemplates caveTemplates =
+            new com.uxplima.uxmskyblock.bukkit.poseidon.SchematicWreckTemplates(
+                    new com.uxplima.uxmskyblock.bukkit.poseidon.ServerWreckTemplates(),
+                    com.uxplima.uxmskyblock.bukkit.poseidon.SchematicWreckTemplates::parseQuietly);
+
+    private com.uxplima.uxmskyblock.bukkit.cave.@org.jspecify.annotations.Nullable CaveStructures caveStructures;
+
     private final PoseidonWiring poseidonWiring;
     private final StrangerRealmsWiring strangerRealmsWiring;
     private final ParkourWiring parkourWiring;
@@ -536,16 +544,22 @@ public final class GameplayWiring {
      * The actions of the game modes that are only a way of building an island: CaveBlock's rock and
      * SkyGrid's grid, each while its module is enabled.
      */
-    private static java.util.stream.Stream<
+    private java.util.stream.Stream<
                     com.uxplima.uxmskyblock.core.application.gamemode.CreationActionProvider<
                             com.uxplima.uxmskyblock.bukkit.schematic.IslandStart>>
             caveBlockStart(ConfigurationWiring config, SchedulerPort scheduler) {
+        this.caveStructures = new com.uxplima.uxmskyblock.bukkit.cave.CaveStructures(
+                config.caveBlockConfig().structures(),
+                config.caveBlockConfig().shape(),
+                caveTemplates,
+                new com.uxplima.uxmskyblock.bukkit.poseidon.ServerChestLoot(),
+                scheduler);
         com.uxplima.uxmskyblock.bukkit.config.CaveBlockConfiguration cave = config.caveBlockConfig();
         com.uxplima.uxmskyblock.bukkit.config.SkyGridConfiguration grid = config.skyGridConfig();
         return java.util.stream.Stream.concat(
                 cave.enabled()
                         ? java.util.stream.Stream.of(
-                                new com.uxplima.uxmskyblock.bukkit.cave.CavernStart(scheduler, cave))
+                                new com.uxplima.uxmskyblock.bukkit.cave.CavernStart(scheduler, cave, caveStructures))
                         : java.util.stream.Stream.empty(),
                 grid.enabled()
                         ? java.util.stream.Stream.of(
@@ -595,6 +609,27 @@ public final class GameplayWiring {
 
     public StrangerRealmsWiring strangerRealmsWiring() {
         return strangerRealmsWiring;
+    }
+
+    /**
+     * Writes the shipped cave structures where no file stands yet, then reads every schematic the kinds name. Off the
+     * main thread; a kind whose file is not read yet is not laid.
+     */
+    public java.util.concurrent.CompletableFuture<Integer> primeCaveTemplates(
+            com.uxplima.uxmskyblock.bukkit.schematic.IslandSchematics files, int dataVersion) {
+        com.uxplima.uxmskyblock.bukkit.cave.CaveStructures laid = caveStructures;
+        if (laid == null) {
+            return java.util.concurrent.CompletableFuture.completedFuture(0);
+        }
+        java.util.List<java.util.concurrent.CompletableFuture<Boolean>> writes = new java.util.ArrayList<>();
+        com.uxplima.uxmskyblock.bukkit.cave.CaveLayouts.SHIPPED.forEach(
+                (name, layout) -> writes.add(files.writeIfMissing(
+                        com.uxplima.uxmskyblock.bukkit.schematic.IslandSchematics.pathOf(name),
+                        layout.apply(dataVersion))));
+        return java.util.concurrent.CompletableFuture.allOf(
+                        writes.toArray(java.util.concurrent.CompletableFuture[]::new))
+                .handle((done, failure) -> null)
+                .thenCompose(done -> caveTemplates.prime(files, laid.templateKeys()));
     }
 
     public PoseidonWiring poseidonWiring() {

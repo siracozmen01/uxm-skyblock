@@ -38,10 +38,20 @@ public final class CavernStart implements CreationActionProvider<IslandStart> {
     private final SchedulerPort scheduler;
     private final CaveBlockConfiguration config;
     private final Map<String, Optional<Material>> blocks = new ConcurrentHashMap<>();
+    private final @org.jspecify.annotations.Nullable CaveStructures structures;
 
     public CavernStart(SchedulerPort scheduler, CaveBlockConfiguration config) {
+        this(scheduler, config, null);
+    }
+
+    /** @param structures the structures laid in the rock after it, or nothing for rock alone */
+    public CavernStart(
+            SchedulerPort scheduler,
+            CaveBlockConfiguration config,
+            @org.jspecify.annotations.Nullable CaveStructures structures) {
         this.scheduler = Objects.requireNonNull(scheduler, "scheduler must not be null");
         this.config = Objects.requireNonNull(config, "config must not be null");
+        this.structures = structures;
     }
 
     @Override
@@ -86,6 +96,11 @@ public final class CavernStart implements CreationActionProvider<IslandStart> {
                         new Chunk(fromX, toX, fromZ, toZ, seed ^ (((long) chunkX << 32) ^ (chunkZ & 0xFFFFFFFFL)));
                 scheduler.onRegion(world.getName(), chunkX, chunkZ, () -> fill(world, start, chunk, part, rock));
             }
+        }
+        // Queued after the rock of every chunk, so the rock never fills a hollow a structure carved.
+        CaveStructures held = structures;
+        if (held != null) {
+            held.lay(start, rock.shell());
         }
     }
 

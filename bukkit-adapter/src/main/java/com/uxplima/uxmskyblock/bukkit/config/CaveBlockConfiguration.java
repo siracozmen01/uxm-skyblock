@@ -19,7 +19,11 @@ import org.spongepowered.configurate.ConfigurationNode;
  * @param palettes the rock of each dimension, by dimension id; a dimension not named uses the overworld's
  */
 public record CaveBlockConfiguration(
-        boolean enabled, CavePlan.Shape shape, String shell, Map<String, Palette> palettes) {
+        boolean enabled,
+        CavePlan.Shape shape,
+        String shell,
+        Map<String, Palette> palettes,
+        Map<String, Structure> structures) {
 
     public static final String OVERWORLD = "overworld";
     public static final String NETHER = "the_nether";
@@ -51,7 +55,56 @@ public record CaveBlockConfiguration(
         }
     }
 
+    /**
+     * A kind of structure the rock holds, laid after the rock around the island.
+     *
+     * @param templates the templates to choose from: the server's own, a datapack's, or schematic:&lt;name&gt; for the
+     *     file schematics/&lt;name&gt;.schem under the plugin's folder
+     * @param count how many are laid, spread evenly around the island
+     * @param distance how far from the island's centre each one's middle lies
+     * @param depth how far below the block players arrive on each one's floor lies; below zero is above it
+     * @param loot the loot tables its chests and barrels get, each in turn
+     * @param spawner the creature its spawners spawn, by key; empty to leave them as they are
+     */
+    public record Structure(
+            List<String> templates, int count, int distance, int depth, List<String> loot, String spawner) {
+
+        public Structure {
+            templates = List.copyOf(templates);
+            loot = List.copyOf(loot);
+            Objects.requireNonNull(spawner, "spawner must not be null");
+            if (count < 0 || distance < 0) {
+                throw new IllegalArgumentException("count and distance must not be negative");
+            }
+        }
+    }
+
+    /** The shipped structures: a dungeon, mineshafts, a geode and a trial chamber, each its own schematic. */
+    public static final Map<String, Structure> SHIPPED_STRUCTURES = Map.of(
+            "dungeon",
+            new Structure(
+                    List.of("schematic:cave_dungeon"), 1, 16, 10, List.of("minecraft:chests/simple_dungeon"), "zombie"),
+            "mineshaft",
+            new Structure(
+                    List.of("schematic:cave_mineshaft"), 2, 18, 3, List.of("minecraft:chests/abandoned_mineshaft"), ""),
+            "geode",
+            new Structure(List.of("schematic:cave_geode"), 1, 20, 16, List.of(), ""),
+            "trial_chamber",
+            new Structure(
+                    List.of("schematic:cave_trial_chamber"),
+                    1,
+                    18,
+                    20,
+                    List.of("minecraft:chests/trial_chambers/reward"),
+                    "breeze"));
+
+    /** The shipped structures. */
+    public CaveBlockConfiguration(boolean enabled, CavePlan.Shape shape, String shell, Map<String, Palette> palettes) {
+        this(enabled, shape, shell, palettes, SHIPPED_STRUCTURES);
+    }
+
     public CaveBlockConfiguration {
+        structures = Map.copyOf(structures);
         Objects.requireNonNull(shape, "shape must not be null");
         Objects.requireNonNull(shell, "shell must not be null");
         palettes = Map.copyOf(palettes);
@@ -139,7 +192,42 @@ public record CaveBlockConfiguration(
                 root.node("enabled").getBoolean(true),
                 shape,
                 root.node("shell").getString(shipped.shell()).trim().toUpperCase(Locale.ROOT),
-                palettes);
+                palettes,
+                structures(root.node("structures")));
+    }
+
+    /**
+     * The structures the file writes, by name, over the shipped ones: a shipped one the file leaves out stays, and
+     * one written takes what it leaves out from the shipped one of its name. One that cannot be read is left out.
+     */
+    private static Map<String, Structure> structures(ConfigurationNode written) {
+        Map<String, Structure> all = new java.util.LinkedHashMap<>(SHIPPED_STRUCTURES);
+        for (Map.Entry<Object, ? extends ConfigurationNode> entry :
+                written.childrenMap().entrySet()) {
+            String name = String.valueOf(entry.getKey()).trim().toLowerCase(Locale.ROOT);
+            ConfigurationNode node = entry.getValue();
+            Structure shipped =
+                    SHIPPED_STRUCTURES.getOrDefault(name, new Structure(List.of(), 1, 16, 8, List.of(), ""));
+            try {
+                all.put(
+                        name,
+                        new Structure(
+                                AcidIslandConfiguration.strings(node.node("templates"), shipped.templates()),
+                                node.node("count").getInt(shipped.count()),
+                                node.node("distance").getInt(shipped.distance()),
+                                node.node("depth").getInt(shipped.depth()),
+                                AcidIslandConfiguration.strings(node.node("loot"), shipped.loot()),
+                                node.node("spawner")
+                                        .getString(shipped.spawner())
+                                        .trim()
+                                        .toLowerCase(Locale.ROOT)));
+            } catch (IllegalArgumentException e) {
+                all.remove(name);
+                LOGGER.warning(() ->
+                        "modules/caveblock.conf structures." + name + ": " + e.getMessage() + ". It is left out.");
+            }
+        }
+        return all;
     }
 
     private static Palette palette(ConfigurationNode node, Palette fallback) {

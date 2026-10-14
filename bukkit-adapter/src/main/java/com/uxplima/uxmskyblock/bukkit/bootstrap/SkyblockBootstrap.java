@@ -215,6 +215,8 @@ public final class SkyblockBootstrap implements AutoCloseable {
         var unused = gameplayWiring
                 .poseidonWiring()
                 .primeTemplates(files, Bukkit.getUnsafe().getDataVersion())
+                .thenCompose(read -> gameplayWiring.primeCaveTemplates(
+                        files, Bukkit.getUnsafe().getDataVersion()))
                 .whenComplete((read, failure) -> {
                     if (failure != null) {
                         plugin.getLogger()
