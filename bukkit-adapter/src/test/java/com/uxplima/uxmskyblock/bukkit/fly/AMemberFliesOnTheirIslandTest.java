@@ -291,6 +291,28 @@ class AMemberFliesOnTheirIslandTest extends MockBukkitHarness {
     }
 
     @Test
+    @DisplayName("An island whose upgrades are still read asks to try again, and keeps a flier up meanwhile")
+    void anUnreadIsland() {
+        tiers.put(island.id().value(), -1);
+        IslandFly bought = fly(new IslandFlyConfiguration(true, WINGS, "", true));
+        bought.toggle(owner);
+        assertThat(owner.getAllowFlight()).isFalse();
+        assertThat(said(owner)).contains("still being read");
+
+        tiers.put(island.id().value(), 1);
+        bought.toggle(owner);
+        assertThat(bought.flies(owner)).isTrue();
+        tiers.put(island.id().value(), -1);
+        bought.onMove(new PlayerMoveEvent(owner, new Location(world, 5, 100, 5), new Location(world, 7, 100, 5)));
+        assertThat(bought.flies(owner))
+                .describedAs("a purchase forgot the tiers for a moment")
+                .isTrue();
+        tiers.put(island.id().value(), 0);
+        bought.onMove(new PlayerMoveEvent(owner, new Location(world, 7, 100, 5), new Location(world, 9, 100, 5)));
+        assertThat(bought.flies(owner)).describedAs("known, and none bought").isFalse();
+    }
+
+    @Test
     @DisplayName("With the fall not spared, a player set down for leaving takes it")
     void aFallNotSpared() {
         IslandFly fly = fly(new IslandFlyConfiguration(true, null, "", false));

@@ -47,7 +47,7 @@ public final class IslandEffects {
     private final Supplier<? extends Iterable<? extends Player>> online;
 
     /**
-     * @param bought the number of tiers of an upgrade an island has bought
+     * @param bought the number of tiers of an upgrade an island has bought, or below zero while it is not known
      * @param online the players on the server
      */
     public IslandEffects(
@@ -113,9 +113,13 @@ public final class IslandEffects {
             if (definition == null) {
                 continue;
             }
-            Optional<UpgradeTier> tier = definition.getTier(
-                    definition.effectiveTier(bought.applyAsInt(island.get().id(), upgrade)));
-            tier.ifPresent(held -> held.properties().forEach((name, level) -> {
+            int held = bought.applyAsInt(island.get().id(), upgrade);
+            if (held < 0) {
+                // Not known yet: nothing this beat, and the next one finds it read.
+                continue;
+            }
+            Optional<UpgradeTier> tier = definition.getTier(definition.effectiveTier(held));
+            tier.ifPresent(worn -> worn.properties().forEach((name, level) -> {
                 PotionEffectType type = PotionEffectLines.named(name);
                 if (type != null && level >= 1) {
                     levels.merge(type, (int) Math.floor(level), Math::max);

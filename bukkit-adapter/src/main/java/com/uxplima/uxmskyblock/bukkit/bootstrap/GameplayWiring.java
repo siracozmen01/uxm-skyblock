@@ -280,13 +280,16 @@ public final class GameplayWiring {
                 scheduler,
                 () -> org.bukkit.Bukkit.getWorlds().getFirst().getSpawnLocation(),
                 java.time.Clock.systemUTC());
+        // Both run on player threads, so neither may wait on the database for a tier.
+        com.uxplima.uxmskyblock.bukkit.upgrade.CachedTiers cachedTiers =
+                new com.uxplima.uxmskyblock.bukkit.upgrade.CachedTiers(this.economicWiring.upgradeService());
         com.uxplima.uxmskyblock.bukkit.effect.InteractionEffectPlayer flyEffects =
                 new com.uxplima.uxmskyblock.bukkit.effect.InteractionEffectPlayer(scheduler, config.messages());
         this.islandFly = new com.uxplima.uxmskyblock.bukkit.fly.IslandFly(
                 config.flyConfig(),
                 protectionListener::findIslandAt,
                 authority.sessionCoordinator()::activeProfile,
-                this.economicWiring.upgradeService()::getCurrentTier,
+                cachedTiers::bought,
                 config.messages(),
                 (interaction, player) -> flyEffects.fire(config.effectsConfig(), interaction, player),
                 java.time.Clock.systemUTC());
@@ -296,7 +299,7 @@ public final class GameplayWiring {
                 protectionListener::findIslandAt,
                 authority.sessionCoordinator()::activeProfile,
                 this.economicWiring.upgradeService()::definitions,
-                this.economicWiring.upgradeService()::getCurrentTier,
+                cachedTiers::bought,
                 scheduler,
                 org.bukkit.Bukkit::getOnlinePlayers);
 

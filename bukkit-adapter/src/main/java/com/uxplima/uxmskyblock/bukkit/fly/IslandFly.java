@@ -52,6 +52,12 @@ public final class IslandFly implements Listener, ArrivalObserver {
      */
     static final NamespacedKey MARK = new NamespacedKey("uxmskyblock", "island-fly");
 
+    /**
+     * The answer of an island whose upgrades are not known yet, and the line that asks to try again: at taking off
+     * it refuses, and in the air it keeps a flier up.
+     */
+    private static final String UNREAD = "fly.reading";
+
     /** How long after being set down a player's fall is still the one spared. */
     static final Duration SPARED_FOR = Duration.ofSeconds(30);
 
@@ -69,7 +75,7 @@ public final class IslandFly implements Listener, ArrivalObserver {
     private final Map<UUID, Instant> spared = new ConcurrentHashMap<>();
 
     /**
-     * @param tierOf the tier of an upgrade an island holds, zero for none
+     * @param tierOf the tier of an upgrade an island holds, zero for none, or below zero while it is not known
      * @param effects fires an interaction of {@code modules/effects.conf} for a player
      */
     public IslandFly(
@@ -142,8 +148,14 @@ public final class IslandFly implements Listener, ArrivalObserver {
             return Optional.of("fly.role");
         }
         UpgradeId upgrade = config.requiredUpgrade();
-        if (upgrade != null && tierOf.applyAsInt(island.get().id(), upgrade) < 1) {
-            return Optional.of("fly.upgrade");
+        if (upgrade != null) {
+            int tier = tierOf.applyAsInt(island.get().id(), upgrade);
+            if (tier < 0) {
+                return Optional.of(UNREAD);
+            }
+            if (tier < 1) {
+                return Optional.of("fly.upgrade");
+            }
         }
         return Optional.empty();
     }
@@ -166,7 +178,9 @@ public final class IslandFly implements Listener, ArrivalObserver {
 
     /** Sets the player down if they may not fly where they now are. */
     private void check(Player player, Location at) {
-        if (refusal(player, at).isEmpty() || !flying.remove(player.getUniqueId())) {
+        Optional<String> refused = refusal(player, at);
+        // An island whose upgrades are still being read keeps the flier up: a purchase forgets them for a moment.
+        if (refused.isEmpty() || refused.get().equals(UNREAD) || !flying.remove(player.getUniqueId())) {
             return;
         }
         ground(player);

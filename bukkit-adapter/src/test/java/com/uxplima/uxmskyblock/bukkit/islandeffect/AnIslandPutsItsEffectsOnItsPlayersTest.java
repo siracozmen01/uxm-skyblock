@@ -124,6 +124,26 @@ class AnIslandPutsItsEffectsOnItsPlayersTest extends MockBukkitHarness {
         assertThat(effects(shipped()).wear(member))
                 .describedAs("nothing bought")
                 .isEmpty();
+        bought.put(EFFECTS, -1);
+        bought.put(BEACON, 1);
+        assertThat(effects(shipped()).wear(member))
+                .describedAs("an upgrade not read yet gives nothing this beat, the other still does")
+                .containsOnly(Map.entry(PotionEffectType.HASTE, 3));
+        bought.remove(BEACON);
+        UpgradeId free = UpgradeId.of("free_haste");
+        definitions.put(
+                free,
+                new UpgradeDefinition(free, "Free", List.of(new UpgradeTier(1, 0L, "PRIMARY", Map.of("haste", 1.0)))));
+        bought.put(free, -1);
+        assertThat(effects(new IslandEffectsConfiguration(true, 3, false, List.of(free)))
+                        .wear(member))
+                .describedAs("a free first tier is not worn before the island is read")
+                .isEmpty();
+        bought.put(free, 0);
+        assertThat(effects(new IslandEffectsConfiguration(true, 3, false, List.of(free)))
+                        .wear(member))
+                .describedAs("read, the free tier is held")
+                .containsKey(PotionEffectType.HASTE);
 
         bought.put(EFFECTS, 2);
         Map<PotionEffectType, Integer> worn = effects(shipped()).wear(member);
