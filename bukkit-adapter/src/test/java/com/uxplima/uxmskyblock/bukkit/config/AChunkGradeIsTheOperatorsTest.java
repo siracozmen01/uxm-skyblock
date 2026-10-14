@@ -184,6 +184,29 @@ class AChunkGradeIsTheOperatorsTest {
     }
 
     @Test
+    @DisplayName("A chunk the level opened closes with the level unless the file keeps it open")
+    void keptLevelChunks() throws Exception {
+        assertThat(ChunkBlockConfiguration.load(
+                                HoconConfigurationLoader.builder().buildAndLoadString(""))
+                        .keepLevelChunks())
+                .isFalse();
+        assertThat(ChunkBlockConfiguration.load(
+                                HoconConfigurationLoader.builder().buildAndLoadString("keep-level-chunks = true"))
+                        .keepLevelChunks())
+                .isTrue();
+        String shipped;
+        try (java.io.InputStream in = ChunkBlockConfiguration.class.getResourceAsStream("/modules/chunkblock.conf")) {
+            assertThat(in).isNotNull();
+            shipped = new String(in.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
+        }
+        assertThat(shipped).contains("keep-level-chunks = false");
+        assertThat(ChunkBlockConfiguration.load(
+                                HoconConfigurationLoader.builder().buildAndLoadString(shipped))
+                        .keepLevelChunks())
+                .isFalse();
+    }
+
+    @Test
     @DisplayName("The signs over closed chunks float unless the file turns them off")
     void theSignsAreTheOperators() throws Exception {
         assertThat(ChunkBlockConfiguration.load(

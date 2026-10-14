@@ -46,9 +46,20 @@ public final class ChunkBlockService {
     private final List<BiConsumer<IslandId, ChunkPos>> openedListeners = new CopyOnWriteArrayList<>();
 
     public ChunkBlockService(ChunkTerritoryPort port, ChunkUnlockRules rules) {
+        this(port, rules, false);
+    }
+
+    /**
+     * @param keepHeld whether a chunk the level opened stays open when the level falls below what it needed, so an
+     *     island never loses ground it reached
+     */
+    public ChunkBlockService(ChunkTerritoryPort port, ChunkUnlockRules rules, boolean keepHeld) {
         this.port = Objects.requireNonNull(port, "port must not be null");
         this.rules = Objects.requireNonNull(rules, "rules must not be null");
+        this.keepHeld = keepHeld;
     }
+
+    private final boolean keepHeld;
 
     public ChunkUnlockRules rules() {
         return rules;
@@ -144,10 +155,13 @@ public final class ChunkBlockService {
 
     /**
      * Closes the chunks an island at {@code level} can no longer hold, newest first, and tells the
-     * listeners, who move anybody standing in one.
+     * listeners, who move anybody standing in one. Nothing closes while the operator keeps held chunks open.
      */
     public List<ChunkPos> onLevel(IslandId islandId, long level) {
         Objects.requireNonNull(islandId, "islandId must not be null");
+        if (keepHeld) {
+            return List.of();
+        }
         List<ChunkPos> closed;
         synchronized (lockOf(islandId)) {
             ChunkTerritory held = memory.get(islandId);

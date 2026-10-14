@@ -158,6 +158,25 @@ class ChunkBlockServiceTest {
     }
 
     @Test
+    @DisplayName("Kept open, a fallen level closes nothing, and the next chunk still waits for the level")
+    void keptOpen() {
+        ChunkBlockService keeping = new ChunkBlockService(table, RULES, true);
+        keeping.start(islandId, 8, 8);
+        keeping.unlock(islandId, new ChunkPos(1, 0), BOUNDS, 9);
+        keeping.unlock(islandId, new ChunkPos(2, 0), BOUNDS, 9);
+        List<List<ChunkPos>> told = new ArrayList<>();
+        keeping.whenClosed((island, chunks) -> told.add(chunks));
+
+        assertThat(keeping.onLevel(islandId, 0)).isEmpty();
+        assertThat(told).isEmpty();
+        assertThat(table.find(islandId).orElseThrow().opened()).containsExactly(new ChunkPos(1, 0), new ChunkPos(2, 0));
+        assertThat(keeping.isOpen(islandId, new ChunkPos(2, 0))).contains(true);
+        assertThat(keeping.unlock(islandId, new ChunkPos(3, 0), BOUNDS, 0).outcome())
+                .describedAs("the third chunk past the first asks for level 6")
+                .isNotEqualTo(ChunkBlockService.Outcome.UNLOCKED);
+    }
+
+    @Test
     @DisplayName("Priming reads every ChunkBlock island into memory")
     void primingReadsEveryIsland() {
         table.start(islandId, new ChunkPos(4, 4));

@@ -41,7 +41,8 @@ public final class ChunkBlockWiring implements AutoCloseable {
                             java.util.UUID, java.util.Optional<com.uxplima.uxmskyblock.core.domain.identity.ProfileId>>
                     activeProfile) {
         this.config = Objects.requireNonNull(configuration.chunkBlockConfig(), "chunkBlockConfig must not be null");
-        this.service = new ChunkBlockService(persistence.chunkTerritoryPort(), config.rules());
+        this.service =
+                new ChunkBlockService(persistence.chunkTerritoryPort(), config.rules(), config.keepLevelChunks());
         this.listener = new com.uxplima.uxmskyblock.bukkit.chunkblock.ChunkBlockListener(
                 service,
                 islands,

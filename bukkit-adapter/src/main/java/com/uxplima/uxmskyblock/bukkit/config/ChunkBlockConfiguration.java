@@ -23,9 +23,15 @@ import org.spongepowered.configurate.hocon.HoconConfigurationLoader;
  * @param bypassPermission a node whose holder is not stopped at a closed chunk, empty for nobody
  * @param tiers the grades the file names, none when every chunk is priced by the level ladder
  * @param signs whether a sign floats over each closed chunk an island can open next
+ * @param keepLevelChunks whether a chunk the level opened stays open when the level falls
  */
 public record ChunkBlockConfiguration(
-        boolean enabled, ChunkUnlockRules rules, String bypassPermission, ChunkTiers tiers, boolean signs) {
+        boolean enabled,
+        ChunkUnlockRules rules,
+        String bypassPermission,
+        ChunkTiers tiers,
+        boolean signs,
+        boolean keepLevelChunks) {
 
     private static final Logger LOGGER = Logger.getLogger(ChunkBlockConfiguration.class.getName());
 
@@ -33,6 +39,12 @@ public record ChunkBlockConfiguration(
         Objects.requireNonNull(rules, "rules must not be null");
         Objects.requireNonNull(bypassPermission, "bypassPermission must not be null");
         Objects.requireNonNull(tiers, "tiers must not be null");
+    }
+
+    /** A server that closes a chunk the level opened once the level falls. */
+    public ChunkBlockConfiguration(
+            boolean enabled, ChunkUnlockRules rules, String bypassPermission, ChunkTiers tiers, boolean signs) {
+        this(enabled, rules, bypassPermission, tiers, signs, false);
     }
 
     /** A server whose chunks are all priced by the level ladder. */
@@ -94,7 +106,8 @@ public record ChunkBlockConfiguration(
                 rules,
                 root.node("bypass-permission").getString("").trim(),
                 tiers(root.node("tiers")),
-                root.node("signs").getBoolean(true));
+                root.node("signs").getBoolean(true),
+                root.node("keep-level-chunks").getBoolean(false));
     }
 
     /**
