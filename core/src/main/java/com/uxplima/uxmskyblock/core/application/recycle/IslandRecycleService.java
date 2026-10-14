@@ -4,12 +4,10 @@ import java.security.SecureRandom;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
-import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
-import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -18,18 +16,12 @@ import com.uxplima.uxmskyblock.core.application.island.IslandCacheEviction;
 import com.uxplima.uxmskyblock.core.application.island.IslandStoragePort;
 import com.uxplima.uxmskyblock.core.application.world.SpiralSlotPoolPort;
 import com.uxplima.uxmskyblock.core.application.world.WorldGridAllocationPort;
-import com.uxplima.uxmskyblock.core.domain.event.EventId;
-import com.uxplima.uxmskyblock.core.domain.event.JsonText;
-import com.uxplima.uxmskyblock.core.domain.event.StagedOutboxEvent;
 import com.uxplima.uxmskyblock.core.domain.identity.IslandId;
 import com.uxplima.uxmskyblock.core.domain.identity.ProfileId;
 import com.uxplima.uxmskyblock.core.domain.island.Island;
-import com.uxplima.uxmskyblock.core.domain.island.IslandLocation;
-import com.uxplima.uxmskyblock.core.domain.recycle.IslandRecycleOperation;
 import com.uxplima.uxmskyblock.core.domain.recycle.IslandRecycleState;
 import com.uxplima.uxmskyblock.core.domain.recycle.ResetChallenge;
 import com.uxplima.uxmskyblock.core.domain.world.RecycledSlot;
-import com.uxplima.uxmskyblock.core.domain.world.WorldGridAllocation;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -38,6 +30,9 @@ import org.jspecify.annotations.Nullable;
  * Folia-native asynchronous chunk voiding, transactional state tracking, and Archimedean spiral slot recycling.
  */
 public final class IslandRecycleService {
+
+    /** One island reset carried out step by step under its journal, and the steps a crash left half done carried on at start. */
+    private final RecycleRuns runs = new RecycleRuns(this);
 
     private static final java.util.logging.Logger LOGGER =
             java.util.logging.Logger.getLogger(IslandRecycleService.class.getName());
@@ -63,14 +58,14 @@ public final class IslandRecycleService {
     /** How long a reset confirmation code stays good, when the operator names no other number. */
     public static final Duration DEFAULT_CHALLENGE_TTL = Duration.ofSeconds(60);
 
-    private final IslandStoragePort islandStoragePort;
-    private final WorldGridAllocationPort worldGridAllocationPort;
-    private final SpiralSlotPoolPort spiralSlotPoolPort;
-    private final @Nullable IslandVoidingPort voidingPort;
-    private final @Nullable IslandBackupPort backupPort;
-    private final @Nullable OutboxPort outboxPort;
-    private final @Nullable IslandRecycleOperationPort recycleOperationPort;
-    private final Clock clock;
+    final IslandStoragePort islandStoragePort;
+    final WorldGridAllocationPort worldGridAllocationPort;
+    final SpiralSlotPoolPort spiralSlotPoolPort;
+    final @Nullable IslandVoidingPort voidingPort;
+    final @Nullable IslandBackupPort backupPort;
+    final @Nullable OutboxPort outboxPort;
+    final @Nullable IslandRecycleOperationPort recycleOperationPort;
+    final Clock clock;
     private final Duration challengeTtl;
     private final IslandCacheEviction cacheEviction;
     private final SecureRandom secureRandom;
@@ -80,7 +75,7 @@ public final class IslandRecycleService {
     private final java.util.Set<IslandId> resetsInFlight = ConcurrentHashMap.newKeySet();
 
     /** Every square an island is cleared over: its border, and wherever its game mode wrote past it. */
-    private volatile IslandWipeAreas wipeAreas = IslandWipeAreas.bordersOnly();
+    volatile IslandWipeAreas wipeAreas = IslandWipeAreas.bordersOnly();
 
     /** Clears an island over every square it wrote in, not only its border. */
     public void useWipeAreas(IslandWipeAreas areas) {
@@ -99,7 +94,7 @@ public final class IslandRecycleService {
     }
 
     /** What is done with an island just before its record is deleted: nothing, until the wiring says. */
-    private volatile BeforeDelete beforeDelete = (island, byItsOwner) -> {};
+    volatile BeforeDelete beforeDelete = (island, byItsOwner) -> {};
 
     /**
      * Has {@code step} done with every island just before its record is deleted, once its world is cleared. A step
@@ -352,226 +347,11 @@ public final class IslandRecycleService {
             return CompletableFuture.completedFuture(new RecycleResult.AlreadyRunning(islandId));
         }
         try {
-            return runReset(island, islandId, !adminBypass)
+            return runs.runReset(island, islandId, !adminBypass)
                     .whenComplete((result, error) -> resetsInFlight.remove(islandId));
         } catch (RuntimeException e) {
             resetsInFlight.remove(islandId);
             throw e;
-        }
-    }
-
-    /** The erasure itself, with the island's slot already taken. */
-    private CompletableFuture<RecycleResult> runReset(Island island, IslandId islandId, boolean byItsOwner) {
-        Optional<IslandLocation> optLocation = islandStoragePort.findLocationByIslandId(islandId);
-        if (optLocation.isEmpty()) {
-            return CompletableFuture.completedFuture(
-                    new RecycleResult.Failure("Island location record missing for islandId=" + islandId));
-        }
-        IslandLocation location = optLocation.get();
-
-        // Resolve world grid allocation
-        long slotIndex = 0L;
-        String worldName = location.worldName();
-        int gridX = location.bounds().centerX();
-        int gridZ = location.bounds().centerZ();
-
-        Optional<WorldGridAllocation> optAlloc = worldGridAllocationPort.findByIslandId(islandId);
-        if (optAlloc.isPresent()) {
-            WorldGridAllocation alloc = optAlloc.get();
-            slotIndex = alloc.sequenceIndex();
-            worldName = alloc.worldName();
-            gridX = alloc.centerX();
-            gridZ = alloc.centerZ();
-        }
-
-        final long finalSlotIndex = slotIndex;
-        final String finalWorldName = worldName;
-        final int finalGridX = gridX;
-        final int finalGridZ = gridZ;
-
-        String operationId = UUID.randomUUID().toString();
-        Instant now = clock.instant();
-
-        // 1. Transaction State: REQUESTED
-        if (recycleOperationPort != null) {
-            recycleOperationPort.recordOperation(new IslandRecycleOperation(
-                    operationId,
-                    islandId,
-                    island.ownerPlayerUuid(),
-                    finalSlotIndex,
-                    IslandRecycleState.REQUESTED,
-                    null,
-                    null,
-                    now,
-                    now));
-        }
-
-        // 2. Pre-deletion disaster recovery backup snapshot (fail-closed, never bypassed)
-        String backupPath = null;
-        if (backupPort != null) {
-            try {
-                backupPath = backupPort.createPreDeletionBackup(island, location);
-                if (recycleOperationPort != null) {
-                    recycleOperationPort.updateState(
-                            operationId, IslandRecycleState.BACKUP_COMPLETE, backupPath, null, clock.instant());
-                }
-            } catch (Exception e) {
-                if (recycleOperationPort != null) {
-                    recycleOperationPort.updateState(
-                            operationId, IslandRecycleState.FAILED, null, e.getMessage(), clock.instant());
-                }
-                return CompletableFuture.completedFuture(
-                        new RecycleResult.Failure("Failed to create pre-deletion backup: " + e.getMessage()));
-            }
-        }
-
-        // 3. Transaction State: VOIDING
-        if (recycleOperationPort != null) {
-            recycleOperationPort.updateState(operationId, IslandRecycleState.VOIDING, null, null, clock.instant());
-        }
-
-        IslandWipeAreas areas = this.wipeAreas;
-        CompletableFuture<Void> voidFuture = (voidingPort != null)
-                ? CompletableFuture.allOf(areas.of(islandId, finalWorldName, island.bounds()).stream()
-                        .map(area -> voidingPort.voidIslandChunks(islandId, area.world(), area.bounds()))
-                        .toArray(CompletableFuture[]::new))
-                : CompletableFuture.completedFuture(null);
-
-        // 4. Defer canonical delete, slot release and completion until voiding completes
-        return voidFuture.handle((v, ex) -> {
-            if (ex != null) {
-                if (recycleOperationPort != null) {
-                    recycleOperationPort.updateState(
-                            operationId, IslandRecycleState.FAILED, null, ex.getMessage(), clock.instant());
-                }
-                return new RecycleResult.Failure("Asynchronous chunk voiding failed: " + ex.getMessage());
-            }
-
-            if (recycleOperationPort != null) {
-                recycleOperationPort.updateState(
-                        operationId, IslandRecycleState.VOID_COMPLETE, null, null, clock.instant());
-            }
-            areas.cleared(islandId);
-
-            try {
-                beforeDelete.run(island, byItsOwner);
-            } catch (RuntimeException failed) {
-                java.util.logging.Logger.getLogger(IslandRecycleService.class.getName())
-                        .warning(() -> "The step before deleting island " + islandId.value() + " failed: "
-                                + failed.getMessage());
-            }
-
-            // 5. Transaction State: CANONICAL_DELETE (Must succeed before releasing slot)
-            if (recycleOperationPort != null) {
-                recycleOperationPort.updateState(
-                        operationId, IslandRecycleState.CANONICAL_DELETE, null, null, clock.instant());
-            }
-
-            String payload = String.format(
-                    "{\"islandId\":\"%s\",\"ownerProfileId\":\"%s\",\"slotIndex\":%d,\"worldName\":\"%s\",\"gridX\":%d,\"gridZ\":%d}",
-                    islandId.value(),
-                    island.ownerProfileId().value(),
-                    finalSlotIndex,
-                    JsonText.escaped(finalWorldName),
-                    finalGridX,
-                    finalGridZ);
-
-            StagedOutboxEvent outboxEvent = (outboxPort != null)
-                    ? new StagedOutboxEvent(
-                            EventId.random(),
-                            "ISLAND_RECYCLED",
-                            islandId.value().toString(),
-                            payload)
-                    : null;
-
-            try {
-                islandStoragePort.deleteIsland(islandId, outboxEvent);
-            } catch (Exception e) {
-                if (recycleOperationPort != null) {
-                    recycleOperationPort.updateState(
-                            operationId,
-                            IslandRecycleState.FAILED,
-                            null,
-                            "Canonical island deletion failed: " + e.getMessage(),
-                            clock.instant());
-                }
-                return new RecycleResult.Failure("Canonical island deletion failed: " + e.getMessage());
-            }
-
-            // 6. Release Archimedean spiral slot
-            try {
-                spiralSlotPoolPort.releaseSlot(finalSlotIndex, finalWorldName, finalGridX, finalGridZ);
-            } catch (Exception e) {
-                if (recycleOperationPort != null) {
-                    recycleOperationPort.updateState(
-                            operationId,
-                            IslandRecycleState.FAILED,
-                            null,
-                            "Slot release failed: " + e.getMessage(),
-                            clock.instant());
-                }
-                return new RecycleResult.Failure("Slot release failed: " + e.getMessage());
-            }
-
-            // Transaction State: SLOT_RELEASED (Only after slot release actually succeeds)
-            if (recycleOperationPort != null) {
-                recycleOperationPort.updateState(
-                        operationId, IslandRecycleState.SLOT_RELEASED, null, null, clock.instant());
-            }
-
-            // 7. Transaction State: COMPLETED
-            if (recycleOperationPort != null) {
-                recycleOperationPort.updateState(
-                        operationId, IslandRecycleState.COMPLETED, null, null, clock.instant());
-            }
-
-            // The island is gone, so everything keeping something for it in memory is told to let
-            // it go. An island id is never reused, so a cache that keeps one is holding memory for
-            // an island that cannot come back.
-            cacheEviction.forget(islandId);
-            return new RecycleResult.Success(islandId, finalSlotIndex, finalWorldName, finalGridX, finalGridZ);
-        });
-    }
-
-    /**
-     * Recovers incomplete island recycle operations on system startup.
-     *
-     * <p>Enforces:
-     * <ul>
-     *   <li>Operations in {@link IslandRecycleState#CANONICAL_DELETE}: canonical deletion already succeeded in SQL,
-     *       so release the Archimedean spiral slot and advance state to {@code SLOT_RELEASED} and {@code COMPLETED}.</li>
-     *   <li>Operations in {@link IslandRecycleState#SLOT_RELEASED}: slot was already released, so advance to {@code COMPLETED}.</li>
-     * </ul>
-     */
-    public void recoverIncompleteOperations() {
-        if (recycleOperationPort == null) {
-            return;
-        }
-
-        List<IslandRecycleOperation> pendingDeletes =
-                recycleOperationPort.findOperationsByState(IslandRecycleState.CANONICAL_DELETE);
-        for (IslandRecycleOperation op : pendingDeletes) {
-            try {
-                releaseSlotOnRecovery(op.targetSlot());
-                recycleOperationPort.updateState(
-                        op.operationId(), IslandRecycleState.SLOT_RELEASED, null, null, clock.instant());
-                recycleOperationPort.updateState(
-                        op.operationId(), IslandRecycleState.COMPLETED, null, null, clock.instant());
-            } catch (Exception e) {
-                recycleOperationPort.updateState(
-                        op.operationId(),
-                        IslandRecycleState.FAILED,
-                        null,
-                        "Startup recovery slot release failed: " + e.getMessage(),
-                        clock.instant());
-            }
-        }
-
-        List<IslandRecycleOperation> pendingCompletions =
-                recycleOperationPort.findOperationsByState(IslandRecycleState.SLOT_RELEASED);
-        for (IslandRecycleOperation op : pendingCompletions) {
-            recycleOperationPort.updateState(
-                    op.operationId(), IslandRecycleState.COMPLETED, null, null, clock.instant());
         }
     }
 
@@ -589,7 +369,7 @@ public final class IslandRecycleService {
      * <p>The pool row is the only thing that knows. When it is there, it says where. When it is
      * not, there is nothing allocated to hand back and inventing a row is worse than doing nothing.
      */
-    private void releaseSlotOnRecovery(long slotIndex) {
+    void releaseSlotOnRecovery(long slotIndex) {
         Optional<RecycledSlot> slot = spiralSlotPoolPort.findBySlotIndex(slotIndex);
         if (slot.isEmpty()) {
             LOGGER.fine(() -> "Recovering a recycle that had no pool row for slot " + slotIndex
@@ -606,5 +386,24 @@ public final class IslandRecycleService {
     public RecycleResult executeResetSync(
             ProfileId requester, IslandId islandId, @Nullable String verificationCode, boolean adminBypass) {
         return executeReset(requester, islandId, verificationCode, adminBypass).join();
+    }
+
+    /**
+     * Recovers incomplete island recycle operations on system startup.
+     *
+     * <p>Enforces:
+     * <ul>
+     *   <li>Operations in {@link IslandRecycleState#CANONICAL_DELETE}: canonical deletion already succeeded in SQL,
+     *       so release the Archimedean spiral slot and advance state to {@code SLOT_RELEASED} and {@code COMPLETED}.</li>
+     *   <li>Operations in {@link IslandRecycleState#SLOT_RELEASED}: slot was already released, so advance to {@code COMPLETED}.</li>
+     * </ul>
+     */
+    public void recoverIncompleteOperations() {
+        runs.recoverIncompleteOperations();
+    }
+
+    /** Lets every per island cache go of an island the reset just erased. */
+    void forgetEverywhere(IslandId islandId) {
+        cacheEviction.forget(islandId);
     }
 }
