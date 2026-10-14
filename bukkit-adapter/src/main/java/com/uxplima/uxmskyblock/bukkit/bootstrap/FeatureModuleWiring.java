@@ -2,6 +2,8 @@ package com.uxplima.uxmskyblock.bukkit.bootstrap;
 
 import java.util.Objects;
 
+import com.uxplima.uxmskyblock.bukkit.bank.BankInterestBeat;
+import com.uxplima.uxmskyblock.bukkit.integration.economy.SkyblockEconomyBridge;
 import com.uxplima.uxmskyblock.bukkit.module.BukkitModuleContext;
 import com.uxplima.uxmskyblock.bukkit.module.builtin.AllianceFeatureModule;
 import com.uxplima.uxmskyblock.bukkit.module.builtin.AntiAbuseFeatureModule;
@@ -43,6 +45,8 @@ public final class FeatureModuleWiring implements AutoCloseable {
     private final ModuleRegistry moduleRegistry;
     private final BukkitModuleContext moduleContext;
     private final @Nullable BankUpkeepFeatureModule bankUpkeepFeatureModule;
+    private final @Nullable BankInterestBeat bankInterest;
+    private final com.uxplima.uxmskyblock.core.application.scheduler.SchedulerPort scheduler;
 
     public FeatureModuleWiring(
             ConfigurationWiring config,
@@ -67,9 +71,35 @@ public final class FeatureModuleWiring implements AutoCloseable {
                     persistence.islandStoragePort(),
                     config.islandWorlds(),
                     serverNodeId);
+            // Interest on the money an island bank holds, paid to an island one of whose members played lately.
+            var cap = new com.uxplima.uxmskyblock.bukkit.bank.BankCap(
+                    gameplay.upgradeService()::getDefinition, gameplay.upgradeService()::getCurrentTier);
+            this.bankInterest = new BankInterestBeat(
+                    new com.uxplima.uxmskyblock.core.application.bank.IslandBankInterest(
+                            persistence.islandBankPort(),
+                            gameplay.bankService(),
+                            new com.uxplima.uxmskyblock.bukkit.inactivity.BukkitPlayerActivityProvider(),
+                            cap::of),
+                    () -> config.bankPayoutsConfig().interest(),
+                    () -> config.islandWorlds().stream()
+                            .flatMap(world -> persistence.islandStoragePort().findAllByWorld(world).stream())
+                            .toList(),
+                    serverNodeId);
+            // A deleted island pays its owner back the share of its bank money the operator set, zero by default.
+            SkyblockEconomyBridge wallets = integration.economyBridge();
+            gameplay.recycleService()
+                    .useBeforeDelete(new com.uxplima.uxmskyblock.bukkit.bank.DeleteRefund(
+                            persistence.islandBankPort(),
+                            gameplay.bankService(),
+                            () -> config.bankPayoutsConfig().deleteRefundShare(),
+                            (owner, minorUnits) -> wallets.depositWallet(
+                                    org.bukkit.Bukkit.getOfflinePlayer(owner.value()), minorUnits / 100.0),
+                            serverNodeId));
         } else {
             this.bankUpkeepFeatureModule = null;
+            this.bankInterest = null;
         }
+        this.scheduler = gameplay.scheduler();
 
         if (config.moduleSettings().isModuleEnabled("core")) {
             this.moduleRegistry.register(new CoreModule(gameplay.createIslandUseCase()));
@@ -188,6 +218,9 @@ public final class FeatureModuleWiring implements AutoCloseable {
 
     public void enable() {
         moduleRegistry.enableModules(moduleContext);
+        if (bankInterest != null) {
+            bankInterest.start(scheduler);
+        }
     }
 
     public ModuleRegistry moduleRegistry() {
@@ -204,6 +237,9 @@ public final class FeatureModuleWiring implements AutoCloseable {
 
     @Override
     public void close() {
+        if (bankInterest != null) {
+            bankInterest.close();
+        }
         moduleRegistry.disableModules();
     }
 }

@@ -477,6 +477,12 @@ public final class ConfigurationLoader {
                 "island-effects.conf",
                 com.uxplima.uxmskyblock.bukkit.config.IslandEffectsConfiguration::load,
                 com.uxplima.uxmskyblock.bukkit.config.IslandEffectsConfiguration.defaultConfiguration()));
+        wiring.useBankPayoutsConfig(loadConfig(
+                plugin,
+                dataDir,
+                "bank.conf",
+                com.uxplima.uxmskyblock.bukkit.config.BankPayoutsConfiguration::load,
+                com.uxplima.uxmskyblock.bukkit.config.BankPayoutsConfiguration.defaultConfiguration()));
         wiring.useFlyConfig(loadConfig(
                 plugin,
                 dataDir,

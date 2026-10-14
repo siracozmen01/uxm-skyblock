@@ -614,6 +614,19 @@ public final class ConfigurationWiring {
         this.islandEffectsConfig = Objects.requireNonNull(config, "config must not be null");
     }
 
+    /** What an island bank pays out, from {@code modules/bank.conf}, the shipped one until the loader reads it. */
+    private volatile com.uxplima.uxmskyblock.bukkit.config.BankPayoutsConfiguration bankPayoutsConfig =
+            com.uxplima.uxmskyblock.bukkit.config.BankPayoutsConfiguration.defaultConfiguration();
+
+    public com.uxplima.uxmskyblock.bukkit.config.BankPayoutsConfiguration bankPayoutsConfig() {
+        return bankPayoutsConfig;
+    }
+
+    /** Hands over the interest and delete refund of {@code modules/bank.conf} as the server read them. */
+    public void useBankPayoutsConfig(com.uxplima.uxmskyblock.bukkit.config.BankPayoutsConfiguration config) {
+        this.bankPayoutsConfig = Objects.requireNonNull(config, "config must not be null");
+    }
+
     /** Flight on islands, {@code modules/fly.conf}, the shipped one until the loader hands the file over. */
     private volatile com.uxplima.uxmskyblock.bukkit.config.IslandFlyConfiguration flyConfig =
             com.uxplima.uxmskyblock.bukkit.config.IslandFlyConfiguration.defaultConfiguration();

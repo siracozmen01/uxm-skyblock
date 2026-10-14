@@ -87,6 +87,17 @@ public final class IslandRecycleService {
         this.wipeAreas = java.util.Objects.requireNonNull(areas, "areas must not be null");
     }
 
+    /** What is done with an island just before its record is deleted: nothing, until the wiring says. */
+    private volatile java.util.function.Consumer<Island> beforeDelete = island -> {};
+
+    /**
+     * Has {@code step} done with every island just before its record is deleted, once its world is cleared. A step
+     * that fails is logged and the delete goes on.
+     */
+    public void useBeforeDelete(java.util.function.Consumer<Island> step) {
+        this.beforeDelete = java.util.Objects.requireNonNull(step, "step must not be null");
+    }
+
     public IslandRecycleService(
             IslandStoragePort islandStoragePort,
             WorldGridAllocationPort worldGridAllocationPort,
@@ -429,6 +440,14 @@ public final class IslandRecycleService {
                         operationId, IslandRecycleState.VOID_COMPLETE, null, null, clock.instant());
             }
             areas.cleared(islandId);
+
+            try {
+                beforeDelete.accept(island);
+            } catch (RuntimeException failed) {
+                java.util.logging.Logger.getLogger(IslandRecycleService.class.getName())
+                        .warning(() -> "The step before deleting island " + islandId.value() + " failed: "
+                                + failed.getMessage());
+            }
 
             // 5. Transaction State: CANONICAL_DELETE (Must succeed before releasing slot)
             if (recycleOperationPort != null) {

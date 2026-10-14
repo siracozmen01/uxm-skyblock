@@ -366,6 +366,43 @@ class IslandRecycleServiceTest {
         verify(islandStoragePort, never()).deleteIsland(any(), any());
     }
 
+    @Test
+    @DisplayName(
+            "The step before delete sees the island once its world is cleared, and a failing step does not stop the delete")
+    void theStepBeforeDeleteRuns() {
+        java.util.List<String> seen = new java.util.ArrayList<>();
+        when(voidingPort.voidIslandChunks(any(), any(), any())).thenAnswer(call -> {
+            seen.add("cleared");
+            return CompletableFuture.completedFuture(null);
+        });
+        service.useBeforeDelete(gone -> {
+            seen.add("before " + gone.id().value());
+            throw new IllegalStateException("the wallet is down");
+        });
+
+        RecycleResult result = service.executeReset(new ProfileId(UUID.randomUUID()), islandId, null, true)
+                .join();
+
+        assertThat(result).isInstanceOf(RecycleResult.Success.class);
+        assertThat(seen).containsExactly("cleared", "before " + islandId.value());
+        verify(islandStoragePort).deleteIsland(eq(islandId), any());
+    }
+
+    @Test
+    @DisplayName("A reset that fails before the delete runs no step before it")
+    void aFailedResetRunsNoStep() {
+        java.util.List<Object> seen = new java.util.ArrayList<>();
+        service.useBeforeDelete(seen::add);
+        CompletableFuture<Void> failedFuture = new CompletableFuture<>();
+        failedFuture.completeExceptionally(new RuntimeException("Folia region timeout"));
+        when(voidingPort.voidIslandChunks(any(), any(), any())).thenReturn(failedFuture);
+
+        service.executeReset(new ProfileId(UUID.randomUUID()), islandId, null, true)
+                .join();
+
+        assertThat(seen).isEmpty();
+    }
+
     private static final class MutableClock extends Clock {
         private Instant current;
 
