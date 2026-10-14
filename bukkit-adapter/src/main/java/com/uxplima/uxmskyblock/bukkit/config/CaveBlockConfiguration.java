@@ -23,7 +23,8 @@ public record CaveBlockConfiguration(
         CavePlan.Shape shape,
         String shell,
         Map<String, Palette> palettes,
-        Map<String, Structure> structures) {
+        Map<String, Structure> structures,
+        Map<String, Zone> zones) {
 
     public static final String OVERWORLD = "overworld";
     public static final String NETHER = "the_nether";
@@ -79,6 +80,67 @@ public record CaveBlockConfiguration(
         }
     }
 
+    /**
+     * A zone of the cave with its own look: each zone takes its share of the round of the island, outside the room
+     * players arrive in, with its own biome and the blocks its floors and ceilings are covered in.
+     *
+     * @param biome the biome its blocks are, by key; empty to leave the island's own
+     * @param deep whether the whole zone is laid as the dimension's deep rock, with its deep ores
+     * @param floor the blocks a floor is covered in, each BLOCK:chance
+     * @param onFloor what stands on a floor, each BLOCK:chance
+     * @param ceiling the blocks a ceiling is covered in
+     * @param underCeiling what hangs under a ceiling
+     * @param dimensions the dimensions the zone is in, by id
+     */
+    public record Zone(
+            String biome,
+            boolean deep,
+            OreTable floor,
+            OreTable onFloor,
+            OreTable ceiling,
+            OreTable underCeiling,
+            List<String> dimensions) {
+
+        public Zone {
+            Objects.requireNonNull(biome, "biome must not be null");
+            Objects.requireNonNull(floor, "floor must not be null");
+            Objects.requireNonNull(onFloor, "on-floor must not be null");
+            Objects.requireNonNull(ceiling, "ceiling must not be null");
+            Objects.requireNonNull(underCeiling, "under-ceiling must not be null");
+            dimensions = List.copyOf(dimensions);
+        }
+    }
+
+    /** The shipped zones of the overworld's caves: lush caves, dripstone caves and the deep dark. */
+    public static final Map<String, Zone> SHIPPED_ZONES = Map.of(
+            "lush",
+            new Zone(
+                    "lush_caves",
+                    false,
+                    ores("MOSS_BLOCK:0.8", "CLAY:0.08"),
+                    ores("MOSS_CARPET:0.25", "AZALEA:0.04", "FLOWERING_AZALEA:0.03", "SHORT_GRASS:0.1"),
+                    ores("MOSS_BLOCK:0.5"),
+                    ores("CAVE_VINES:0.12", "SPORE_BLOSSOM:0.01"),
+                    List.of(OVERWORLD)),
+            "dripstone",
+            new Zone(
+                    "dripstone_caves",
+                    false,
+                    ores("DRIPSTONE_BLOCK:0.6"),
+                    ores("POINTED_DRIPSTONE:0.15"),
+                    ores("DRIPSTONE_BLOCK:0.6"),
+                    ores("POINTED_DRIPSTONE:0.2"),
+                    List.of(OVERWORLD)),
+            "deep_dark",
+            new Zone(
+                    "deep_dark",
+                    true,
+                    ores("SCULK:0.7"),
+                    ores("SCULK_SENSOR:0.02", "SCULK_SHRIEKER:0.005"),
+                    ores("SCULK:0.3"),
+                    OreTable.NONE,
+                    List.of(OVERWORLD)));
+
     /** The shipped structures: a dungeon, mineshafts, a geode and a trial chamber, each its own schematic. */
     public static final Map<String, Structure> SHIPPED_STRUCTURES = Map.of(
             "dungeon",
@@ -100,11 +162,31 @@ public record CaveBlockConfiguration(
 
     /** The shipped structures. */
     public CaveBlockConfiguration(boolean enabled, CavePlan.Shape shape, String shell, Map<String, Palette> palettes) {
-        this(enabled, shape, shell, palettes, SHIPPED_STRUCTURES);
+        this(enabled, shape, shell, palettes, SHIPPED_STRUCTURES, SHIPPED_ZONES);
+    }
+
+    /** The shipped zones. */
+    public CaveBlockConfiguration(
+            boolean enabled,
+            CavePlan.Shape shape,
+            String shell,
+            Map<String, Palette> palettes,
+            Map<String, Structure> structures) {
+        this(enabled, shape, shell, palettes, structures, SHIPPED_ZONES);
+    }
+
+    /** The zones of a dimension, in the order of their names. */
+    public List<Zone> zonesOf(String dimension) {
+        return zones.entrySet().stream()
+                .sorted(Map.Entry.comparingByKey())
+                .map(Map.Entry::getValue)
+                .filter(zone -> zone.dimensions().contains(dimension))
+                .toList();
     }
 
     public CaveBlockConfiguration {
         structures = Map.copyOf(structures);
+        zones = Map.copyOf(zones);
         Objects.requireNonNull(shape, "shape must not be null");
         Objects.requireNonNull(shell, "shell must not be null");
         palettes = Map.copyOf(palettes);
@@ -193,7 +275,47 @@ public record CaveBlockConfiguration(
                 shape,
                 root.node("shell").getString(shipped.shell()).trim().toUpperCase(Locale.ROOT),
                 palettes,
-                structures(root.node("structures")));
+                structures(root.node("structures")),
+                zones(root.node("zones")));
+    }
+
+    /**
+     * The zones the file writes, by name, over the shipped ones, as the structures are: a shipped one left out stays,
+     * one written takes what it leaves out from the shipped one of its name, and one that cannot be read is left out.
+     */
+    private static Map<String, Zone> zones(ConfigurationNode written) {
+        Map<String, Zone> all = new java.util.LinkedHashMap<>(SHIPPED_ZONES);
+        for (Map.Entry<Object, ? extends ConfigurationNode> entry :
+                written.childrenMap().entrySet()) {
+            String name = String.valueOf(entry.getKey()).trim().toLowerCase(Locale.ROOT);
+            ConfigurationNode node = entry.getValue();
+            Zone shipped = SHIPPED_ZONES.getOrDefault(
+                    name,
+                    new Zone(
+                            "", false, OreTable.NONE, OreTable.NONE, OreTable.NONE, OreTable.NONE, List.of(OVERWORLD)));
+            try {
+                all.put(
+                        name,
+                        new Zone(
+                                node.node("biome")
+                                        .getString(shipped.biome())
+                                        .trim()
+                                        .toLowerCase(Locale.ROOT),
+                                node.node("deep").getBoolean(shipped.deep()),
+                                oresOf(node.node("floor"), shipped.floor()),
+                                oresOf(node.node("on-floor"), shipped.onFloor()),
+                                oresOf(node.node("ceiling"), shipped.ceiling()),
+                                oresOf(node.node("under-ceiling"), shipped.underCeiling()),
+                                AcidIslandConfiguration.strings(node.node("dimensions"), shipped.dimensions()).stream()
+                                        .map(dimension -> dimension.trim().toLowerCase(Locale.ROOT))
+                                        .toList()));
+            } catch (IllegalArgumentException e) {
+                all.remove(name);
+                LOGGER.warning(
+                        () -> "modules/caveblock.conf zones." + name + ": " + e.getMessage() + ". It is left out.");
+            }
+        }
+        return all;
     }
 
     /**
