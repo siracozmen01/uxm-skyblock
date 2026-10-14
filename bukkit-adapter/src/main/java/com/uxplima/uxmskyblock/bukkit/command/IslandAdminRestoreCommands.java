@@ -1,7 +1,6 @@
 package com.uxplima.uxmskyblock.bukkit.command;
 
 import java.util.Comparator;
-import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.function.Supplier;
@@ -32,9 +31,7 @@ import com.uxplima.uxmskyblock.core.application.scheduler.SchedulerPort;
 import com.uxplima.uxmskyblock.core.application.snapshot.IslandRestoreService;
 import com.uxplima.uxmskyblock.core.domain.backup.BackupCatalogRecord;
 import com.uxplima.uxmskyblock.core.domain.backup.BackupLifecycleState;
-import com.uxplima.uxmskyblock.core.domain.backup.BackupManifest;
 import com.uxplima.uxmskyblock.core.domain.backup.BackupSetId;
-import com.uxplima.uxmskyblock.core.domain.dimension.DimensionId;
 import com.uxplima.uxmskyblock.core.domain.identity.IslandId;
 import com.uxplima.uxmskyblock.core.domain.identity.PlayerUuid;
 import com.uxplima.uxmskyblock.core.domain.identity.ProfileId;
@@ -53,18 +50,24 @@ import org.jspecify.annotations.Nullable;
  */
 public final class IslandAdminRestoreCommands {
 
+    /** {@code /isadmin backup} and its restore from a set: one island copied, and put back from the copy an operator names. */
+    private final IslandBackupVerbs islandBackups = new IslandBackupVerbs(this);
+
+    /** {@code /isadmin backup database} and its restore: the whole database copied, and put back only after the typed confirmation. */
+    private final DatabaseRestoreVerbs databaseVerbs = new DatabaseRestoreVerbs(this);
+
     private final Supplier<@Nullable IslandRestoreService> restoreServiceProvider;
-    private final Supplier<@Nullable BackupService> backupServiceProvider;
+    final Supplier<@Nullable BackupService> backupServiceProvider;
     private final Supplier<@Nullable IslandRecycleService> recycleServiceProvider;
-    private final Supplier<@Nullable StorageBucket> backupBucketProvider;
-    private final Supplier<@Nullable IslandBackupService> islandBackupServiceProvider;
+    final Supplier<@Nullable StorageBucket> backupBucketProvider;
+    final Supplier<@Nullable IslandBackupService> islandBackupServiceProvider;
 
     /** The whole database backup the persistence specification publishes and nothing ever took. */
-    private volatile Supplier<@Nullable DatabaseDisasterBackupService> databaseBackupServiceProvider = () -> null;
+    volatile Supplier<@Nullable DatabaseDisasterBackupService> databaseBackupServiceProvider = () -> null;
 
-    private final IslandLocationService islandLocationService;
-    private final @Nullable PlayerSessionCoordinator sessionCoordinator;
-    private final SchedulerPort schedulerPort;
+    final IslandLocationService islandLocationService;
+    final @Nullable PlayerSessionCoordinator sessionCoordinator;
+    final SchedulerPort schedulerPort;
     private final Messages messages;
 
     public IslandAdminRestoreCommands(
@@ -160,7 +163,8 @@ public final class IslandAdminRestoreCommands {
                     Placeholder.unparsed("island", optIsland.get().value().toString()),
                     Placeholder.unparsed("backup", latest.get().backupSetId().toString()),
                     Placeholder.unparsed("mode", mode.name()));
-            restoreFromSet(sender, rService, latest.get().backupSetId().toString(), mode);
+            islandBackups.restoreFromSet(
+                    sender, rService, latest.get().backupSetId().toString(), mode);
         });
         return Cmd.OK;
     }
@@ -191,104 +195,13 @@ public final class IslandAdminRestoreCommands {
                 // The specification publishes two kinds of backup. This is the second one, and
                 // until now nothing could take it: the port, its adapter and the word in the
                 // catalog table were all written and no command drove any of them.
-                .then(Cmd.literal("database").executes(this::executeDatabaseBackup))
-                .then(Cmd.argument("island", StringArgumentType.word()).executes(this::executeBackup));
+                .then(Cmd.literal("database").executes(databaseVerbs::executeDatabaseBackup))
+                .then(Cmd.argument("island", StringArgumentType.word()).executes(islandBackups::executeBackup));
     }
 
     /** Tells this command group what takes a whole database backup. */
     public void useDatabaseBackup(Supplier<@Nullable DatabaseDisasterBackupService> provider) {
         this.databaseBackupServiceProvider = Objects.requireNonNull(provider, "provider must not be null");
-    }
-
-    private int executeDatabaseBackup(CommandContext<CommandSourceStack> ctx) {
-        CommandSender sender = ctx.getSource().getSender();
-        DatabaseDisasterBackupService service = databaseBackupServiceProvider.get();
-        if (service == null) {
-            send(sender, "admin.backup_not_configured");
-            return Cmd.OK;
-        }
-
-        schedulerPort.async(() -> {
-            StorageBucket bucket = backupBucketProvider.get();
-            if (bucket == null) {
-                send(sender, "admin.restore_not_configured");
-                return;
-            }
-            send(sender, "admin.database_backup_starting");
-
-            // Reading every table and sending the result somewhere is what this is, so it runs off
-            // the thread the command arrived on and nothing here touches the game.
-            switch (service.backupDatabase(bucket)) {
-                case DatabaseDisasterBackupService.Outcome.Success success ->
-                    send(
-                            sender,
-                            "admin.database_backup_success",
-                            Placeholder.unparsed("backup", success.backupSetId().toString()),
-                            Placeholder.unparsed("dialect", success.dialect().name()),
-                            Placeholder.unparsed("bytes", Long.toString(success.bytes())));
-                case DatabaseDisasterBackupService.Outcome.Partial partial ->
-                    send(
-                            sender,
-                            "admin.backup_partial",
-                            Placeholder.unparsed("backup", partial.backupSetId().toString()));
-                case DatabaseDisasterBackupService.Outcome.Failure failure ->
-                    send(sender, "admin.backup_failed", Placeholder.unparsed("reason", failure.reason()));
-            }
-        });
-        return Cmd.OK;
-    }
-
-    private int executeBackup(CommandContext<CommandSourceStack> ctx) {
-        CommandSender sender = ctx.getSource().getSender();
-        IslandBackupService backupService = islandBackupServiceProvider.get();
-        if (backupService == null) {
-            send(sender, "admin.backup_not_configured");
-            return Cmd.OK;
-        }
-        String target = StringArgumentType.getString(ctx, "island");
-
-        schedulerPort.async(() -> {
-            StorageBucket bucket = backupBucketProvider.get();
-            if (bucket == null) {
-                send(sender, "admin.restore_not_configured");
-                return;
-            }
-            Optional<IslandId> optIsland =
-                    IslandAdminCommands.resolveIslandId(sessionCoordinator, islandLocationService, target);
-            if (optIsland.isEmpty()) {
-                send(sender, "admin.island_unresolved", Placeholder.unparsed("target", target));
-                return;
-            }
-
-            IslandId islandId = optIsland.get();
-            send(
-                    sender,
-                    "admin.backup_starting",
-                    Placeholder.unparsed("island", islandId.value().toString()));
-
-            // Reading the database and every chunk inside the island's bounds is what this is, so it
-            // runs here on the scheduler and the world adapter hops onto each owning region itself.
-            IslandBackupService.BackupOutcome outcome = backupService.backupIsland(
-                    islandId, bucket, List.of(DimensionId.OVERWORLD, DimensionId.THE_NETHER, DimensionId.THE_END));
-
-            switch (outcome) {
-                case IslandBackupService.BackupOutcome.Success success ->
-                    send(
-                            sender,
-                            "admin.backup_success",
-                            Placeholder.unparsed("island", islandId.value().toString()),
-                            Placeholder.unparsed("backup", success.backupSetId().toString()),
-                            Placeholder.unparsed("artifacts", Integer.toString(success.artifacts())));
-                case IslandBackupService.BackupOutcome.Partial partial ->
-                    send(
-                            sender,
-                            "admin.backup_partial",
-                            Placeholder.unparsed("backup", partial.backupSetId().toString()));
-                case IslandBackupService.BackupOutcome.Failure failure ->
-                    send(sender, "admin.backup_failed", Placeholder.unparsed("reason", failure.reason()));
-            }
-        });
-        return Cmd.OK;
     }
 
     public LiteralArgumentBuilder<CommandSourceStack> buildRestore() {
@@ -302,7 +215,7 @@ public final class IslandAdminRestoreCommands {
                         .then(Cmd.argument("backupId", StringArgumentType.word())
                                 .executes(this::executeDatabaseRestoreRequest)
                                 .then(Cmd.argument("code", StringArgumentType.word())
-                                        .executes(this::executeDatabaseRestoreConfirm))))
+                                        .executes(databaseVerbs::executeDatabaseRestoreConfirm))))
                 .then(Cmd.argument("backupId", StringArgumentType.word())
                         .executes(ctx -> executeAdminRestore(ctx, RestoreMode.safeDefault()))
                         .then(Cmd.argument("mode", StringArgumentType.word())
@@ -317,7 +230,7 @@ public final class IslandAdminRestoreCommands {
      * asks for four before it erases all of them.
      */
     private int executeDatabaseRestoreRequest(CommandContext<CommandSourceStack> ctx) {
-        return withDatabaseRestore(ctx, (sender, service, requester, backupSetId) -> {
+        return databaseVerbs.withDatabaseRestore(ctx, (sender, service, requester, backupSetId) -> {
             DatabaseDisasterBackupService.RestoreOutcome outcome = service.requestRestore(requester, backupSetId);
             if (outcome instanceof DatabaseDisasterBackupService.RestoreOutcome.CodeIssued issued) {
                 send(
@@ -329,64 +242,13 @@ public final class IslandAdminRestoreCommands {
         });
     }
 
-    /** {@code /is admin restore database <backupId> <code>}: and then does it. */
-    private int executeDatabaseRestoreConfirm(CommandContext<CommandSourceStack> ctx) {
-        String code = StringArgumentType.getString(ctx, "code");
-        return withDatabaseRestore(ctx, (sender, service, requester, backupSetId) -> {
-            StorageBucket bucket = backupBucketProvider.get();
-            if (bucket == null) {
-                send(sender, "admin.restore_not_configured");
-                return;
-            }
-            send(sender, "admin.database_restore_starting", Placeholder.unparsed("backup", backupSetId.toString()));
-            switch (service.restoreDatabase(bucket, backupSetId, requester, code)) {
-                case DatabaseDisasterBackupService.RestoreOutcome.Restored done ->
-                    send(
-                            sender,
-                            "admin.database_restore_success",
-                            Placeholder.unparsed("backup", done.backupSetId().toString()),
-                            Placeholder.unparsed("bytes", Long.toString(done.bytes())));
-                case DatabaseDisasterBackupService.RestoreOutcome.Refused refused ->
-                    send(sender, "admin.database_restore_refused", Placeholder.unparsed("reason", refused.reason()));
-                case DatabaseDisasterBackupService.RestoreOutcome.CodeIssued ignored ->
-                    send(sender, "admin.database_restore_refused", Placeholder.unparsed("reason", "unexpected"));
-            }
-        });
-    }
-
     @FunctionalInterface
-    private interface DatabaseRestoreWork {
+    interface DatabaseRestoreWork {
         void run(
                 CommandSender sender,
                 DatabaseDisasterBackupService service,
                 ProfileId requester,
                 BackupSetId backupSetId);
-    }
-
-    /** Resolves what both halves of the database restore need, and says why when it cannot. */
-    private int withDatabaseRestore(CommandContext<CommandSourceStack> ctx, DatabaseRestoreWork work) {
-        CommandSender sender = ctx.getSource().getSender();
-        DatabaseDisasterBackupService service = databaseBackupServiceProvider.get();
-        if (service == null) {
-            send(sender, "admin.backup_not_configured");
-            return Cmd.OK;
-        }
-        Optional<ProfileId> optRequester = requesterOf(sender);
-        if (optRequester.isEmpty()) {
-            send(sender, "admin.database_restore_needs_a_profile");
-            return Cmd.OK;
-        }
-        String raw = StringArgumentType.getString(ctx, "backupId");
-        BackupSetId backupSetId;
-        try {
-            backupSetId = BackupSetId.fromString(raw);
-        } catch (RuntimeException notAnId) {
-            send(sender, "admin.restore_unknown_backup", Placeholder.unparsed("backup", raw));
-            return Cmd.OK;
-        }
-        ProfileId requester = optRequester.get();
-        schedulerPort.async(() -> work.run(sender, service, requester, backupSetId));
-        return Cmd.OK;
     }
 
     /**
@@ -396,7 +258,7 @@ public final class IslandAdminRestoreCommands {
      * A console has no profile and so cannot hold a code; it is not shut out of anything it could
      * do before, because before this nothing could do it at all.
      */
-    private Optional<ProfileId> requesterOf(CommandSender sender) {
+    Optional<ProfileId> requesterOf(CommandSender sender) {
         if (sessionCoordinator == null || !(sender instanceof org.bukkit.entity.Player player)) {
             return Optional.empty();
         }
@@ -446,80 +308,9 @@ public final class IslandAdminRestoreCommands {
                 Placeholder.unparsed("backup", backupIdStr),
                 Placeholder.unparsed("mode", mode.name()));
 
-        restoreFromSet(sender, rService, backupIdStr, mode);
+        islandBackups.restoreFromSet(sender, rService, backupIdStr, mode);
 
         return Cmd.OK;
-    }
-
-    /**
-     * Restores one backup set, whichever way the operator named it.
-     *
-     * <p>Both entry points land here: the one that takes a backup id and the one that takes an
-     * island and finds its newest. The manifest is looked for under the plain prefix first and then
-     * under the one the catalogue records, because a backup written by an older version used the
-     * other shape.
-     */
-    private void restoreFromSet(
-            CommandSender sender, IslandRestoreService rService, String backupIdStr, RestoreMode mode) {
-        schedulerPort.async(() -> {
-            try {
-                BackupSetId backupSetId = BackupSetId.fromString(backupIdStr);
-                // The bucket is the one the operator named in storage.s3.bucket. It used to be
-                // written into this line, so an operator who renamed their bucket wrote backups to
-                // one place and restored from another that does not exist: the restore answered
-                // "manifest missing" and said nothing about why.
-                StorageBucket bucket = backupBucketProvider.get();
-                if (bucket == null) {
-                    send(sender, "admin.restore_not_configured");
-                    return;
-                }
-                String rootPrefix = "backups/" + backupSetId;
-
-                Optional<BackupManifest> optManifest = Optional.empty();
-                BackupService bService = backupServiceProvider.get();
-                if (bService != null) {
-                    optManifest = bService.loadManifest(bucket, rootPrefix);
-                }
-
-                if (optManifest.isEmpty()) {
-                    Optional<BackupCatalogRecord> optRecord =
-                            rService.catalogPort().findById(backupSetId);
-                    if (optRecord.isPresent() && bService != null) {
-                        BackupCatalogRecord record = optRecord.get();
-                        String customPrefix = "backups/" + record.targetRootTypeId() + "/" + record.targetRootKey()
-                                + "/" + backupSetId;
-                        optManifest = bService.loadManifest(bucket, customPrefix);
-                        if (optManifest.isPresent()) {
-                            rootPrefix = customPrefix;
-                        }
-                    }
-                }
-
-                if (optManifest.isEmpty()) {
-                    send(sender, "admin.restore_manifest_missing", Placeholder.unparsed("backup", backupIdStr));
-                    return;
-                }
-
-                BackupManifest manifest = optManifest.get();
-                IslandRestoreService.RestoreOutcome outcome =
-                        rService.executeRestore(manifest, bucket, rootPrefix, true, mode);
-                if (outcome instanceof IslandRestoreService.RestoreOutcome.Success success) {
-                    send(
-                            sender,
-                            "admin.restore_success",
-                            Placeholder.unparsed("backup", backupIdStr),
-                            Placeholder.unparsed("artifacts", Integer.toString(success.artifactsRestored())));
-                } else if (outcome instanceof IslandRestoreService.RestoreOutcome.Failure failure) {
-                    send(
-                            sender,
-                            "admin.restore_failed",
-                            Placeholder.unparsed("backup", backupIdStr),
-                            Placeholder.unparsed("reason", failure.reason()));
-                }
-            } catch (Exception e) {
-                send(sender, "admin.restore_error", Placeholder.unparsed("reason", String.valueOf(e.getMessage())));
-            }
-        });
     }
 
     public int executeAdminDelete(CommandContext<CommandSourceStack> ctx) {
@@ -573,11 +364,11 @@ public final class IslandAdminRestoreCommands {
         return Cmd.OK;
     }
 
-    private void send(Audience audience, String key, TagResolver... resolvers) {
+    void send(Audience audience, String key, TagResolver... resolvers) {
         send(audience, messages.render(audience, key, resolvers));
     }
 
-    private void send(Audience audience, Component component) {
+    void send(Audience audience, Component component) {
         if (audience instanceof Player player) {
             schedulerPort.onEntity(new PlayerUuid(player.getUniqueId()), () -> {
                 if (player.isOnline()) {
