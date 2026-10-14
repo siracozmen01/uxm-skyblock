@@ -76,6 +76,10 @@ class APlotIsResetToItsGroundTest extends MockBukkitHarness {
     private final Set<IslandId> plots = new HashSet<>();
     private final Instant[] now = {Instant.parse("2026-10-14T12:00:00Z")};
     private boolean spawnKnown = true;
+    private String spawnWorld = "plots";
+
+    @SuppressWarnings("NullAway.Init")
+    private IslandProtectionListener islands;
 
     @SuppressWarnings("NullAway.Init")
     private World world;
@@ -103,8 +107,7 @@ class APlotIsResetToItsGroundTest extends MockBukkitHarness {
                 new PlayerUuid(owner.getUniqueId()),
                 new ProfileId(UUID.randomUUID()),
                 Instant.now());
-        IslandProtectionListener islands =
-                new IslandProtectionListener(mock(IslandStoragePort.class), new IslandAccessService());
+        islands = new IslandProtectionListener(mock(IslandStoragePort.class), new IslandAccessService());
         islands.cacheIsland(plot, "plots");
         Island second = Island.create(
                 IslandId.of(UUID.randomUUID()),
@@ -170,7 +173,8 @@ class APlotIsResetToItsGroundTest extends MockBukkitHarness {
                 service,
                 islands,
                 id -> spawnKnown && id.equals(plot.id())
-                        ? Optional.of(new IslandLocation(plot.id(), "plots", plot.bounds(), 8.5, TOP + 1, 8.5, 90, 0))
+                        ? Optional.of(
+                                new IslandLocation(plot.id(), spawnWorld, plot.bounds(), 8.5, TOP + 1, 8.5, 90, 0))
                         : Optional.empty(),
                 scheduler,
                 GROUND,
@@ -308,6 +312,28 @@ class APlotIsResetToItsGroundTest extends MockBukkitHarness {
         build();
         run(owner, "island plot reset confirm");
         assertThat(said(owner)).contains("No reset of this plot was asked");
+
+        // The owner stands where the plot's bounds are cached in another world: the plot's own world is cleared.
+        World elsewhere = server.addSimpleWorld("plots_nether");
+        islands.cacheIsland(plot, "plots_nether");
+        elsewhere.getBlockAt(10, 110, 10).setType(Material.NETHERRACK);
+        owner.teleport(new Location(elsewhere, 8.5, 120, 8.5));
+        run(owner, "island plot reset");
+        run(owner, "island plot reset confirm");
+        assertThat(said(owner)).contains("being cleared");
+        assertThat(elsewhere.getBlockAt(10, 110, 10).getType())
+                .describedAs("the world the owner stands in is not the plot's")
+                .isEqualTo(Material.NETHERRACK);
+        assertThat(world.getBlockAt(10, 110, 10).getType()).isEqualTo(Material.AIR);
+        islands.cacheIsland(plot, "plots");
+        build();
+
+        spawnWorld = "gone";
+        owner.teleport(new Location(world, 8.5, 120, 8.5));
+        run(owner, "island plot reset");
+        run(owner, "island plot reset confirm");
+        assertThat(said(owner)).describedAs("a plot whose world is not loaded").contains("could not be reset");
+        spawnWorld = "plots";
 
         owner.teleport(new Location(world, 100, 120, 100));
         run(owner, "island plot reset");

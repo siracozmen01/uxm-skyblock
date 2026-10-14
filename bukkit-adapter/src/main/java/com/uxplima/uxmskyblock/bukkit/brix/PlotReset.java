@@ -13,6 +13,7 @@ import java.util.function.Function;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
+import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.World;
@@ -99,7 +100,6 @@ public final class PlotReset {
             messages.send(player, "brix.reset.not_asked");
             return;
         }
-        World world = player.getWorld();
         Island reset = plot.get();
         scheduler.async(() -> {
             Optional<IslandLocation> location;
@@ -115,9 +115,18 @@ public final class PlotReset {
                 return;
             }
             IslandLocation at = location.get();
-            int chunks = clear(world, reset.bounds(), at);
-            scheduler.onEntity(PlayerUuid.of(player.getUniqueId()), () -> messages.send(player, "brix.reset.done"));
-            LOGGER.fine(() -> "Brix plot " + reset.id() + " was reset over " + chunks + " chunks.");
+            // On the owner's thread, where Bukkit may be asked: the plot's own world, from its record, never the
+            // world the owner happens to stand in, where the same bounds may be another island's dimension.
+            scheduler.onEntity(PlayerUuid.of(player.getUniqueId()), () -> {
+                World world = Bukkit.getWorld(at.worldName());
+                if (world == null) {
+                    messages.send(player, "brix.reset.failed");
+                    return;
+                }
+                int chunks = clear(world, reset.bounds(), at);
+                messages.send(player, "brix.reset.done");
+                LOGGER.fine(() -> "Brix plot " + reset.id() + " was reset over " + chunks + " chunks.");
+            });
         });
     }
 
