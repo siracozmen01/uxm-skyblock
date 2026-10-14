@@ -203,7 +203,10 @@ public final class BootstrapEventRegistrar {
         // The commands the operator listed are refused a visitor on an island they are no member of.
         pm.registerEvents(
                 new com.uxplima.uxmskyblock.bukkit.visitor.VisitorCommandGuard(
-                        configWiring::visitorsConfig, gameplayWiring.protectionListener(), configWiring.messages()),
+                        configWiring::visitorsConfig,
+                        gameplayWiring.protectionListener(),
+                        configWiring.messages(),
+                        com.uxplima.uxmskyblock.bukkit.visitor.VisitorCommandGuard::serverNamesOf),
                 plugin);
         if (featureModuleWiring.moduleRegistry().isModuleEnabled("worth")) {
             // A block placed on one of its kind joins its stack, and each block of a stack counts toward worth.

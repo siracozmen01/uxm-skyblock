@@ -52,7 +52,12 @@ class AVisitorIsRefusedTheListedCommandsTest extends MockBukkitHarness {
         when(islands.findIslandAt(any(Location.class))).thenReturn(Optional.of(island));
         when(islands.activeProfile(new PlayerUuid(player.getUniqueId()))).thenReturn(Optional.of(profile));
         guard = new VisitorCommandGuard(
-                () -> new VisitorsConfiguration(List.of("sethome")), islands, Messages.bundled());
+                () -> new VisitorsConfiguration(List.of("sethome")),
+                islands,
+                Messages.bundled(),
+                label -> label.equals("createhome") || label.equals("ess:createhome")
+                        ? java.util.Set.of(label, "sethome", "essentials:sethome")
+                        : java.util.Set.of(label));
     }
 
     private boolean refused(String line) {
@@ -69,6 +74,14 @@ class AVisitorIsRefusedTheListedCommandsTest extends MockBukkitHarness {
                         .serialize(java.util.Objects.requireNonNull(player.nextComponentMessage())))
                 .contains("/sethome");
         assertThat(refused("/home base")).isFalse();
+    }
+
+    @Test
+    @DisplayName("A listed command is refused under each of its other names and their prefixes")
+    void underAnotherName() {
+        assertThat(refused("/createhome base")).isTrue();
+        assertThat(refused("/ess:createhome base")).isTrue();
+        assertThat(refused("/createhomes base")).isFalse();
     }
 
     @Test

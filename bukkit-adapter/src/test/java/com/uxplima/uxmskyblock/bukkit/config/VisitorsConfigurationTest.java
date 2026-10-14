@@ -42,5 +42,20 @@ class VisitorsConfigurationTest {
         assertThat(rules.blocking("/home farm")).isEmpty();
         assertThat(rules.blocking("/sethomes")).isEmpty();
         assertThat(rules.blocking("/is home")).isEmpty();
+
+        java.util.function.Function<String, java.util.Set<String>> aliases = label -> switch (label) {
+            case "h", "essentials:h" -> java.util.Set.of(label, "home", "Essentials:Home");
+            case "sh" -> java.util.Set.of(label, "sethome");
+            default -> java.util.Set.of(label);
+        };
+        assertThat(rules.blocking("/sh base", aliases)).contains("sethome");
+        assertThat(rules.blocking("/h set farm", aliases)).contains("home set");
+        assertThat(rules.blocking("/essentials:h set", aliases)).contains("home set");
+        assertThat(rules.blocking("/h farm", aliases)).isEmpty();
+        assertThat(rules.blocking("/settings", aliases)).isEmpty();
+        assertThat(rules.blocking("/h settings", aliases)).isEmpty();
+        assertThat(new VisitorsConfiguration(List.of("sh")).blocking("/sethome base", aliases))
+                .describedAs("an alias the operator listed blocks the command it runs")
+                .contains("sh");
     }
 }

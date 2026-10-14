@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
+import java.util.Set;
 
 import org.spongepowered.configurate.ConfigurationNode;
 
@@ -44,23 +45,52 @@ public record VisitorsConfiguration(List<String> blockedCommands) {
     }
 
     /**
-     * The blocked command {@code line} runs, a line as a player typed it after the slash, or nothing. A command's
-     * plugin prefix, as {@code essentials:sethome}, does not get it past.
+     * The blocked command {@code line} runs, a line as a player typed it after the slash, or nothing.
+     *
+     * <p>A command answers to more than one name: its own, its aliases, and each with its plugin's prefix. Each is
+     * read through {@code namesOf}, which gives every name the command a label runs answers to, so a blocked
+     * command is blocked under whichever of them the visitor types.
+     *
+     * @param namesOf every name of the command {@code label} runs, the label itself among them
      */
-    public java.util.Optional<String> blocking(String line) {
+    public java.util.Optional<String> blocking(String line, java.util.function.Function<String, Set<String>> namesOf) {
         String typed = words(line);
         int space = typed.indexOf(' ');
         String label = space < 0 ? typed : typed.substring(0, space);
-        int colon = label.indexOf(':');
-        if (colon >= 0) {
-            typed = typed.substring(colon + 1);
-        }
+        String rest = space < 0 ? "" : typed.substring(space + 1);
+        Set<String> typedNames = names(label, namesOf);
         for (String blocked : blockedCommands) {
-            if (typed.equals(blocked) || typed.startsWith(blocked + " ")) {
+            int gap = blocked.indexOf(' ');
+            String blockedLabel = gap < 0 ? blocked : blocked.substring(0, gap);
+            String blockedRest = gap < 0 ? "" : blocked.substring(gap + 1);
+            boolean sameCommand = names(blockedLabel, namesOf).stream().anyMatch(typedNames::contains);
+            boolean sameWords = blockedRest.isEmpty() || rest.equals(blockedRest) || rest.startsWith(blockedRest + " ");
+            if (sameCommand && sameWords) {
                 return java.util.Optional.of(blocked);
             }
         }
         return java.util.Optional.empty();
+    }
+
+    /** As {@link #blocking(String, java.util.function.Function)}, each command known by the name it is typed under. */
+    public java.util.Optional<String> blocking(String line) {
+        return blocking(line, label -> Set.of(label));
+    }
+
+    /** Every name {@code label} goes by, each also without a plugin's prefix. */
+    private static Set<String> names(String label, java.util.function.Function<String, Set<String>> namesOf) {
+        Set<String> names = new java.util.HashSet<>();
+        Set<String> read = new java.util.HashSet<>(namesOf.apply(label));
+        read.add(label);
+        for (String name : read) {
+            String lower = name.toLowerCase(Locale.ROOT);
+            names.add(lower);
+            int colon = lower.indexOf(':');
+            if (colon >= 0) {
+                names.add(lower.substring(colon + 1));
+            }
+        }
+        return names;
     }
 
     /** {@code line} in lower case, without its slash, its words one space apart. */
