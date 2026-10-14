@@ -657,7 +657,18 @@ public final class PersistenceBootstrap implements AutoCloseable {
         return acidIslandsAdapter;
     }
 
-    /** The chunks each ChunkBlock island has open. */
+    /** The chunks a ChunkBlock island opened in {@code dimension}, a dimension other than the overworld. */
+    public com.uxplima.uxmskyblock.core.application.chunkblock.ChunkTerritoryPort chunkTerritoryPort(String dimension) {
+        return new com.uxplima.uxmskyblock.persistence.chunkblock.SqlChunkTerritoryAdapter(
+                database.dataSource(), dimension);
+    }
+
+    /** What is paid toward a closed chunk of {@code dimension}, a dimension other than the overworld. */
+    public com.uxplima.uxmskyblock.core.application.chunkblock.ChunkPaymentPort chunkPaymentPort(String dimension) {
+        return new com.uxplima.uxmskyblock.persistence.chunkblock.SqlChunkPaymentAdapter(database, dimension);
+    }
+
+    /** The chunks each ChunkBlock island has open in the overworld. */
     public com.uxplima.uxmskyblock.core.application.chunkblock.ChunkTerritoryPort chunkTerritoryPort() {
         return chunkTerritoryAdapter;
     }

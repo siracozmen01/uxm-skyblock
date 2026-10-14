@@ -91,15 +91,22 @@ class ANewChunkBlockIslandHoldsOneChunkTest extends MockBukkitHarness {
     }
 
     @Test
-    @DisplayName("The preset plays ChunkBlock, starts the block before the chunk, and builds no Nether or End")
+    @DisplayName(
+            "The preset plays ChunkBlock, starts the block before the chunk, and starts a web of its own in its Nether"
+                    + " and End")
     void thePresetIsChunkBlock() throws Exception {
         StarterPreset preset = shipped().catalogue().findById("chunkblock").orElseThrow();
 
         assertThat(preset.mode()).isEqualTo(GameModeType.CHUNKBLOCK);
         assertThat(preset.start()).containsExactly(OneBlockStart.ACTION, ChunkBlockStart.ACTION);
         IslandBounds bounds = IslandBounds.fromCenterAndRadius(0, 0, 50);
-        assertThat(preset.dimensions().placeIn(DimensionId.THE_NETHER, bounds)).isEmpty();
-        assertThat(preset.dimensions().placeIn(DimensionId.THE_END, bounds)).isEmpty();
+        // No magic block below: one island has one, in the overworld. Each dimension's first chunk is a platform.
+        var nether = preset.dimensions().placeIn(DimensionId.THE_NETHER, bounds).orElseThrow();
+        assertThat(nether.template().actions()).containsExactly("uxm:dimension-platform", ChunkBlockStart.ACTION);
+        assertThat(nether.height()).isEqualTo(70);
+        var end = preset.dimensions().placeIn(DimensionId.THE_END, bounds).orElseThrow();
+        assertThat(end.template().actions()).containsExactly("uxm:dimension-platform", ChunkBlockStart.ACTION);
+        assertThat(end.height()).isEqualTo(64);
     }
 
     @Test

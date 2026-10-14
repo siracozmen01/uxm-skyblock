@@ -59,6 +59,10 @@ public final class ChunkSigns implements Listener {
     private final ChunkBlockService service;
     private final ChunkTiers tiers;
     private final IslandProtectionListener islands;
+
+    /** The worlds whose ground this guards; another dimension's web guards the rest. */
+    private volatile java.util.function.Predicate<String> worlds = world -> true;
+
     private final SchedulerPort scheduler;
     private final SignPainter painter;
     private final Messages messages;
@@ -98,7 +102,7 @@ public final class ChunkSigns implements Listener {
         World world = event.getWorld();
         int chunkX = event.getChunk().getX();
         int chunkZ = event.getChunk().getZ();
-        Optional<Island> island = islands.findIslandAt(new Location(world, (chunkX << 4) + 8, 0, (chunkZ << 4) + 8));
+        Optional<Island> island = islandAt(new Location(world, (chunkX << 4) + 8, 0, (chunkZ << 4) + 8));
         if (island.isEmpty() || service.inMemory(island.get().id()).isEmpty()) {
             return;
         }
@@ -132,12 +136,14 @@ public final class ChunkSigns implements Listener {
             return;
         }
         Optional<ChunkSignEntities.Marked> marked = ChunkSignEntities.marked(box);
-        if (marked.isEmpty()) {
+        // A sign of another dimension's web is that web's to answer.
+        org.bukkit.World where = box.getLocation().getWorld();
+        if (marked.isEmpty() || where == null || !worlds.test(where.getName())) {
             return;
         }
         event.setCancelled(true);
         Player player = event.getPlayer();
-        Optional<Island> island = islands.findIslandAt(box.getLocation());
+        Optional<Island> island = islandAt(box.getLocation());
         Optional<ProfileId> profile = activeProfile.apply(player.getUniqueId());
         boolean member = island.isPresent()
                 && island.get().id().value().toString().equals(marked.get().owner())
@@ -230,5 +236,16 @@ public final class ChunkSigns implements Listener {
     /** Forgets what was kept of an island that is gone or reset. */
     public void forget(IslandId islandId) {
         places.remove(islandId);
+    }
+
+    /** Guards only the worlds {@code guarded} names, so each dimension's web answers in its own worlds alone. */
+    public void guarding(java.util.function.Predicate<String> guarded) {
+        this.worlds = Objects.requireNonNull(guarded, "guarded must not be null");
+    }
+
+    /** The island at {@code at}, in a world this guards. */
+    private Optional<Island> islandAt(Location at) {
+        org.bukkit.World world = at.getWorld();
+        return world == null || !worlds.test(world.getName()) ? Optional.empty() : islands.findIslandAt(at);
     }
 }

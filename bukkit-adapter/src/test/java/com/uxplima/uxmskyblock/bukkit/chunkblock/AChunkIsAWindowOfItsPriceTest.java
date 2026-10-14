@@ -86,6 +86,15 @@ class AChunkIsAWindowOfItsPriceTest extends MockBukkitHarness {
     @SuppressWarnings("NullAway.Init")
     private ChunkUnlocks unlocks;
 
+    @SuppressWarnings("NullAway.Init")
+    private SchedulerPort scheduler;
+
+    @SuppressWarnings("NullAway.Init")
+    private ChunkPurchase purchase;
+
+    @org.junit.jupiter.api.io.TempDir
+    java.nio.file.Path dataDir;
+
     @BeforeEach
     void setUpWindow() {
         World world = server.addSimpleWorld("skyblock");
@@ -102,7 +111,7 @@ class AChunkIsAWindowOfItsPriceTest extends MockBukkitHarness {
         when(islands.findIslandById(island.id())).thenReturn(Optional.of(island));
         service = new ChunkBlockService(territories, new ChunkUnlockRules(List.of(2L, 5L), 5));
         service.start(island.id(), 8, 8);
-        SchedulerPort scheduler = mock(SchedulerPort.class);
+        scheduler = mock(SchedulerPort.class);
         doAnswer(call -> {
                     call.getArgument(0, Runnable.class).run();
                     return null;
@@ -138,7 +147,7 @@ class AChunkIsAWindowOfItsPriceTest extends MockBukkitHarness {
                 bank,
                 new IslandBankService(bank, islands, authorities),
                 authorities);
-        ChunkPurchase purchase = new ChunkPurchase(
+        purchase = new ChunkPurchase(
                 unlocks,
                 islands,
                 access,
@@ -337,6 +346,40 @@ class AChunkIsAWindowOfItsPriceTest extends MockBukkitHarness {
         window.clicked(player, LOGS);
         assertThat(count(Material.OAK_LOG)).isEqualTo(8);
         assertThat(said()).singleElement().asString().contains("Paid toward the Rare chunk");
+    }
+
+    @Test
+    @DisplayName("A tile's click from a player in another dimension is answered by that dimension's window")
+    void aClickIsAnsweredByTheWindowOfThePlayersWorld() {
+        World nether = server.addSimpleWorld("skyblock_nether");
+        com.uxplima.uxmskyblock.bukkit.menu.SkyblockMenuEngine engine =
+                com.uxplima.uxmskyblock.bukkit.menu.ShippedTemplates.engineWith(dataDir, "island-chunk.conf");
+        ChunkWindow there = new ChunkWindow(
+                purchase,
+                service,
+                islands,
+                scheduler,
+                Messages.bundled(),
+                id -> Optional.empty(),
+                uuid -> Optional.of(new ProfileId(uuid)),
+                (id, who) -> level.get());
+        window.useMenuEngine(engine);
+        there.drawWith(engine);
+        window.useElsewhere(world -> world.equals("skyblock_nether") ? Optional.of(there) : Optional.empty());
+        player.setLocation(new Location(nether, 8, 100, 8));
+
+        com.uxplima.uxmskyblock.bukkit.menu.ShippedTemplates.click(
+                engine,
+                ChunkWindow.OPEN,
+                com.uxplima.uxmlib.menu.runtime.MenuContext.of(player, null, 0).withEntry(new MenuRow(Map.of(), EAST)),
+                player,
+                com.uxplima.uxmlib.menu.spec.ClickKind.LEFT,
+                "");
+
+        assertThat(there.chunkOf(player))
+                .describedAs("the Nether's window answered")
+                .contains(EAST);
+        assertThat(window.chunkOf(player)).isEmpty();
     }
 
     @Test

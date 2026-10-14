@@ -113,21 +113,52 @@ public final class ChunkWindow {
         }
         engine.handedList(LINES);
         engine.handedList(FRONTIER);
+        // One window answers the engine's clicks, and hands each to the window of the web its player stands in.
         engine.action(
                 OPEN,
-                ctx -> MenuRow.handle(ctx.context(), ChunkPos.class).ifPresent(chunk -> show(ctx.player(), chunk)));
+                ctx -> MenuRow.handle(ctx.context(), ChunkPos.class)
+                        .ifPresent(chunk -> forPlayer(ctx.player()).show(ctx.player(), chunk)));
         engine.action(
                 PAY,
                 ctx -> MenuRow.handle(ctx.context(), ChunkRequirement.class)
-                        .ifPresent(line -> clicked(ctx.player(), line)));
-        engine.action(
-                PAY_ALL,
-                ctx -> chunkOf(ctx.player())
-                        .ifPresent(chunk -> purchase.payAll(ctx.player(), chunk, () -> reopen(ctx.player()))));
-        engine.action(
-                BYPASS,
-                ctx -> chunkOf(ctx.player())
-                        .ifPresent(chunk -> purchase.bypass(ctx.player(), chunk, () -> reopen(ctx.player()))));
+                        .ifPresent(line -> forPlayer(ctx.player()).clicked(ctx.player(), line)));
+        engine.action(PAY_ALL, ctx -> forPlayer(ctx.player()).payAllShown(ctx.player()));
+        engine.action(BYPASS, ctx -> forPlayer(ctx.player()).bypassShown(ctx.player()));
+    }
+
+    /** The window of another dimension's web, by the world a player stands in; none for this web's worlds. */
+    private volatile java.util.function.Function<String, Optional<ChunkWindow>> elsewhere = world -> Optional.empty();
+
+    /** Hands a player standing in another dimension to that dimension's own window. */
+    public void useElsewhere(java.util.function.Function<String, Optional<ChunkWindow>> windows) {
+        this.elsewhere = Objects.requireNonNull(windows, "windows must not be null");
+    }
+
+    /**
+     * Draws with {@code engine} and leaves its lists and clicks to the window registered with it, which hands this
+     * one the players of its web.
+     */
+    public void drawWith(@Nullable SkyblockMenuEngine engine) {
+        this.engine = engine;
+    }
+
+    /** The window of the web of the world the player stands in. */
+    ChunkWindow forPlayer(Player player) {
+        org.bukkit.Location at = player.getLocation();
+        if (at == null || at.getWorld() == null) {
+            return this;
+        }
+        return elsewhere.apply(at.getWorld().getName()).orElse(this);
+    }
+
+    /** Pays every line of the chunk the player has up. */
+    void payAllShown(Player player) {
+        chunkOf(player).ifPresent(chunk -> purchase.payAll(player, chunk, () -> reopen(player)));
+    }
+
+    /** Opens the chunk the player has up past its price, with its bypass. */
+    void bypassShown(Player player) {
+        chunkOf(player).ifPresent(chunk -> purchase.bypass(player, chunk, () -> reopen(player)));
     }
 
     /** A click on a line: pays it, or reads the chunk again for a level, which nothing pays. */

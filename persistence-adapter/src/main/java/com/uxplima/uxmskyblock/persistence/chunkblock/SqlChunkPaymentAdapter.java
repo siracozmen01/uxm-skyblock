@@ -22,8 +22,9 @@ import com.uxplima.uxmskyblock.core.domain.identity.IslandId;
 import com.uxplima.uxmskyblock.persistence.bank.PlayerIslandBankAdapter;
 
 /**
- * What has been paid toward each closed chunk, in {@code chunkblock_chunk_payments}, and each island's chunk points,
- * in {@code chunkblock_points}.
+ * What has been paid toward each closed chunk, in {@code chunkblock_chunk_payments} for the overworld and in
+ * {@code chunkblock_dimension_payments} under its dimension for a Nether or an End, and each island's chunk points, in
+ * {@code chunkblock_points}, which every dimension of the island shares.
  *
  * <p>A payment adds to the row in the database, never to a total read first, so two members paying at once both
  * count. A row that is not there yet is inserted, and an insert another payment won is added to instead. A payment
@@ -35,11 +36,24 @@ public final class SqlChunkPaymentAdapter implements ChunkPaymentPort {
     private final Dialect dialect;
     private final PlayerIslandBankAdapter bank;
 
+    private final ChunkScope scope;
+
+    /** What is paid toward the overworld's chunks. */
     public SqlChunkPaymentAdapter(Database database) {
+        this(database, ChunkScope.OVERWORLD);
+    }
+
+    /** What is paid toward the chunks of {@code dimension}, a dimension other than the overworld. */
+    public SqlChunkPaymentAdapter(Database database, String dimension) {
+        this(database, ChunkScope.of(dimension));
+    }
+
+    private SqlChunkPaymentAdapter(Database database, ChunkScope scope) {
         Objects.requireNonNull(database, "database must not be null");
         this.dataSource = database.dataSource();
         this.dialect = database.dialect();
         this.bank = new PlayerIslandBankAdapter(database);
+        this.scope = scope;
     }
 
     @Override
@@ -71,17 +85,18 @@ public final class SqlChunkPaymentAdapter implements ChunkPaymentPort {
     private boolean record(Connection connection, ChunkIslandCharge charge) throws SQLException {
         String upsert =
                 switch (dialect) {
-                    case SQLITE, POSTGRES -> """
-                    INSERT INTO chunkblock_chunk_payments (island_id, chunk_x, chunk_z, line_key, paid)
-                    VALUES (?, ?, ?, ?, ?)
-                    ON CONFLICT (island_id, chunk_x, chunk_z, line_key)
-                    DO UPDATE SET paid = chunkblock_chunk_payments.paid + excluded.paid
-                    """;
-                    case MYSQL -> """
-                    INSERT INTO chunkblock_chunk_payments (island_id, chunk_x, chunk_z, line_key, paid)
-                    VALUES (?, ?, ?, ?, ?)
-                    ON DUPLICATE KEY UPDATE paid = paid + VALUES(paid)
-                    """;
+                    case SQLITE, POSTGRES ->
+                        "INSERT INTO " + scope.payments()
+                                + " (island_id, chunk_x, chunk_z, line_key, paid" + scope.column()
+                                + ") VALUES (?, ?, ?, ?, ?"
+                                + scope.value() + ") ON CONFLICT (island_id, chunk_x, chunk_z, line_key"
+                                + scope.column()
+                                + ") DO UPDATE SET paid = " + scope.payments() + ".paid + excluded.paid";
+                    case MYSQL ->
+                        "INSERT INTO " + scope.payments()
+                                + " (island_id, chunk_x, chunk_z, line_key, paid" + scope.column()
+                                + ") VALUES (?, ?, ?, ?, ?"
+                                + scope.value() + ") ON DUPLICATE KEY UPDATE paid = paid + VALUES(paid)";
                     case H2, GENERIC -> throw new UnsupportedOperationException("Unsupported dialect: " + dialect);
                 };
         try (PreparedStatement ps = connection.prepareStatement(upsert)) {
@@ -90,6 +105,7 @@ public final class SqlChunkPaymentAdapter implements ChunkPaymentPort {
             ps.setInt(3, charge.chunk().z());
             ps.setString(4, charge.lineKey());
             ps.setLong(5, charge.amount());
+            scope.bind(ps, 6);
             ps.executeUpdate();
         }
         return true;
@@ -101,11 +117,12 @@ public final class SqlChunkPaymentAdapter implements ChunkPaymentPort {
         Objects.requireNonNull(chunk, "chunk must not be null");
         Map<String, Long> paid = new HashMap<>();
         try (Connection conn = dataSource.getConnection();
-                PreparedStatement ps = conn.prepareStatement("SELECT line_key, paid FROM chunkblock_chunk_payments "
-                        + "WHERE island_id = ? AND chunk_x = ? AND chunk_z = ?")) {
+                PreparedStatement ps = conn.prepareStatement("SELECT line_key, paid FROM " + scope.payments()
+                        + " WHERE island_id = ? AND chunk_x = ? AND chunk_z = ?" + scope.and())) {
             ps.setString(1, islandId.value().toString());
             ps.setInt(2, chunk.x());
             ps.setInt(3, chunk.z());
+            scope.bind(ps, 4);
             try (ResultSet rs = ps.executeQuery()) {
                 while (rs.next()) {
                     paid.put(rs.getString(1), rs.getLong(2));
@@ -126,10 +143,10 @@ public final class SqlChunkPaymentAdapter implements ChunkPaymentPort {
             throw new IllegalArgumentException("a payment is not below zero: " + amount);
         }
         String island = islandId.value().toString();
-        String update = "UPDATE chunkblock_chunk_payments SET paid = paid + ? "
-                + "WHERE island_id = ? AND chunk_x = ? AND chunk_z = ? AND line_key = ?";
-        String insert = "INSERT INTO chunkblock_chunk_payments (island_id, chunk_x, chunk_z, line_key, paid) "
-                + "VALUES (?, ?, ?, ?, ?)";
+        String update = "UPDATE " + scope.payments() + " SET paid = paid + ? "
+                + "WHERE island_id = ? AND chunk_x = ? AND chunk_z = ? AND line_key = ?" + scope.and();
+        String insert = "INSERT INTO " + scope.payments() + " (island_id, chunk_x, chunk_z, line_key, paid"
+                + scope.column() + ") VALUES (?, ?, ?, ?, ?" + scope.value() + ")";
         try (Connection conn = dataSource.getConnection()) {
             for (int attempt = 0; attempt < 2; attempt++) {
                 try (PreparedStatement ps = conn.prepareStatement(update)) {
@@ -138,6 +155,7 @@ public final class SqlChunkPaymentAdapter implements ChunkPaymentPort {
                     ps.setInt(3, chunk.x());
                     ps.setInt(4, chunk.z());
                     ps.setString(5, key);
+                    scope.bind(ps, 6);
                     if (ps.executeUpdate() > 0) {
                         return;
                     }
@@ -148,6 +166,7 @@ public final class SqlChunkPaymentAdapter implements ChunkPaymentPort {
                     ps.setInt(3, chunk.z());
                     ps.setString(4, key);
                     ps.setLong(5, amount);
+                    scope.bind(ps, 6);
                     ps.executeUpdate();
                     return;
                 } catch (SQLException taken) {
@@ -168,11 +187,12 @@ public final class SqlChunkPaymentAdapter implements ChunkPaymentPort {
         Objects.requireNonNull(islandId, "islandId must not be null");
         Objects.requireNonNull(chunk, "chunk must not be null");
         try (Connection conn = dataSource.getConnection();
-                PreparedStatement ps = conn.prepareStatement("DELETE FROM chunkblock_chunk_payments "
-                        + "WHERE island_id = ? AND chunk_x = ? AND chunk_z = ?")) {
+                PreparedStatement ps = conn.prepareStatement("DELETE FROM " + scope.payments()
+                        + " WHERE island_id = ? AND chunk_x = ? AND chunk_z = ?" + scope.and())) {
             ps.setString(1, islandId.value().toString());
             ps.setInt(2, chunk.x());
             ps.setInt(3, chunk.z());
+            scope.bind(ps, 4);
             ps.executeUpdate();
         } catch (SQLException e) {
             throw new IllegalStateException("Could not forget the payments toward a chunk of island " + islandId, e);

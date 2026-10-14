@@ -25,12 +25,49 @@ public final class ChunkBlockWiring implements AutoCloseable {
     private final com.uxplima.uxmskyblock.bukkit.chunkblock.@org.jspecify.annotations.Nullable TerritoryWalls walls;
     private final com.uxplima.uxmskyblock.bukkit.chunkblock.@org.jspecify.annotations.Nullable ChunkSigns signs;
 
-    /** The beat that shows Bedrock players the edge, while it runs. */
-    private volatile @org.jspecify.annotations.Nullable AutoCloseable bedrockEdges;
+    /** The webs of the island's Nether and End, each its own, for the dimensions a world is named for. */
+    private final List<Web> dimensions;
+
+    /** The beats that show Bedrock players the edge, while they run. */
+    private final List<AutoCloseable> bedrockEdges = new java.util.concurrent.CopyOnWriteArrayList<>();
 
     /** The window a click on a sign opens, handed over once the commands are wired. */
     private volatile java.util.function.BiConsumer<org.bukkit.entity.Player, ChunkPos> openWindow =
             (player, chunk) -> {};
+
+    /**
+     * One dimension's web: its own chunks, its edge, its walls and its signs, guarding the dimension's world alone.
+     *
+     * @param dimension the dimension's key, as the dimension tables keep it
+     * @param world the name of the dimension's world
+     */
+    public record Web(
+            String dimension,
+            String world,
+            ChunkBlockService service,
+            com.uxplima.uxmskyblock.bukkit.chunkblock.ChunkBlockListener listener,
+            com.uxplima.uxmskyblock.bukkit.chunkblock.@org.jspecify.annotations.Nullable TerritoryWalls walls,
+            com.uxplima.uxmskyblock.bukkit.chunkblock.@org.jspecify.annotations.Nullable ChunkSigns signs,
+            SignWindow window) {}
+
+    /** The window a click on one web's sign opens, handed over once the commands are wired. */
+    public static final class SignWindow {
+
+        private volatile java.util.function.BiConsumer<org.bukkit.entity.Player, ChunkPos> shown;
+
+        SignWindow(java.util.function.BiConsumer<org.bukkit.entity.Player, ChunkPos> shown) {
+            this.shown = shown;
+        }
+
+        /** Hands the signs the window a member's click opens. */
+        public void set(java.util.function.BiConsumer<org.bukkit.entity.Player, ChunkPos> window) {
+            this.shown = Objects.requireNonNull(window, "window must not be null");
+        }
+
+        void open(org.bukkit.entity.Player player, ChunkPos chunk) {
+            shown.accept(player, chunk);
+        }
+    }
 
     public ChunkBlockWiring(
             ConfigurationWiring configuration,
@@ -41,80 +78,188 @@ public final class ChunkBlockWiring implements AutoCloseable {
                             java.util.UUID, java.util.Optional<com.uxplima.uxmskyblock.core.domain.identity.ProfileId>>
                     activeProfile) {
         this.config = Objects.requireNonNull(configuration.chunkBlockConfig(), "chunkBlockConfig must not be null");
+        // The worlds of the island's Nether and End, while dimensions are on: each holds a web of its own.
+        java.util.Map<String, String> dimensionWorlds = new java.util.LinkedHashMap<>();
+        var dimensionConfig = configuration.dimensionConfig();
+        if (config.enabled() && dimensionConfig.enabled()) {
+            dimensionConfig.mappings().forEach((type, mapping) -> {
+                if (type != com.uxplima.uxmskyblock.core.domain.dimension.IslandDimensionType.OVERWORLD) {
+                    dimensionWorlds.put(type.id().value(), mapping.worldName());
+                }
+            });
+        }
+        java.util.Set<String> elsewhere = java.util.Set.copyOf(dimensionWorlds.values());
+        java.util.function.Function<
+                        com.uxplima.uxmskyblock.core.domain.identity.IslandId,
+                        java.util.Optional<com.uxplima.uxmskyblock.core.domain.island.IslandLocation>>
+                homes = persistence.islandStoragePort()::findLocationByIslandId;
         this.service =
                 new ChunkBlockService(persistence.chunkTerritoryPort(), config.rules(), config.keepLevelChunks());
-        this.listener = new com.uxplima.uxmskyblock.bukkit.chunkblock.ChunkBlockListener(
+        Web overworld = web(
+                configuration,
+                scheduler,
+                islands,
+                activeProfile,
+                "overworld",
+                "",
                 service,
+                world -> !elsewhere.contains(world),
+                homes,
+                homes,
+                new SignWindow((player, chunk) -> openWindow.accept(player, chunk)));
+        this.listener = overworld.listener();
+        this.walls = overworld.walls();
+        this.signs = overworld.signs();
+        List<Web> webs = new java.util.ArrayList<>();
+        dimensionWorlds.forEach((dimension, world) -> {
+            ChunkBlockService own = new ChunkBlockService(
+                    persistence.chunkTerritoryPort(dimension), config.rules(), config.keepLevelChunks());
+            // A sign or a wall of the dimension stands in its world, at the island's own ground over it.
+            webs.add(web(
+                    configuration,
+                    scheduler,
+                    islands,
+                    activeProfile,
+                    dimension,
+                    world,
+                    own,
+                    world::equals,
+                    homes,
+                    islandId -> homes.apply(islandId)
+                            .map(home -> new com.uxplima.uxmskyblock.core.domain.island.IslandLocation(
+                                    home.islandId(),
+                                    world,
+                                    home.bounds(),
+                                    home.spawnX(),
+                                    home.spawnY(),
+                                    home.spawnZ(),
+                                    home.spawnYaw(),
+                                    home.spawnPitch())),
+                    new SignWindow((player, chunk) -> {})));
+        });
+        this.dimensions = List.copyOf(webs);
+        // Every territory into memory before anybody steps near a closed chunk, so no step is a query.
+        scheduler.async(() -> {
+            for (ChunkBlockService each : services()) {
+                try {
+                    int count = each.prime();
+                    LOGGER.fine(() -> count + " ChunkBlock webs are in memory.");
+                } catch (RuntimeException e) {
+                    LOGGER.log(Level.WARNING, "The ChunkBlock islands could not be read ahead.", e);
+                }
+            }
+        });
+    }
+
+    /** Builds one dimension's edge, walls, signs and Bedrock dust over {@code own}, guarding {@code guarded} worlds. */
+    private Web web(
+            ConfigurationWiring configuration,
+            SchedulerPort scheduler,
+            com.uxplima.uxmskyblock.bukkit.listener.IslandProtectionListener islands,
+            java.util.function.Function<
+                            java.util.UUID, java.util.Optional<com.uxplima.uxmskyblock.core.domain.identity.ProfileId>>
+                    activeProfile,
+            String dimension,
+            String world,
+            ChunkBlockService own,
+            java.util.function.Predicate<String> guarded,
+            java.util.function.Function<
+                            com.uxplima.uxmskyblock.core.domain.identity.IslandId,
+                            java.util.Optional<com.uxplima.uxmskyblock.core.domain.island.IslandLocation>>
+                    homes,
+            java.util.function.Function<
+                            com.uxplima.uxmskyblock.core.domain.identity.IslandId,
+                            java.util.Optional<com.uxplima.uxmskyblock.core.domain.island.IslandLocation>>
+                    locations,
+            SignWindow window) {
+        var edge = new com.uxplima.uxmskyblock.bukkit.chunkblock.ChunkBlockListener(
+                own,
                 islands,
                 scheduler,
                 configuration.messages(),
-                persistence.islandStoragePort()::findLocationByIslandId,
+                // Whoever a closing chunk puts out goes to the island's spawn, whatever the dimension.
+                homes,
                 config.bypassPermission());
+        edge.guarding(guarded);
         // A fallen level closes chunks off the main thread; whoever stands in one is moved out.
-        service.whenClosed(listener::moveOut);
+        own.whenClosed(edge::moveOut);
         // The open ground is walled where it meets closed ground, in the style modules/walls.conf names.
         var wallConfig = configuration.wallConfig();
-        this.walls = wallConfig
+        var wall = wallConfig
                 .chunkBlockStyle()
                 .map(style -> new com.uxplima.uxmskyblock.bukkit.chunkblock.TerritoryWalls(
-                        service,
+                        own,
                         islands,
                         scheduler,
                         new com.uxplima.uxmskyblock.bukkit.wall.WallPanels(wallConfig),
                         style,
-                        islandId -> persistence
-                                .islandStoragePort()
-                                .findLocationByIslandId(islandId)
+                        islandId -> locations
+                                .apply(islandId)
                                 .map(com.uxplima.uxmskyblock.core.domain.island.IslandLocation::worldName)))
                 .orElse(null);
-        if (walls != null) {
-            service.whenOpened(walls::opened);
-            service.whenClosed(walls::closed);
+        if (wall != null) {
+            wall.guarding(guarded);
+            own.whenOpened(wall::opened);
+            own.whenClosed(wall::closed);
         }
         // A sign over each closed chunk an island can open next, which a member clicks for its price.
-        this.signs = config.signs()
+        var sign = config.signs()
                 ? new com.uxplima.uxmskyblock.bukkit.chunkblock.ChunkSigns(
-                        service,
+                        own,
                         config.tiers(),
                         islands,
                         scheduler,
                         new com.uxplima.uxmskyblock.bukkit.chunkblock.ChunkSignEntities(),
                         configuration.messages(),
-                        persistence.islandStoragePort()::findLocationByIslandId,
+                        locations,
                         activeProfile,
-                        (player, chunk) -> openWindow.accept(player, chunk))
+                        window::open)
                 : null;
-        if (signs != null) {
-            service.whenOpened(signs::opened);
-            service.whenClosed(signs::closed);
+        if (sign != null) {
+            sign.guarding(guarded);
+            own.whenOpened(sign::opened);
+            own.whenClosed(sign::closed);
         }
         // A Bedrock client draws no wall, so a Bedrock player is shown the edge as dust.
         var bedrock = wallConfig.bedrock();
         if (config.enabled()
                 && bedrock.enabled()
                 && wallConfig.chunkBlockStyle().isPresent()) {
-            this.bedrockEdges = new com.uxplima.uxmskyblock.bukkit.chunkblock.BedrockEdges(
-                            service,
-                            islands,
-                            scheduler,
-                            bedrockPlayers(),
-                            bedrock,
-                            com.uxplima.uxmskyblock.bukkit.chunkblock.BedrockEdges.dust(bedrock))
-                    .start();
+            var edges = new com.uxplima.uxmskyblock.bukkit.chunkblock.BedrockEdges(
+                    own,
+                    islands,
+                    scheduler,
+                    bedrockPlayers(),
+                    bedrock,
+                    com.uxplima.uxmskyblock.bukkit.chunkblock.BedrockEdges.dust(bedrock));
+            edges.guarding(guarded);
+            bedrockEdges.add(edges.start());
         }
-        // Every territory into memory before anybody steps near a closed chunk, so no step is a query.
-        scheduler.async(() -> {
-            try {
-                int count = service.prime();
-                LOGGER.fine(() -> count + " ChunkBlock islands are in memory.");
-            } catch (RuntimeException e) {
-                LOGGER.log(Level.WARNING, "The ChunkBlock islands could not be read ahead.", e);
-            }
-        });
+        return new Web(dimension, world, own, edge, wall, sign, window);
     }
 
     public ChunkBlockService service() {
         return service;
+    }
+
+    /** The webs of the island's Nether and End, while dimensions are on. */
+    public List<Web> dimensions() {
+        return dimensions;
+    }
+
+    /** Every web's service, the overworld's first. */
+    public List<ChunkBlockService> services() {
+        List<ChunkBlockService> all = new java.util.ArrayList<>();
+        all.add(service);
+        dimensions.forEach(web -> all.add(web.service()));
+        return List.copyOf(all);
+    }
+
+    /** Closes in every web the chunks an island at {@code level} can no longer hold. */
+    public void onLevel(com.uxplima.uxmskyblock.core.domain.identity.IslandId islandId, long level) {
+        for (ChunkBlockService each : services()) {
+            each.onLevel(islandId, level);
+        }
     }
 
     /**
@@ -163,13 +308,72 @@ public final class ChunkBlockWiring implements AutoCloseable {
                             Long>
                     levelOf,
             com.uxplima.uxmskyblock.core.domain.session.ServerNodeId node) {
-        var unlocks = new com.uxplima.uxmskyblock.core.application.chunkblock.ChunkUnlocks(
+        return purchase(
                 service,
                 persistence.chunkPaymentPort(),
-                config.tiers(),
-                persistence.islandBankPort(),
+                persistence,
                 bank,
-                persistence.islandAuthorityPort());
+                economy,
+                access,
+                scheduler,
+                messages,
+                activeProfile,
+                levelOf,
+                node);
+    }
+
+    /** Paying for the chunks of one dimension's web, with what is paid kept under that dimension. */
+    public com.uxplima.uxmskyblock.bukkit.chunkblock.ChunkPurchase purchase(
+            Web web,
+            PersistenceBootstrap persistence,
+            com.uxplima.uxmskyblock.core.application.bank.IslandBankService bank,
+            com.uxplima.uxmskyblock.bukkit.integration.economy.SkyblockEconomyBridge economy,
+            com.uxplima.uxmskyblock.core.application.island.IslandAccessService access,
+            SchedulerPort scheduler,
+            com.uxplima.uxmskyblock.bukkit.i18n.Messages messages,
+            java.util.function.Function<
+                            java.util.UUID, java.util.Optional<com.uxplima.uxmskyblock.core.domain.identity.ProfileId>>
+                    activeProfile,
+            java.util.function.BiFunction<
+                            com.uxplima.uxmskyblock.core.domain.identity.IslandId,
+                            com.uxplima.uxmskyblock.core.domain.identity.ProfileId,
+                            Long>
+                    levelOf,
+            com.uxplima.uxmskyblock.core.domain.session.ServerNodeId node) {
+        return purchase(
+                web.service(),
+                persistence.chunkPaymentPort(web.dimension()),
+                persistence,
+                bank,
+                economy,
+                access,
+                scheduler,
+                messages,
+                activeProfile,
+                levelOf,
+                node);
+    }
+
+    private com.uxplima.uxmskyblock.bukkit.chunkblock.ChunkPurchase purchase(
+            ChunkBlockService own,
+            com.uxplima.uxmskyblock.core.application.chunkblock.ChunkPaymentPort payments,
+            PersistenceBootstrap persistence,
+            com.uxplima.uxmskyblock.core.application.bank.IslandBankService bank,
+            com.uxplima.uxmskyblock.bukkit.integration.economy.SkyblockEconomyBridge economy,
+            com.uxplima.uxmskyblock.core.application.island.IslandAccessService access,
+            SchedulerPort scheduler,
+            com.uxplima.uxmskyblock.bukkit.i18n.Messages messages,
+            java.util.function.Function<
+                            java.util.UUID, java.util.Optional<com.uxplima.uxmskyblock.core.domain.identity.ProfileId>>
+                    activeProfile,
+            java.util.function.BiFunction<
+                            com.uxplima.uxmskyblock.core.domain.identity.IslandId,
+                            com.uxplima.uxmskyblock.core.domain.identity.ProfileId,
+                            Long>
+                    levelOf,
+            com.uxplima.uxmskyblock.core.domain.session.ServerNodeId node) {
+        var unlocks = new com.uxplima.uxmskyblock.core.application.chunkblock.ChunkUnlocks(
+                own, payments, config.tiers(), persistence.islandBankPort(), bank, persistence.islandAuthorityPort());
         var purse = new com.uxplima.uxmskyblock.bukkit.chunkblock.PlayerChunkPurse(
                 new com.uxplima.uxmskyblock.bukkit.chunkblock.PlayerChunkPurse.Money() {
                     @Override
@@ -236,7 +440,12 @@ public final class ChunkBlockWiring implements AutoCloseable {
      * so a ChunkBlock preset is not offered.
      */
     public List<CreationActionProvider<IslandStart>> startActions() {
-        return config.enabled() ? List.of(new ChunkBlockStart(service)) : List.of();
+        if (!config.enabled()) {
+            return List.of();
+        }
+        java.util.Map<String, ChunkBlockService> byWorld = new java.util.HashMap<>();
+        dimensions.forEach(web -> byWorld.put(web.world(), web.service()));
+        return List.of(new ChunkBlockStart(service, world -> java.util.Optional.ofNullable(byWorld.get(world))));
     }
 
     /** Whether a player plays on Bedrock, asked of Floodgate the first time a beat runs, once the server is up. */
@@ -257,14 +466,13 @@ public final class ChunkBlockWiring implements AutoCloseable {
     /** Stops showing Bedrock players the edge, before the server stops. */
     @Override
     public void close() {
-        AutoCloseable running = bedrockEdges;
-        bedrockEdges = null;
-        if (running != null) {
+        for (AutoCloseable running : bedrockEdges) {
             try {
                 running.close();
             } catch (Exception e) {
                 LOGGER.log(Level.WARNING, "Stopping the Bedrock edges failed.", e);
             }
         }
+        bedrockEdges.clear();
     }
 }

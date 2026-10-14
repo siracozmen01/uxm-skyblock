@@ -186,6 +186,19 @@ class ATerritoryIsWalledTest extends MockBukkitHarness {
     }
 
     @Test
+    @DisplayName("A web that guards another world stands nothing here, and stands its walls once it guards this one")
+    void aWebGuardsItsOwnWorld() {
+        load(0, 0);
+        walls.guarding("skyblock_nether"::equals);
+        walls.onChunkLoad(new ChunkLoadEvent(world.getChunkAt(0, 0), false));
+        assertThat(wallsIn(0, 0)).isEmpty();
+
+        walls.guarding("skyblock"::equals);
+        walls.onChunkLoad(new ChunkLoadEvent(world.getChunkAt(0, 0), false));
+        assertThat(wallsIn(0, 0)).hasSize(4);
+    }
+
+    @Test
     @DisplayName("Opening a chunk takes down the wall between the two and walls the new chunk's other sides")
     void openingRedraws() {
         load(0, 0);

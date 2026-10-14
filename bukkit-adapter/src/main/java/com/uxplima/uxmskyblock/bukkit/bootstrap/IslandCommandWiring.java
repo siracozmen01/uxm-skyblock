@@ -334,6 +334,51 @@ final class IslandCommandWiring {
             chunkWindow.useMenuEngine(integration.menuEngine());
             chunkBlockPanel.useWindow(chunkWindow);
             gameplay.chunkBlockWiring().useWindow(chunkWindow);
+            // The island's Nether and End each pay for their own chunks, in a panel and windows of their own.
+            java.util.Map<String, com.uxplima.uxmskyblock.bukkit.chunkblock.ChunkBlockPanel> panels =
+                    new java.util.HashMap<>();
+            java.util.Map<String, com.uxplima.uxmskyblock.bukkit.chunkblock.ChunkWindow> windows =
+                    new java.util.HashMap<>();
+            for (ChunkBlockWiring.Web web : gameplay.chunkBlockWiring().dimensions()) {
+                var panelThere = new com.uxplima.uxmskyblock.bukkit.chunkblock.ChunkBlockPanel(
+                        web.service(),
+                        persistence.islandStoragePort(),
+                        gameplay.scheduler(),
+                        integration.messages(),
+                        authority.sessionCoordinator()::activeProfile,
+                        (islandId, profile) -> levelOf(gameplay, islandId, profile));
+                panelThere.useMenuEngine(integration.menuEngine());
+                var purchaseThere = gameplay.chunkBlockWiring()
+                        .purchase(
+                                web,
+                                persistence,
+                                gameplay.bankService(),
+                                integration.economyBridge(),
+                                gameplay.accessService(),
+                                gameplay.scheduler(),
+                                integration.messages(),
+                                authority.sessionCoordinator()::activeProfile,
+                                (islandId, profile) -> levelOf(gameplay, islandId, profile),
+                                config.nodeConfig().nodeId());
+                panelThere.usePurchase(purchaseThere);
+                var windowThere = new com.uxplima.uxmskyblock.bukkit.chunkblock.ChunkWindow(
+                        purchaseThere,
+                        web.service(),
+                        persistence.islandStoragePort(),
+                        gameplay.scheduler(),
+                        integration.messages(),
+                        id -> integration.economyBridge().wallets().flatMap(wallets -> wallets.currency(id)),
+                        authority.sessionCoordinator()::activeProfile,
+                        (islandId, profile) -> levelOf(gameplay, islandId, profile));
+                // The overworld's window answers the engine's clicks and hands this one the players below.
+                windowThere.drawWith(integration.menuEngine());
+                panelThere.useWindow(windowThere);
+                web.window().set(windowThere::show);
+                panels.put(web.world(), panelThere);
+                windows.put(web.world(), windowThere);
+            }
+            chunkBlockPanel.useElsewhere(world -> java.util.Optional.ofNullable(panels.get(world)));
+            chunkWindow.useElsewhere(world -> java.util.Optional.ofNullable(windows.get(world)));
         }
         tree.useChunkBlock(chunkBlockPanel);
         integration.placeholderExpansion().useChunkBlock(chunkBlockPanel);

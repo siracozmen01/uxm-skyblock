@@ -91,8 +91,30 @@ public final class ChunkBlockPanel {
         }
     }
 
+    /** The panel of another dimension's web, by the world a player stands in; none for this web's worlds. */
+    private volatile java.util.function.Function<String, Optional<ChunkBlockPanel>> elsewhere =
+            world -> Optional.empty();
+
+    /** Hands a player standing in another dimension to that dimension's own panel. */
+    public void useElsewhere(java.util.function.Function<String, Optional<ChunkBlockPanel>> panels) {
+        this.elsewhere = Objects.requireNonNull(panels, "panels must not be null");
+    }
+
+    /** The panel of the web of the world the player stands in, when that is not this one's. */
+    private Optional<ChunkBlockPanel> theirs(Player player) {
+        Location at = player.getLocation();
+        return at == null || at.getWorld() == null
+                ? Optional.empty()
+                : elsewhere.apply(at.getWorld().getName());
+    }
+
     /** Shows how far the player's island has opened, or says why there is nothing to show. */
     public void open(Player player) {
+        Optional<ChunkBlockPanel> other = theirs(player);
+        if (other.isPresent()) {
+            other.get().open(player);
+            return;
+        }
         withIsland(player, (islandId, profile) -> {
             Optional<ChunkTerritory> territory = service.territory(islandId);
             if (territory.isEmpty()) {
@@ -112,6 +134,11 @@ public final class ChunkBlockPanel {
 
     /** Pays toward the chunk beside the player's, in the direction the player faces, and opens it once paid. */
     public void unlockFaced(Player player) {
+        Optional<ChunkBlockPanel> other = theirs(player);
+        if (other.isPresent()) {
+            other.get().unlockFaced(player);
+            return;
+        }
         Location at = player.getLocation();
         if (at == null) {
             return;

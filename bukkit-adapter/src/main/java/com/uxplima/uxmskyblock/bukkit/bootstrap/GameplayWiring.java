@@ -404,10 +404,13 @@ public final class GameplayWiring {
         // The level is what a ChunkBlock island holds its chunks with, so each score is checked against it.
         this.economicWiring
                 .worthService()
-                .whenScored((islandId, score) ->
-                        this.chunkBlockWiring.service().onLevel(islandId, score.calculatedLevel()));
+                .whenScored((islandId, score) -> this.chunkBlockWiring.onLevel(islandId, score.calculatedLevel()));
         this.cacheEviction.whenForgotten(this.economicWiring.worthService()::forgetIsland);
         this.cacheEviction.whenForgotten(this.chunkBlockWiring.service()::forget);
+        // Each dimension's web keeps its own chunks per island, and lets them go with the overworld's.
+        for (ChunkBlockWiring.Web web : this.chunkBlockWiring.dimensions()) {
+            this.cacheEviction.whenForgotten(web.service()::forget);
+        }
         this.cacheEviction.whenForgotten(this.creationWiring.missionService()::forgetIsland);
         // A mode's own events count for the missions that ask for them, when there are missions.
         com.uxplima.uxmskyblock.bukkit.mission.IslandMissionListener missions = this.creationWiring.missionListener();
@@ -468,6 +471,12 @@ public final class GameplayWiring {
         var chunkSigns = this.chunkBlockWiring.signs();
         if (chunkSigns != null) {
             this.cacheEviction.whenForgotten(chunkSigns::forget);
+        }
+        for (ChunkBlockWiring.Web web : this.chunkBlockWiring.dimensions()) {
+            var signsThere = web.signs();
+            if (signsThere != null) {
+                this.cacheEviction.whenForgotten(signsThere::forget);
+            }
         }
         this.cacheEviction.whenForgotten(this.acidIslandWiring.service()::forget);
         this.cacheEviction.whenForgotten(this.boxedWiring.service()::forget);

@@ -27,6 +27,85 @@ final class ChunkBlockStorageScenario {
         territory(database, island);
         payments(database, island, other);
         charges(database, island);
+        IslandId webbed = IslandId.of(UUID.randomUUID());
+        seedIsland(database, webbed);
+        dimensions(database, webbed);
+    }
+
+    /**
+     * A Nether and an End each keep a web of their own beside the overworld's, at the very same chunks, and what is
+     * paid toward a chunk is kept apart by dimension; every row goes with its island.
+     */
+    private static void dimensions(Database database, IslandId island) throws SQLException {
+        SqlChunkTerritoryAdapter overworld = new SqlChunkTerritoryAdapter(database.dataSource());
+        SqlChunkTerritoryAdapter nether = new SqlChunkTerritoryAdapter(database.dataSource(), "the_nether");
+        SqlChunkTerritoryAdapter end = new SqlChunkTerritoryAdapter(database.dataSource(), "the_end");
+        overworld.start(island, new ChunkPos(0, 0));
+        overworld.open(island, new ChunkPos(1, 0), 1, false);
+        nether.start(island, new ChunkPos(0, 0));
+        assertThat(nether.open(island, new ChunkPos(0, 1), 1, true)).isTrue();
+        assertThat(nether.open(island, new ChunkPos(0, 1), 2, false))
+                .describedAs("opened once")
+                .isFalse();
+        assertThat(nether.open(island, new ChunkPos(2, 0), 1, false))
+                .describedAs("the place is taken")
+                .isFalse();
+        assertThat(nether.open(island, new ChunkPos(-1, 0), 2, false)).isTrue();
+
+        assertThat(end.find(island))
+                .describedAs("an End not started has no web")
+                .isEmpty();
+        assertThat(overworld.find(island).orElseThrow().opened()).containsExactly(new ChunkPos(1, 0));
+        assertThat(nether.find(island).orElseThrow().opened()).containsExactly(new ChunkPos(0, 1), new ChunkPos(-1, 0));
+        assertThat(nether.find(island).orElseThrow().bought()).containsExactly(new ChunkPos(0, 1));
+        assertThat(nether.findAll()).containsOnlyKeys(island);
+        assertThat(end.findAll()).isEmpty();
+        assertThat(overworld
+                        .findAll()
+                        .getOrDefault(island, ChunkTerritory.startingAt(new ChunkPos(9, 9)))
+                        .opened())
+                .containsExactly(new ChunkPos(1, 0));
+
+        // The End's web, numbered from 1 too, is left alone when the Nether's is numbered again.
+        end.start(island, new ChunkPos(0, 0));
+        assertThat(end.open(island, new ChunkPos(5, 5), 1, false)).isTrue();
+        assertThat(end.open(island, new ChunkPos(6, 5), 2, false)).isTrue();
+        nether.close(island, java.util.List.of(new ChunkPos(0, 1)));
+        assertThat(nether.find(island).orElseThrow().opened())
+                .describedAs("closed and numbered again in its own web")
+                .containsExactly(new ChunkPos(-1, 0));
+        assertThat(nether.open(island, new ChunkPos(0, 1), 2, false)).isTrue();
+        assertThat(nether.open(island, new ChunkPos(0, -1), 3, false))
+                .describedAs("numbered 1 and 2 again, the third place is free")
+                .isTrue();
+        assertThat(end.find(island).orElseThrow().opened()).containsExactly(new ChunkPos(5, 5), new ChunkPos(6, 5));
+        overworld.close(island, java.util.List.of(new ChunkPos(1, 0)));
+        assertThat(nether.find(island).orElseThrow().opened()).hasSize(3);
+
+        SqlChunkPaymentAdapter overworldPaid = new SqlChunkPaymentAdapter(database);
+        SqlChunkPaymentAdapter netherPaid = new SqlChunkPaymentAdapter(database, "the_nether");
+        ChunkPos chunk = new ChunkPos(3, 3);
+        overworldPaid.add(island, chunk, "item:cobblestone", 10);
+        netherPaid.add(island, chunk, "item:cobblestone", 4);
+        netherPaid.add(island, chunk, "item:cobblestone", 5);
+        assertThat(overworldPaid.find(island, chunk).paid()).containsOnly(java.util.Map.entry("item:cobblestone", 10L));
+        assertThat(netherPaid.find(island, chunk).paid()).containsOnly(java.util.Map.entry("item:cobblestone", 9L));
+        netherPaid.clear(island, chunk);
+        assertThat(netherPaid.find(island, chunk).paid()).isEmpty();
+        assertThat(overworldPaid.find(island, chunk).paid())
+                .describedAs("the overworld's stays")
+                .hasSize(1);
+        netherPaid.add(island, chunk, "item:netherrack", 2);
+
+        try (Connection conn = database.connection();
+                PreparedStatement ps = conn.prepareStatement("DELETE FROM islands WHERE id = ?")) {
+            ps.setString(1, island.value().toString());
+            ps.executeUpdate();
+        }
+        assertThat(nether.find(island))
+                .describedAs("the web goes with the island")
+                .isEmpty();
+        assertThat(netherPaid.find(island, chunk).paid()).isEmpty();
     }
 
     /**
@@ -109,6 +188,34 @@ final class ChunkBlockStorageScenario {
                 .containsOnly(java.util.Map.entry("money:island", 7_000L));
         assertThat(bank.findBankByIslandId(island).orElseThrow().primaryBalanceMinorUnits())
                 .isEqualTo(3_000);
+
+        // The same chunk in the island's Nether: charged and recorded apart, and added to there on every engine.
+        SqlChunkPaymentAdapter netherPayments = new SqlChunkPaymentAdapter(database, "the_nether");
+        for (long amount : new long[] {1_000, 500}) {
+            UUID operation = UUID.randomUUID();
+            assertThat(netherPayments
+                            .chargeIslandAndRecord(
+                                    new com.uxplima.uxmskyblock.core.application.chunkblock.ChunkIslandCharge(
+                                            island,
+                                            chunk,
+                                            "money:island",
+                                            actor,
+                                            "PRIMARY",
+                                            2,
+                                            amount,
+                                            "Chunk -1,0",
+                                            node,
+                                            epoch,
+                                            bank.findBankByIslandId(island)
+                                                    .orElseThrow()
+                                                    .version(),
+                                            operation,
+                                            "chunk-" + operation))
+                            .orElseThrow())
+                    .isInstanceOf(com.uxplima.uxmskyblock.core.domain.bank.BankTransactionOutcome.Success.class);
+        }
+        assertThat(netherPayments.find(island, chunk).paid()).containsOnly(java.util.Map.entry("money:island", 1_500L));
+        assertThat(payments.find(island, chunk).paid()).containsOnly(java.util.Map.entry("money:island", 7_000L));
     }
 
     private static void claimAuthority(Database database, IslandId island, String node, long epoch)

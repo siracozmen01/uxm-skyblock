@@ -28,7 +28,7 @@ import com.uxplima.uxmlib.storage.sql.Dialect;
 public final class SkyblockMigrations {
 
     /** The latest production schema version. */
-    public static final int LATEST_VERSION = 71;
+    public static final int LATEST_VERSION = 72;
 
     /** Human-readable description of migration V28. */
     public static final String V28_DESCRIPTION = "create profile cosmetics and island recycle operations";
@@ -156,6 +156,10 @@ public final class SkyblockMigrations {
     /** Human-readable description of migration V71. */
     public static final String V71_DESCRIPTION =
             "keep the Brix build contests, their entries, their votes and what each placed member is owed";
+
+    /** Human-readable description of migration V72. */
+    public static final String V72_DESCRIPTION =
+            "keep the chunks a ChunkBlock island opens in its Nether and its End, and what is paid toward them";
 
     /** Human-readable description of migration V39. */
     public static final String V39_DESCRIPTION =

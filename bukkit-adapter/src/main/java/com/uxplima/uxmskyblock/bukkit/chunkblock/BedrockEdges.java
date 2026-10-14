@@ -41,6 +41,10 @@ public final class BedrockEdges {
 
     private final ChunkBlockService service;
     private final IslandProtectionListener islands;
+
+    /** The worlds whose ground this guards; another dimension's web guards the rest. */
+    private volatile java.util.function.Predicate<String> worlds = world -> true;
+
     private final SchedulerPort scheduler;
     private final Predicate<UUID> bedrock;
     private final WallConfiguration.Bedrock settings;
@@ -86,7 +90,7 @@ public final class BedrockEdges {
         if (at == null) {
             return 0;
         }
-        Optional<Island> island = islands.findIslandAt(at);
+        Optional<Island> island = islandAt(at);
         Optional<ChunkTerritory> territory = island.flatMap(found -> service.inMemory(found.id()));
         if (territory.isEmpty()) {
             return 0;
@@ -124,5 +128,16 @@ public final class BedrockEdges {
             }
         }
         return points;
+    }
+
+    /** Guards only the worlds {@code guarded} names, so each dimension's web answers in its own worlds alone. */
+    public void guarding(java.util.function.Predicate<String> guarded) {
+        this.worlds = Objects.requireNonNull(guarded, "guarded must not be null");
+    }
+
+    /** The island at {@code at}, in a world this guards. */
+    private Optional<Island> islandAt(Location at) {
+        org.bukkit.World world = at.getWorld();
+        return world == null || !worlds.test(world.getName()) ? Optional.empty() : islands.findIslandAt(at);
     }
 }

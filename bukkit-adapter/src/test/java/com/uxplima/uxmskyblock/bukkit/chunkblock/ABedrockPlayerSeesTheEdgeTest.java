@@ -187,5 +187,15 @@ class ABedrockPlayerSeesTheEdgeTest extends MockBukkitHarness {
 
         bedrock.setLocation(new Location(world, 8, 100, 8));
         assertThat(edges(uuid -> true, 12).show(bedrock)).isEqualTo(64 * 3);
+
+        BedrockEdges elsewhere = edges(uuid -> true, 12);
+        elsewhere.guarding("skyblock_nether"::equals);
+        assertThat(elsewhere.show(bedrock))
+                .describedAs("a web of another world shows nothing here")
+                .isZero();
+        elsewhere.guarding("skyblock"::equals);
+        assertThat(elsewhere.show(bedrock))
+                .describedAs("guarding this world, it shows")
+                .isEqualTo(64 * 3);
     }
 }

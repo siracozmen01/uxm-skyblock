@@ -52,6 +52,10 @@ public final class ChunkBlockListener implements Listener, ArrivalGate {
 
     private final ChunkBlockService service;
     private final IslandProtectionListener islands;
+
+    /** The worlds whose ground this guards; another dimension's web guards the rest. */
+    private volatile java.util.function.Predicate<String> worlds = world -> true;
+
     private final SchedulerPort scheduler;
     private final Messages messages;
     private final Function<IslandId, Optional<IslandLocation>> locations;
@@ -162,7 +166,7 @@ public final class ChunkBlockListener implements Listener, ArrivalGate {
     }
 
     private boolean standsInClosed(Player player, Location location) {
-        Optional<Island> island = islands.findIslandAt(location);
+        Optional<Island> island = islandAt(location);
         return island.isPresent()
                 && !service.isOpen(island.get().id(), ChunkPos.ofBlock(location.getBlockX(), location.getBlockZ()))
                         .orElse(true)
@@ -171,7 +175,7 @@ public final class ChunkBlockListener implements Listener, ArrivalGate {
 
     /** Sends a player found in a closed chunk to the island's spawn, once until they are there. */
     private void putOut(Player player, Location at) {
-        Optional<Island> island = islands.findIslandAt(at);
+        Optional<Island> island = islandAt(at);
         if (island.isEmpty() || !puttingOut.add(player.getUniqueId())) {
             return;
         }
@@ -200,7 +204,7 @@ public final class ChunkBlockListener implements Listener, ArrivalGate {
     }
 
     private boolean standsIn(Location location, IslandId islandId, List<ChunkPos> closed) {
-        Optional<Island> island = islands.findIslandAt(location);
+        Optional<Island> island = islandAt(location);
         return island.isPresent()
                 && island.get().id().equals(islandId)
                 && closed.contains(ChunkPos.ofBlock(location.getBlockX(), location.getBlockZ()));
@@ -214,7 +218,7 @@ public final class ChunkBlockListener implements Listener, ArrivalGate {
 
     /** Whether {@code location} is in a closed chunk this player may not enter, telling them so if it is. */
     private boolean refuses(Player player, Location location) {
-        Optional<Island> island = islands.findIslandAt(location);
+        Optional<Island> island = islandAt(location);
         if (island.isEmpty()) {
             return false;
         }
@@ -233,5 +237,16 @@ public final class ChunkBlockListener implements Listener, ArrivalGate {
             messages.send(player, "chunkblock.closed", Placeholder.unparsed("island_level", Long.toString(next)));
         }
         return true;
+    }
+
+    /** Guards only the worlds {@code guarded} names, so each dimension's web answers in its own worlds alone. */
+    public void guarding(java.util.function.Predicate<String> guarded) {
+        this.worlds = Objects.requireNonNull(guarded, "guarded must not be null");
+    }
+
+    /** The island at {@code at}, in a world this guards. */
+    private Optional<Island> islandAt(Location at) {
+        org.bukkit.World world = at.getWorld();
+        return world == null || !worlds.test(world.getName()) ? Optional.empty() : islands.findIslandAt(at);
     }
 }

@@ -108,6 +108,17 @@ public final class BootstrapEventRegistrar {
             gameplayWiring
                     .arrivalWatch()
                     .admit(gameplayWiring.chunkBlockWiring().listener());
+            // The island's Nether and End each guard a web of their own, in their own worlds.
+            for (ChunkBlockWiring.Web web : gameplayWiring.chunkBlockWiring().dimensions()) {
+                pm.registerEvents(web.listener(), plugin);
+                if (web.walls() != null) {
+                    pm.registerEvents(web.walls(), plugin);
+                }
+                if (web.signs() != null) {
+                    pm.registerEvents(web.signs(), plugin);
+                }
+                gameplayWiring.arrivalWatch().admit(web.listener());
+            }
         }
         if (gameplayWiring.boxedWiring().enabled()) {
             pm.registerEvents(gameplayWiring.boxedWiring().listener(), plugin);

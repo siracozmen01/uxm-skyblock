@@ -230,6 +230,27 @@ class AClosedChunkCarriesASignTest extends MockBukkitHarness {
     }
 
     @Test
+    @DisplayName("A web that guards another world stands no sign here, and leaves a click here to the web that does")
+    void aWebGuardsItsOwnWorld() {
+        signs.guarding("skyblock_nether"::equals);
+        load(1, 0);
+        assertThat(signsIn(1, 0)).isEmpty();
+
+        PlayerInteractEntityEvent byOwner =
+                new PlayerInteractEntityEvent(owner, marked(island.id().value().toString(), "1,0"));
+        signs.onClick(byOwner);
+        assertThat(windows).isEmpty();
+        assertThat(byOwner.isCancelled())
+                .describedAs("left to the web that guards it")
+                .isFalse();
+        assertThat(owner.nextComponentMessage()).isNull();
+
+        signs.guarding("skyblock"::equals);
+        load(1, 0);
+        assertThat(signsIn(1, 0)).hasSize(1);
+    }
+
+    @Test
     @DisplayName("A member's click opens the chunk's window, a visitor's is told no, and other boxes are left alone")
     void aClickOpensTheWindow() {
         Interaction sign = marked(island.id().value().toString(), "1,0");

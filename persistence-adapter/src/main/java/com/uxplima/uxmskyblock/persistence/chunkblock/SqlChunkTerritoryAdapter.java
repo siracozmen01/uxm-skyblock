@@ -18,13 +18,28 @@ import com.uxplima.uxmskyblock.core.domain.chunkblock.ChunkPos;
 import com.uxplima.uxmskyblock.core.domain.chunkblock.ChunkTerritory;
 import com.uxplima.uxmskyblock.core.domain.identity.IslandId;
 
-/** The {@code chunkblock_territory_claims} table. */
+/**
+ * The chunks each ChunkBlock island opened: the overworld's in {@code chunkblock_territory_claims}, a Nether's or an
+ * End's in {@code chunkblock_dimension_claims} under its dimension.
+ */
 public final class SqlChunkTerritoryAdapter implements ChunkTerritoryPort {
 
     private final DataSource dataSource;
+    private final ChunkScope scope;
 
+    /** The overworld's web. */
     public SqlChunkTerritoryAdapter(DataSource dataSource) {
+        this(dataSource, ChunkScope.OVERWORLD);
+    }
+
+    /** The web of {@code dimension}, a dimension other than the overworld. */
+    public SqlChunkTerritoryAdapter(DataSource dataSource, String dimension) {
+        this(dataSource, ChunkScope.of(dimension));
+    }
+
+    private SqlChunkTerritoryAdapter(DataSource dataSource, ChunkScope scope) {
         this.dataSource = Objects.requireNonNull(dataSource, "dataSource must not be null");
+        this.scope = scope;
     }
 
     @Override
@@ -34,18 +49,21 @@ public final class SqlChunkTerritoryAdapter implements ChunkTerritoryPort {
         Map<IslandId, java.util.Set<ChunkPos>> bought = new HashMap<>();
         try (Connection conn = dataSource.getConnection();
                 PreparedStatement ps = conn.prepareStatement("SELECT island_id, chunk_x, chunk_z, unlock_order, bought "
-                        + "FROM chunkblock_territory_claims ORDER BY island_id, unlock_order");
-                ResultSet rs = ps.executeQuery()) {
-            while (rs.next()) {
-                IslandId islandId = IslandId.of(java.util.UUID.fromString(rs.getString(1)));
-                ChunkPos chunk = new ChunkPos(rs.getInt(2), rs.getInt(3));
-                if (rs.getInt(4) == 0) {
-                    origins.put(islandId, chunk);
-                } else {
-                    opened.computeIfAbsent(islandId, id -> new ArrayList<>()).add(chunk);
-                    if (rs.getInt(5) != 0) {
-                        bought.computeIfAbsent(islandId, id -> new java.util.HashSet<>())
+                        + "FROM " + scope.claims() + scope.where() + " ORDER BY island_id, unlock_order")) {
+            scope.bind(ps, 1);
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    IslandId islandId = IslandId.of(java.util.UUID.fromString(rs.getString(1)));
+                    ChunkPos chunk = new ChunkPos(rs.getInt(2), rs.getInt(3));
+                    if (rs.getInt(4) == 0) {
+                        origins.put(islandId, chunk);
+                    } else {
+                        opened.computeIfAbsent(islandId, id -> new ArrayList<>())
                                 .add(chunk);
+                        if (rs.getInt(5) != 0) {
+                            bought.computeIfAbsent(islandId, id -> new java.util.HashSet<>())
+                                    .add(chunk);
+                        }
                     }
                 }
             }
@@ -66,9 +84,10 @@ public final class SqlChunkTerritoryAdapter implements ChunkTerritoryPort {
     public Optional<ChunkTerritory> find(IslandId islandId) {
         Objects.requireNonNull(islandId, "islandId must not be null");
         try (Connection conn = dataSource.getConnection();
-                PreparedStatement ps = conn.prepareStatement("SELECT chunk_x, chunk_z, unlock_order, bought "
-                        + "FROM chunkblock_territory_claims WHERE island_id = ? ORDER BY unlock_order")) {
+                PreparedStatement ps = conn.prepareStatement("SELECT chunk_x, chunk_z, unlock_order, bought " + "FROM "
+                        + scope.claims() + " WHERE island_id = ?" + scope.and() + " ORDER BY unlock_order")) {
             ps.setString(1, islandId.value().toString());
+            scope.bind(ps, 2);
             ChunkPos origin = null;
             List<ChunkPos> opened = new ArrayList<>();
             java.util.Set<ChunkPos> bought = new java.util.HashSet<>();
@@ -125,16 +144,17 @@ public final class SqlChunkTerritoryAdapter implements ChunkTerritoryPort {
             boolean auto = conn.getAutoCommit();
             conn.setAutoCommit(false);
             try {
-                try (PreparedStatement ps = conn.prepareStatement("DELETE FROM chunkblock_territory_claims "
-                        + "WHERE island_id = ? AND chunk_x = ? AND chunk_z = ? AND unlock_order > 0")) {
+                try (PreparedStatement ps = conn.prepareStatement("DELETE FROM " + scope.claims()
+                        + " WHERE island_id = ? AND chunk_x = ? AND chunk_z = ? AND unlock_order > 0" + scope.and())) {
                     for (ChunkPos chunk : chunks) {
                         ps.setString(1, island);
                         ps.setInt(2, chunk.x());
                         ps.setInt(3, chunk.z());
+                        scope.bind(ps, 4);
                         ps.executeUpdate();
                     }
                 }
-                renumber(conn, island);
+                renumber(conn, island, scope);
                 conn.commit();
             } catch (SQLException e) {
                 conn.rollback();
@@ -151,19 +171,20 @@ public final class SqlChunkTerritoryAdapter implements ChunkTerritoryPort {
      * Numbers the island's opened chunks 1, 2, 3 in the order they were opened. Each moves down or stays, lowest
      * first, so no two ever hold one place on the way.
      */
-    private static void renumber(Connection conn, String island) throws SQLException {
+    private static void renumber(Connection conn, String island, ChunkScope scope) throws SQLException {
         List<int[]> left = new ArrayList<>();
-        try (PreparedStatement ps = conn.prepareStatement("SELECT chunk_x, chunk_z, unlock_order "
-                + "FROM chunkblock_territory_claims WHERE island_id = ? AND unlock_order > 0 ORDER BY unlock_order")) {
+        try (PreparedStatement ps = conn.prepareStatement("SELECT chunk_x, chunk_z, unlock_order FROM " + scope.claims()
+                + " WHERE island_id = ? AND unlock_order > 0" + scope.and() + " ORDER BY unlock_order")) {
             ps.setString(1, island);
+            scope.bind(ps, 2);
             try (ResultSet rs = ps.executeQuery()) {
                 while (rs.next()) {
                     left.add(new int[] {rs.getInt(1), rs.getInt(2), rs.getInt(3)});
                 }
             }
         }
-        try (PreparedStatement ps = conn.prepareStatement("UPDATE chunkblock_territory_claims SET unlock_order = ? "
-                + "WHERE island_id = ? AND chunk_x = ? AND chunk_z = ?")) {
+        try (PreparedStatement ps = conn.prepareStatement("UPDATE " + scope.claims() + " SET unlock_order = ? "
+                + "WHERE island_id = ? AND chunk_x = ? AND chunk_z = ?" + scope.and())) {
             for (int i = 0; i < left.size(); i++) {
                 int[] claim = left.get(i);
                 if (claim[2] == i + 1) {
@@ -173,6 +194,7 @@ public final class SqlChunkTerritoryAdapter implements ChunkTerritoryPort {
                 ps.setString(2, island);
                 ps.setInt(3, claim[0]);
                 ps.setInt(4, claim[1]);
+                scope.bind(ps, 5);
                 ps.executeUpdate();
             }
         }
@@ -181,13 +203,16 @@ public final class SqlChunkTerritoryAdapter implements ChunkTerritoryPort {
     private boolean insert(IslandId islandId, ChunkPos chunk, int order, boolean bought) {
         Objects.requireNonNull(islandId, "islandId must not be null");
         try (Connection conn = dataSource.getConnection();
-                PreparedStatement ps = conn.prepareStatement("INSERT INTO chunkblock_territory_claims "
-                        + "(island_id, chunk_x, chunk_z, unlock_order, bought) VALUES (?, ?, ?, ?, ?)")) {
+                PreparedStatement ps = conn.prepareStatement("INSERT INTO " + scope.claims()
+                        + " (island_id, chunk_x, chunk_z, unlock_order, bought" + scope.column()
+                        + ") VALUES (?, ?, ?, ?, ?"
+                        + scope.value() + ")")) {
             ps.setString(1, islandId.value().toString());
             ps.setInt(2, chunk.x());
             ps.setInt(3, chunk.z());
             ps.setInt(4, order);
             ps.setInt(5, bought ? 1 : 0);
+            scope.bind(ps, 6);
             ps.executeUpdate();
             return true;
         } catch (SQLException e) {

@@ -39,6 +39,10 @@ public final class TerritoryWalls implements Listener {
 
     private final ChunkBlockService service;
     private final IslandProtectionListener islands;
+
+    /** The worlds whose ground this guards; another dimension's web guards the rest. */
+    private volatile java.util.function.Predicate<String> worlds = world -> true;
+
     private final SchedulerPort scheduler;
     private final WallPainter panels;
     private final WallStyle style;
@@ -68,7 +72,7 @@ public final class TerritoryWalls implements Listener {
         World world = event.getWorld();
         int chunkX = event.getChunk().getX();
         int chunkZ = event.getChunk().getZ();
-        Optional<Island> island = islands.findIslandAt(new Location(world, (chunkX << 4) + 8, 0, (chunkZ << 4) + 8));
+        Optional<Island> island = islandAt(new Location(world, (chunkX << 4) + 8, 0, (chunkZ << 4) + 8));
         if (island.isEmpty() || service.inMemory(island.get().id()).isEmpty()) {
             return;
         }
@@ -122,5 +126,16 @@ public final class TerritoryWalls implements Listener {
             all.addAll(chunk.neighbours());
         }
         return all;
+    }
+
+    /** Guards only the worlds {@code guarded} names, so each dimension's web answers in its own worlds alone. */
+    public void guarding(java.util.function.Predicate<String> guarded) {
+        this.worlds = Objects.requireNonNull(guarded, "guarded must not be null");
+    }
+
+    /** The island at {@code at}, in a world this guards. */
+    private Optional<Island> islandAt(Location at) {
+        org.bukkit.World world = at.getWorld();
+        return world == null || !worlds.test(world.getName()) ? Optional.empty() : islands.findIslandAt(at);
     }
 }
