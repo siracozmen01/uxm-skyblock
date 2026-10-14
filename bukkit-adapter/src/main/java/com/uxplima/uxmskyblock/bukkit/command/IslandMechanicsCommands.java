@@ -7,7 +7,6 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.function.Supplier;
 
-import org.bukkit.command.CommandSender;
 import org.bukkit.entity.Player;
 
 import io.papermc.paper.command.brigadier.CommandSourceStack;
@@ -34,7 +33,6 @@ import com.uxplima.uxmskyblock.core.application.boundary.IslandBoundaryService;
 import com.uxplima.uxmskyblock.core.application.island.IslandLocationService;
 import com.uxplima.uxmskyblock.core.application.limit.IslandLimitService;
 import com.uxplima.uxmskyblock.core.application.scheduler.SchedulerPort;
-import com.uxplima.uxmskyblock.core.domain.activity.ActivityEventType;
 import com.uxplima.uxmskyblock.core.domain.booster.BoosterApplyResult;
 import com.uxplima.uxmskyblock.core.domain.booster.BoosterCategory;
 import com.uxplima.uxmskyblock.core.domain.identity.IslandId;
@@ -51,19 +49,22 @@ import org.jspecify.annotations.Nullable;
  */
 public final class IslandMechanicsCommands {
 
-    private final IslandLocationService islandLocationService;
+    /** {@code /isadmin booster}: a booster applied to an island, and what the operator is told it did. */
+    private final BoosterVerbs boosters = new BoosterVerbs(this);
+
+    final IslandLocationService islandLocationService;
     private final PlayerSessionCoordinator sessionCoordinator;
-    private final SchedulerPort schedulerPort;
+    final SchedulerPort schedulerPort;
     private final Supplier<@Nullable IslandLimitService> limitServiceProvider;
     private final Supplier<@Nullable IslandAntiAbuseService> antiAbuseServiceProvider;
-    private final Supplier<@Nullable IslandBoosterService> boosterServiceProvider;
+    final Supplier<@Nullable IslandBoosterService> boosterServiceProvider;
     private final Supplier<@Nullable IslandBoosterMenu> boosterMenuProvider;
     private final Supplier<@Nullable IslandMissionsMenu> missionsMenuProvider;
     private final Supplier<@Nullable IslandBoundaryService> boundaryServiceProvider;
-    private final Messages messages;
+    final Messages messages;
 
     /** Where a booster somebody started is written down for the island's members to read. */
-    private final IslandActivityLog activityLog = new IslandActivityLog();
+    final IslandActivityLog activityLog = new IslandActivityLog();
 
     /** Tells this command group where to write the island's activity feed. */
     public void useActivityFeed(@Nullable ActivityFeedService service) {
@@ -114,7 +115,7 @@ public final class IslandMechanicsCommands {
                         .then(Cmd.argument("category", StringArgumentType.word())
                                 .then(Cmd.argument("multiplier", DoubleArgumentType.doubleArg(1.0))
                                         .then(Cmd.argument("duration", StringArgumentType.word())
-                                                .executes(this::executeAdminApplyBooster)))));
+                                                .executes(boosters::executeAdminApplyBooster)))));
     }
 
     public LiteralArgumentBuilder<CommandSourceStack> buildMissions() {
@@ -137,18 +138,18 @@ public final class IslandMechanicsCommands {
         return Cmd.literal("bounds").executes(this::executeBorder);
     }
 
-    private Optional<ProfileId> activeProfile(Player player) {
+    Optional<ProfileId> activeProfile(Player player) {
         if (sessionCoordinator == null) {
             return Optional.empty();
         }
         return sessionCoordinator.activeProfile(player.getUniqueId());
     }
 
-    private void send(Audience audience, String key, TagResolver... resolvers) {
+    void send(Audience audience, String key, TagResolver... resolvers) {
         send(audience, messages.render(audience, key, resolvers));
     }
 
-    private void send(Audience audience, Component component) {
+    void send(Audience audience, Component component) {
         if (audience instanceof Player player) {
             schedulerPort.onEntity(new PlayerUuid(player.getUniqueId()), () -> {
                 if (player.isOnline()) {
@@ -257,80 +258,8 @@ public final class IslandMechanicsCommands {
         return Cmd.OK;
     }
 
-    private int executeAdminApplyBooster(CommandContext<CommandSourceStack> ctx) {
-        CommandSender sender = ctx.getSource().getSender();
-        IslandBoosterService boosterService = boosterServiceProvider.get();
-        if (boosterService == null) {
-            send(sender, "booster.disabled");
-            return Cmd.OK;
-        }
-        if (!sender.hasPermission("uxmskyblock.admin.booster")) {
-            send(sender, "booster.no_permission");
-            return Cmd.OK;
-        }
-
-        String catStr = StringArgumentType.getString(ctx, "category");
-        Optional<BoosterCategory> optCategory = BoosterCategory.parse(catStr);
-        if (optCategory.isEmpty()) {
-            send(
-                    sender,
-                    "booster.invalid_category",
-                    Placeholder.unparsed("category", catStr),
-                    Placeholder.unparsed("categories", availableBoosterCategories()));
-            return Cmd.OK;
-        }
-
-        double multiplier = DoubleArgumentType.getDouble(ctx, "multiplier");
-        String durStr = StringArgumentType.getString(ctx, "duration");
-        Duration duration = parseDurationString(durStr);
-        if (duration.isZero() || duration.isNegative()) {
-            send(sender, "booster.invalid_duration", Placeholder.unparsed("duration", durStr));
-            return Cmd.OK;
-        }
-
-        if (!(sender instanceof Player player)) {
-            send(sender, "booster.console_needs_island");
-            return Cmd.OK;
-        }
-
-        Optional<ProfileId> optProfile = activeProfile(player);
-        if (optProfile.isEmpty()) {
-            send(player, "error.session_not_active");
-            return Cmd.OK;
-        }
-
-        ProfileId boosterProfile = optProfile.get();
-        // Read on the thread that owns this player, because the feed line is written off it.
-        String playerName = player.getName();
-        schedulerPort.async(() -> {
-            Optional<IslandId> optIsland = islandLocationService.findIslandId(boosterProfile);
-            if (optIsland.isEmpty()) {
-                send(player, "error.no_island");
-                return;
-            }
-            BoosterApplyResult result = boosterService.applyBooster(
-                    optIsland.get(), optCategory.get(), multiplier, duration, Instant.now());
-            if (isApplied(result)) {
-                activityLog.recordForMembers(
-                        optIsland.get(),
-                        boosterProfile,
-                        ActivityEventType.BOOSTER_ACTIVATED,
-                        "activity.booster_activated",
-                        java.util.Map.of(
-                                "player",
-                                playerName,
-                                "category",
-                                optCategory.get().name(),
-                                "multiplier",
-                                String.format(java.util.Locale.ROOT, "%.2f", multiplier)));
-            }
-            reportBoosterResult(player, optCategory.get(), result);
-        });
-        return Cmd.OK;
-    }
-
     /** Whether the booster is now running. A refused one is not worth a line in the feed. */
-    private static boolean isApplied(BoosterApplyResult result) {
+    static boolean isApplied(BoosterApplyResult result) {
         return result instanceof BoosterApplyResult.Success
                 || result instanceof BoosterApplyResult.DurationExtended
                 || result instanceof BoosterApplyResult.MultiplierStacked
@@ -418,81 +347,22 @@ public final class IslandMechanicsCommands {
         }
     }
 
-    /**
-     * Every outcome of applying a booster says what happened. The old line reported the result
-     * class name inside a green sentence, so a rejected booster and a disabled category both read
-     * as a success with a Java class name at the end of them.
-     */
-    private void reportBoosterResult(Player player, BoosterCategory category, BoosterApplyResult result) {
-        TagResolver categoryName = Placeholder.unparsed(
-                "category", messages.named(player, "booster.categories", category.name(), category.displayName()));
-        switch (result) {
-            case BoosterApplyResult.Success success ->
-                send(
-                        player,
-                        "booster.applied",
-                        categoryName,
-                        multiplierOf(success.effectiveMultiplier()),
-                        Placeholder.unparsed(
-                                "duration", DurationText.of(messages, player, success.remainingDuration())));
-            case BoosterApplyResult.DurationExtended extended ->
-                send(
-                        player,
-                        extended.capped() ? "booster.duration_extended_capped" : "booster.duration_extended",
-                        categoryName,
-                        multiplierOf(extended.effectiveMultiplier()),
-                        Placeholder.unparsed("duration", DurationText.of(messages, player, extended.totalDuration())));
-            case BoosterApplyResult.MultiplierStacked stacked ->
-                send(
-                        player,
-                        stacked.capped() ? "booster.multiplier_stacked_capped" : "booster.multiplier_stacked",
-                        categoryName,
-                        multiplierOf(stacked.effectiveMultiplier()),
-                        Placeholder.unparsed(
-                                "duration", DurationText.of(messages, player, stacked.remainingDuration())));
-            case BoosterApplyResult.Replaced replaced ->
-                send(
-                        player,
-                        "booster.replaced",
-                        categoryName,
-                        multiplierOf(replaced.newBooster().multiplier()));
-            case BoosterApplyResult.RejectedLowerTier rejected ->
-                send(
-                        player,
-                        "booster.rejected_lower_tier",
-                        categoryName,
-                        Placeholder.unparsed("current", formatMultiplier(rejected.currentMultiplier())),
-                        Placeholder.unparsed("attempted", formatMultiplier(rejected.attemptedMultiplier())));
-            case BoosterApplyResult.CategoryDisabled disabled ->
-                send(
-                        player,
-                        "booster.category_disabled",
-                        Placeholder.unparsed(
-                                "category",
-                                messages.named(
-                                        player,
-                                        "booster.categories",
-                                        disabled.category().name(),
-                                        disabled.category().displayName())));
-        }
-    }
-
-    private static TagResolver multiplierOf(double multiplier) {
+    static TagResolver multiplierOf(double multiplier) {
         return Placeholder.unparsed("multiplier", formatMultiplier(multiplier));
     }
 
-    private static String formatMultiplier(double multiplier) {
+    static String formatMultiplier(double multiplier) {
         return String.format(Locale.ROOT, "%.2f", multiplier);
     }
 
     /** The booster categories an operator can actually pass, read off the enum rather than typed. */
-    private static String availableBoosterCategories() {
+    static String availableBoosterCategories() {
         return java.util.Arrays.stream(BoosterCategory.values())
                 .map(Enum::name)
                 .collect(java.util.stream.Collectors.joining(", "));
     }
 
-    private static Duration parseDurationString(String raw) {
+    static Duration parseDurationString(String raw) {
         if (raw == null || raw.isBlank()) {
             return Duration.ZERO;
         }
