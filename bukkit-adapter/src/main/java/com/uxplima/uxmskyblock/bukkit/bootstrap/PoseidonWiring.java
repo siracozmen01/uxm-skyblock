@@ -30,6 +30,10 @@ public final class PoseidonWiring implements AutoCloseable {
     private final PoseidonService service;
     private final SchedulerPort scheduler;
     private final PoseidonHazard hazard;
+    private final com.uxplima.uxmskyblock.bukkit.poseidon.SchematicWreckTemplates templates =
+            new com.uxplima.uxmskyblock.bukkit.poseidon.SchematicWreckTemplates(
+                    new ServerWreckTemplates(),
+                    com.uxplima.uxmskyblock.bukkit.poseidon.SchematicWreckTemplates::parseQuietly);
     private @Nullable AutoCloseable beat;
 
     public PoseidonWiring(
@@ -61,6 +65,25 @@ public final class PoseidonWiring implements AutoCloseable {
         });
     }
 
+    /**
+     * Writes the shipped temple where no file stands yet, then reads every schematic a wreck group names. Off the
+     * main thread; a group whose file is not read yet lays nothing.
+     */
+    public java.util.concurrent.CompletableFuture<Integer> primeTemplates(
+            com.uxplima.uxmskyblock.bukkit.schematic.IslandSchematics files, int dataVersion) {
+        if (!config.enabled()) {
+            return java.util.concurrent.CompletableFuture.completedFuture(0);
+        }
+        java.util.List<String> keys = config.wrecks().values().stream()
+                .flatMap(wreck -> wreck.templates().stream())
+                .toList();
+        return files.writeIfMissing(
+                        com.uxplima.uxmskyblock.bukkit.poseidon.MonumentLayout.FILE,
+                        com.uxplima.uxmskyblock.bukkit.poseidon.MonumentLayout.shipped(dataVersion))
+                .handle((written, failure) -> null)
+                .thenCompose(written -> templates.prime(files, keys));
+    }
+
     public PoseidonService service() {
         return service;
     }
@@ -84,7 +107,6 @@ public final class PoseidonWiring implements AutoCloseable {
         }
         List<CreationActionProvider<IslandStart>> actions = new java.util.ArrayList<>();
         actions.add(new OceanStart(service, scheduler, config.ocean()));
-        ServerWreckTemplates templates = new ServerWreckTemplates();
         ServerChestLoot loot = new ServerChestLoot();
         config.wrecks()
                 .forEach((name, wreck) ->

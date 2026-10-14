@@ -71,6 +71,9 @@ public record PoseidonConfiguration(
     /** The shipped wrecks: a shipwreck, one big ruin, and a ring of small ones. */
     public static final Map<String, Wreck> SHIPPED_WRECKS = shippedWrecks();
 
+    /** The wreck group a monument start lays, from the monument block of the file. */
+    public static final String MONUMENT = "monument";
+
     /** The story missions whose chapters the lore book holds, in their order. */
     public static final List<String> SHIPPED_CHAPTERS =
             List.of("poseidon_story_1", "poseidon_story_2", "poseidon_story_3", "poseidon_story_4", "poseidon_story_5");
@@ -139,6 +142,9 @@ public record PoseidonConfiguration(
                         5,
                         44,
                         List.of("minecraft:chests/underwater_ruin_small")));
+        wrecks.put(
+                MONUMENT,
+                new Wreck(List.of("schematic:monument"), 1, 0, List.of("minecraft:chests/underwater_ruin_big")));
         return wrecks;
     }
 
@@ -182,8 +188,34 @@ public record PoseidonConfiguration(
                 ocean,
                 rules,
                 AcidIslandConfiguration.strings(hazard.node("water-effects"), SHIPPED_WATER_EFFECTS),
-                wrecks(root.node("wrecks")),
+                withMonument(wrecks(root.node("wrecks")), root.node("wrecks"), root.node("monument")),
                 AcidIslandConfiguration.strings(root.node("lore", "chapters"), SHIPPED_CHAPTERS));
+    }
+
+    /**
+     * The wrecks with the temple a monument start lays, read from its own block so a file written before it gains
+     * the block with the release. A wreck group the operator named monument wins.
+     */
+    private static Map<String, Wreck> withMonument(
+            Map<String, Wreck> wrecks, ConfigurationNode written, ConfigurationNode node) {
+        if (!written.node(MONUMENT).virtual()) {
+            return wrecks;
+        }
+        Map<String, Wreck> all = new LinkedHashMap<>(wrecks);
+        Wreck shipped = Objects.requireNonNull(SHIPPED_WRECKS.get(MONUMENT), "the shipped monument");
+        try {
+            all.put(
+                    MONUMENT,
+                    new Wreck(
+                            AcidIslandConfiguration.strings(node.node("templates"), shipped.templates()),
+                            node.node("count").getInt(shipped.count()),
+                            node.node("distance").getInt(shipped.distance()),
+                            AcidIslandConfiguration.strings(node.node("loot"), shipped.loot())));
+        } catch (IllegalArgumentException e) {
+            LOGGER.warning(() -> "modules/poseidon.conf monument: " + e.getMessage() + ". The shipped temple is used.");
+            all.put(MONUMENT, shipped);
+        }
+        return all;
     }
 
     private static Map<String, Wreck> wrecks(ConfigurationNode node) {

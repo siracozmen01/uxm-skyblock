@@ -186,6 +186,7 @@ public final class SkyblockBootstrap implements AutoCloseable {
         integrationWiring.whenServerIsUp();
         drawIslandsOnTheWebMap();
         writeShippedPlatforms();
+        readWreckTemplates();
         groundTheSpawns();
         noteKindsThatCannotBeMade();
     }
@@ -202,6 +203,27 @@ public final class SkyblockBootstrap implements AutoCloseable {
                         .filter(choices::offers)
                         .toList())
                 .forEach(plugin.getLogger()::warning);
+    }
+
+    /** Writes the shipped temple and reads the schematics the Poseidon wreck groups name. */
+    @SuppressWarnings("deprecation") // UnsafeValues is where the server says which version its names are of
+    private void readWreckTemplates() {
+        com.uxplima.uxmskyblock.bukkit.schematic.IslandSchematics files = gameplayWiring.islandSchematics();
+        if (files == null) {
+            return;
+        }
+        var unused = gameplayWiring
+                .poseidonWiring()
+                .primeTemplates(files, Bukkit.getUnsafe().getDataVersion())
+                .whenComplete((read, failure) -> {
+                    if (failure != null) {
+                        plugin.getLogger()
+                                .log(
+                                        java.util.logging.Level.WARNING,
+                                        "The Poseidon templates could not be read.",
+                                        failure);
+                    }
+                });
     }
 
     /**
