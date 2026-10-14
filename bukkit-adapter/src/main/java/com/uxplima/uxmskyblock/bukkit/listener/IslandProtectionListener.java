@@ -252,6 +252,11 @@ public final class IslandProtectionListener implements Listener {
                 type);
     }
 
+    /** The profile the player plays as, read from memory, or nothing before their session is known. */
+    public Optional<ProfileId> activeProfile(PlayerUuid player) {
+        return Optional.ofNullable(activeProfiles.get(Objects.requireNonNull(player, "player must not be null")));
+    }
+
     /**
      * What this listener says about a player doing one thing at one place.
      *

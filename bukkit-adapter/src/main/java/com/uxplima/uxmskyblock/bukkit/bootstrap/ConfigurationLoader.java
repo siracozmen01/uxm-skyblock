@@ -489,6 +489,12 @@ public final class ConfigurationLoader {
                 "stacking.conf",
                 com.uxplima.uxmskyblock.bukkit.config.StackingConfiguration::load,
                 com.uxplima.uxmskyblock.bukkit.config.StackingConfiguration.defaultConfiguration()));
+        wiring.useVisitorsConfig(loadConfig(
+                plugin,
+                dataDir,
+                "visitors.conf",
+                com.uxplima.uxmskyblock.bukkit.config.VisitorsConfiguration::load,
+                com.uxplima.uxmskyblock.bukkit.config.VisitorsConfiguration.defaultConfiguration()));
         wiring.useFlyConfig(loadConfig(
                 plugin,
                 dataDir,

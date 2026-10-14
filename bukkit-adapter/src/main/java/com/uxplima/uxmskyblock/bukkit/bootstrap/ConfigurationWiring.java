@@ -640,6 +640,19 @@ public final class ConfigurationWiring {
         this.stackingConfig = Objects.requireNonNull(config, "config must not be null");
     }
 
+    /** What visitors may not do, {@code modules/visitors.conf}, the shipped one until the loader reads it. */
+    private volatile com.uxplima.uxmskyblock.bukkit.config.VisitorsConfiguration visitorsConfig =
+            com.uxplima.uxmskyblock.bukkit.config.VisitorsConfiguration.defaultConfiguration();
+
+    public com.uxplima.uxmskyblock.bukkit.config.VisitorsConfiguration visitorsConfig() {
+        return visitorsConfig;
+    }
+
+    /** Hands over {@code modules/visitors.conf} as the server read it. */
+    public void useVisitorsConfig(com.uxplima.uxmskyblock.bukkit.config.VisitorsConfiguration config) {
+        this.visitorsConfig = Objects.requireNonNull(config, "config must not be null");
+    }
+
     /** Flight on islands, {@code modules/fly.conf}, the shipped one until the loader hands the file over. */
     private volatile com.uxplima.uxmskyblock.bukkit.config.IslandFlyConfiguration flyConfig =
             com.uxplima.uxmskyblock.bukkit.config.IslandFlyConfiguration.defaultConfiguration();
