@@ -271,4 +271,52 @@ class ABlockJoinsItsStackTest extends MockBukkitHarness {
                 .set(BlockStacks.keyOf(base), org.bukkit.persistence.PersistentDataType.INTEGER, 0);
         assertThat(BlockStacks.size(base)).isEqualTo(1);
     }
+
+    @Test
+    @DisplayName("A stack on the island next door, reached across the border, is not joined")
+    void theNeighboursStackIsNotJoined() {
+        Island neighbour = Island.create(
+                IslandId.of(UUID.randomUUID()),
+                IslandBounds.fromCenterAndRadius(200, 0, 50),
+                new PlayerUuid(UUID.randomUUID()),
+                new ProfileId(UUID.randomUUID()),
+                Instant.now());
+        when(islands.findIslandAt(base.getLocation())).thenReturn(Optional.of(neighbour));
+        BlockPlaceEvent across = placeOn(base, Material.DIAMOND_BLOCK);
+        when(islands.findIslandAt(across.getBlockPlaced().getLocation())).thenReturn(Optional.of(island));
+
+        listener.onPlace(across);
+
+        assertThat(across.isCancelled()).isFalse();
+        assertThat(BlockStacks.size(base)).isEqualTo(1);
+
+        when(islands.findIslandAt(across.getBlockPlaced().getLocation())).thenReturn(Optional.empty());
+        listener.onPlace(placeOn(base, Material.DIAMOND_BLOCK));
+        assertThat(BlockStacks.size(base)).describedAs("from the wild").isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("Every handler runs after the island's protection, which runs at HIGH, and never on a refusal")
+    void afterTheProtection() throws Exception {
+        for (java.lang.reflect.Method handler : BlockStackListener.class.getDeclaredMethods()) {
+            org.bukkit.event.EventHandler mark = handler.getAnnotation(org.bukkit.event.EventHandler.class);
+            if (mark == null) {
+                continue;
+            }
+            assertThat(mark.ignoreCancelled()).describedAs(handler.getName()).isTrue();
+            assertThat(mark.priority().getSlot())
+                    .describedAs(handler.getName())
+                    .isGreaterThan(org.bukkit.event.EventPriority.HIGH.getSlot());
+        }
+        assertThat(IslandProtectionListener.class
+                        .getMethod("onBlockBreak", BlockBreakEvent.class)
+                        .getAnnotation(org.bukkit.event.EventHandler.class)
+                        .priority())
+                .isEqualTo(org.bukkit.event.EventPriority.HIGH);
+        assertThat(IslandProtectionListener.class
+                        .getMethod("onBlockPlace", BlockPlaceEvent.class)
+                        .getAnnotation(org.bukkit.event.EventHandler.class)
+                        .priority())
+                .isEqualTo(org.bukkit.event.EventPriority.HIGH);
+    }
 }

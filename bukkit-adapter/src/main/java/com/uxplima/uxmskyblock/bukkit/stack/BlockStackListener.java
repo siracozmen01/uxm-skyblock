@@ -29,6 +29,9 @@ import com.uxplima.uxmskyblock.core.domain.island.Island;
  * Stacks a block placed on a block of its kind, gives a stack back one block at a time, and keeps a stack where it
  * stands.
  *
+ * <p>Every handler runs after the island's protection has said whether the player may place or break there, so a
+ * visitor neither adds to a stack nor takes one apart.
+ *
  * <p>Each block a stack stands for counts toward the island's worth as a placed block would, and a line above the
  * stack shows how many it is. A piston does not move a stack and an explosion does not break one: the stack is kept
  * under the place it stands, so a block moved off it would leave its count behind for whatever stood there next.
@@ -51,7 +54,7 @@ public final class BlockStackListener implements Listener {
         this.world = Objects.requireNonNull(world, "world must not be null");
     }
 
-    @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void onPlace(BlockPlaceEvent event) {
         Player player = event.getPlayer();
         Block against = event.getBlockAgainst();
@@ -60,9 +63,15 @@ public final class BlockStackListener implements Listener {
         if (player.isSneaking() || against.getType() != kind || !rules.stacks(kind)) {
             return;
         }
+        // The protection asked about the place the block would go, not the stack it joins: a stack on the island
+        // next door, reached across the border, is not the placer's to change.
         Optional<Island> island = islands.findIslandAt(against.getLocation());
+        Optional<Island> here = islands.findIslandAt(event.getBlockPlaced().getLocation());
         int size = BlockStacks.size(against);
-        if (island.isEmpty() || size >= rules.most()) {
+        if (island.isEmpty()
+                || here.isEmpty()
+                || !island.get().id().equals(here.get().id())
+                || size >= rules.most()) {
             return;
         }
         event.setCancelled(true);
@@ -85,7 +94,7 @@ public final class BlockStackListener implements Listener {
         }
     }
 
-    @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void onBreak(BlockBreakEvent event) {
         Block block = event.getBlock();
         int size = BlockStacks.size(block);
@@ -105,26 +114,26 @@ public final class BlockStackListener implements Listener {
         world.show(block, size - 1);
     }
 
-    @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void onPush(BlockPistonExtendEvent event) {
         if (anyStacked(event.getBlocks())) {
             event.setCancelled(true);
         }
     }
 
-    @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void onPull(BlockPistonRetractEvent event) {
         if (anyStacked(event.getBlocks())) {
             event.setCancelled(true);
         }
     }
 
-    @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void onEntityExplode(EntityExplodeEvent event) {
         event.blockList().removeIf(block -> BlockStacks.size(block) > 1);
     }
 
-    @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void onBlockExplode(BlockExplodeEvent event) {
         event.blockList().removeIf(block -> BlockStacks.size(block) > 1);
     }
