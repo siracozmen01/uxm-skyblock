@@ -42,18 +42,36 @@ public record CaveBlockConfiguration(
      * @param deepBelow how many blocks below the arrival the rock turns deep
      * @param deepOres the ores in the deep rock
      */
-    public record Palette(String rock, OreTable ores, String deepRock, int deepBelow, OreTable deepOres) {
+    public record Palette(
+            String rock, OreTable ores, String deepRock, int deepBelow, OreTable deepOres, double richer) {
 
         public Palette {
             Objects.requireNonNull(rock, "rock must not be null");
             Objects.requireNonNull(ores, "ores must not be null");
             Objects.requireNonNull(deepRock, "deepRock must not be null");
             Objects.requireNonNull(deepOres, "deepOres must not be null");
+            if (!(richer >= 0)) {
+                throw new IllegalArgumentException("richer must not be below 0");
+            }
+        }
+
+        /** A rock no richer further down. */
+        public Palette(String rock, OreTable ores, String deepRock, int deepBelow, OreTable deepOres) {
+            this(rock, ores, deepRock, deepBelow, deepOres, 0);
         }
 
         /** A rock that is the same all the way down. */
         public static Palette plain(String rock, OreTable ores) {
             return new Palette(rock, ores, rock, Integer.MAX_VALUE, ores);
+        }
+
+        /**
+         * How many times its ores' chances are at {@code depth} blocks under the block players arrive on, of a rock
+         * reaching {@code below} blocks down: once at the arrival and above it, rising evenly to 1 + richer at the
+         * floor.
+         */
+        public double scaleAt(int depth, int below) {
+            return 1 + richer * Math.clamp((double) depth / below, 0, 1);
         }
     }
 
@@ -267,10 +285,10 @@ public record CaveBlockConfiguration(
                                         "COAL_ORE:0.014",
                                         "IRON_ORE:0.009",
                                         "COPPER_ORE:0.008",
-                                        "GOLD_ORE:0.002",
-                                        "REDSTONE_ORE:0.004",
-                                        "LAPIS_ORE:0.002",
-                                        "EMERALD_ORE:0.0004"),
+                                        "GOLD_ORE:0.002:6",
+                                        "REDSTONE_ORE:0.004:4",
+                                        "LAPIS_ORE:0.002:4",
+                                        "EMERALD_ORE:0.0004:8"),
                                 "DEEPSLATE",
                                 12,
                                 ores(
@@ -278,11 +296,16 @@ public record CaveBlockConfiguration(
                                         "DEEPSLATE_GOLD_ORE:0.004",
                                         "DEEPSLATE_REDSTONE_ORE:0.006",
                                         "DEEPSLATE_LAPIS_ORE:0.003",
-                                        "DEEPSLATE_DIAMOND_ORE:0.0015")),
+                                        "DEEPSLATE_DIAMOND_ORE:0.0015:16"),
+                                1),
                         NETHER,
-                        Palette.plain(
+                        new Palette(
                                 "NETHERRACK",
-                                ores("NETHER_QUARTZ_ORE:0.016", "NETHER_GOLD_ORE:0.008", "ANCIENT_DEBRIS:0.0004")),
+                                ores("NETHER_QUARTZ_ORE:0.016", "NETHER_GOLD_ORE:0.008", "ANCIENT_DEBRIS:0.0004:12"),
+                                "NETHERRACK",
+                                Integer.MAX_VALUE,
+                                ores("NETHER_QUARTZ_ORE:0.016", "NETHER_GOLD_ORE:0.008", "ANCIENT_DEBRIS:0.0004:12"),
+                                1),
                         END,
                         Palette.plain("END_STONE", OreTable.NONE)));
     }
@@ -442,15 +465,17 @@ public record CaveBlockConfiguration(
     private static Palette palette(ConfigurationNode node, Palette fallback) {
         String rock = node.node("rock").getString(fallback.rock()).trim().toUpperCase(Locale.ROOT);
         OreTable ores = oresOf(node.node("ores"), fallback.ores());
+        double richer = node.node("richer").getDouble(fallback.richer());
         if (node.node("deep-rock").virtual() && fallback.deepBelow() == Integer.MAX_VALUE) {
-            return Palette.plain(rock, ores);
+            return new Palette(rock, ores, rock, Integer.MAX_VALUE, ores, richer);
         }
         return new Palette(
                 rock,
                 ores,
                 node.node("deep-rock").getString(fallback.deepRock()).trim().toUpperCase(Locale.ROOT),
                 node.node("deep-below").getInt(fallback.deepBelow()),
-                oresOf(node.node("deep-ores"), fallback.deepOres()));
+                oresOf(node.node("deep-ores"), fallback.deepOres()),
+                richer);
     }
 
     private static OreTable oresOf(ConfigurationNode node, OreTable fallback) {

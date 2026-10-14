@@ -88,7 +88,8 @@ public final class CavernStart implements CreationActionProvider<IslandStart> {
                 resolved(palette.ores()),
                 block(palette.deepRock(), block(palette.rock(), Material.STONE)),
                 palette.deepBelow() == Integer.MAX_VALUE ? Integer.MIN_VALUE : start.y() - palette.deepBelow(),
-                resolved(palette.deepOres()));
+                resolved(palette.deepOres()),
+                depth -> palette.scaleAt(depth, shape.below()));
         Zoning zoning = zoning(world, seed);
         List<Pocket> pockets = pockets(world, start, seed);
         int minX = start.centerX() - shape.radius();
@@ -151,9 +152,15 @@ public final class CavernStart implements CreationActionProvider<IslandStart> {
                     } else if (part.carved(x, y, z)) {
                         continue;
                     } else if (y < rock.deepFrom() || (look != null && look.deep())) {
-                        material = rock.deepOres().pick(roll).map(this::known).orElse(rock.deepRock());
+                        material = rock.deepOres()
+                                .pick(roll, start.y() - y, rock.scale().applyAsDouble(start.y() - y))
+                                .map(this::known)
+                                .orElse(rock.deepRock());
                     } else {
-                        material = rock.ores().pick(roll).map(this::known).orElse(rock.rock());
+                        material = rock.ores()
+                                .pick(roll, start.y() - y, rock.scale().applyAsDouble(start.y() - y))
+                                .map(this::known)
+                                .orElse(rock.rock());
                     }
                     Block block = world.getBlockAt(x, y, z);
                     setIfAir(block, material);
@@ -370,7 +377,13 @@ public final class CavernStart implements CreationActionProvider<IslandStart> {
     }
 
     private record Rock(
-            Material shell, Material rock, OreTable ores, Material deepRock, int deepFrom, OreTable deepOres) {}
+            Material shell,
+            Material rock,
+            OreTable ores,
+            Material deepRock,
+            int deepFrom,
+            OreTable deepOres,
+            java.util.function.IntToDoubleFunction scale) {}
 
     private record Chunk(int fromX, int toX, int fromZ, int toZ, long seed) {}
 }
