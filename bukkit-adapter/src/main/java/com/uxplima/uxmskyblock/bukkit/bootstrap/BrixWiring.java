@@ -23,6 +23,8 @@ public final class BrixWiring implements AutoCloseable {
     private final SchedulerPort scheduler;
     private final com.uxplima.uxmskyblock.bukkit.brix.BrixModes modes;
     private final com.uxplima.uxmskyblock.bukkit.brix.BrixRules rules;
+    private final com.uxplima.uxmskyblock.core.application.brix.BrixSkies skies;
+    private final com.uxplima.uxmskyblock.bukkit.brix.PlotSkyCommands skyCommands;
     private @org.jspecify.annotations.Nullable AutoCloseable beat;
 
     public BrixWiring(
@@ -34,6 +36,7 @@ public final class BrixWiring implements AutoCloseable {
         this.config = Objects.requireNonNull(configuration.brixConfig(), "brixConfig must not be null");
         this.scheduler = Objects.requireNonNull(scheduler, "scheduler must not be null");
         this.service = new BrixService(persistence.brixPlotsPort());
+        this.skies = new com.uxplima.uxmskyblock.core.application.brix.BrixSkies(persistence.brixSkiesPort());
         this.modes = new com.uxplima.uxmskyblock.bukkit.brix.BrixModes(
                 service,
                 islands,
@@ -43,7 +46,10 @@ public final class BrixWiring implements AutoCloseable {
                         new com.uxplima.uxmskyblock.bukkit.creative.ServerInventoryCodec(), "brix", inPlay),
                 configuration.messages(),
                 configuration.effectsConfig(),
-                new com.uxplima.uxmskyblock.bukkit.effect.InteractionEffectPlayer(scheduler, configuration.messages()));
+                new com.uxplima.uxmskyblock.bukkit.effect.InteractionEffectPlayer(scheduler, configuration.messages()),
+                skies);
+        this.skyCommands = new com.uxplima.uxmskyblock.bukkit.brix.PlotSkyCommands(
+                service, skies, islands, scheduler, configuration.messages());
         this.rules = new com.uxplima.uxmskyblock.bukkit.brix.BrixRules(service, islands, config.rules());
         if (config.enabled()) {
             this.beat = modes.start();
@@ -51,7 +57,8 @@ public final class BrixWiring implements AutoCloseable {
         scheduler.async(() -> {
             try {
                 int count = service.prime();
-                LOGGER.fine(() -> count + " Brix plots are in memory.");
+                int set = skies.prime();
+                LOGGER.fine(() -> count + " Brix plots are in memory, " + set + " with a sky of their own.");
             } catch (RuntimeException e) {
                 LOGGER.log(Level.WARNING, "The Brix plots could not be read ahead.", e);
             }
@@ -65,6 +72,11 @@ public final class BrixWiring implements AutoCloseable {
     /** Who plays a plot in which mode, and what they brought, kept aside. */
     public com.uxplima.uxmskyblock.bukkit.brix.BrixModes modes() {
         return modes;
+    }
+
+    /** {@code /is plot time} and {@code /is plot weather}. */
+    public com.uxplima.uxmskyblock.bukkit.brix.PlotSkyCommands skyCommands() {
+        return skyCommands;
     }
 
     /** What cannot happen on a plot. */

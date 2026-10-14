@@ -1,12 +1,17 @@
 package com.uxplima.uxmskyblock.bukkit.brix;
 
 import java.time.Duration;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
+import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 
 import org.bukkit.Bukkit;
 import org.bukkit.GameMode;
 import org.bukkit.Location;
+import org.bukkit.WeatherType;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
@@ -21,7 +26,11 @@ import com.uxplima.uxmskyblock.bukkit.effect.InteractionEffects;
 import com.uxplima.uxmskyblock.bukkit.i18n.Messages;
 import com.uxplima.uxmskyblock.bukkit.listener.IslandProtectionListener;
 import com.uxplima.uxmskyblock.core.application.brix.BrixService;
+import com.uxplima.uxmskyblock.core.application.brix.BrixSkies;
+import com.uxplima.uxmskyblock.core.application.brix.BrixSkiesPort;
 import com.uxplima.uxmskyblock.core.application.scheduler.SchedulerPort;
+import com.uxplima.uxmskyblock.core.domain.brix.PlotSky;
+import com.uxplima.uxmskyblock.core.domain.identity.IslandId;
 import com.uxplima.uxmskyblock.core.domain.identity.PlayerUuid;
 import com.uxplima.uxmskyblock.core.domain.island.Island;
 
@@ -43,7 +52,11 @@ public final class BrixModes implements Listener {
     private final Messages messages;
     private final InteractionEffects effects;
     private final InteractionEffectPlayer effectPlayer;
+    private final BrixSkies skies;
+    /** The players whose time or weather a plot set, to be given the world's back when they leave it. */
+    private final Set<UUID> skied = ConcurrentHashMap.newKeySet();
 
+    /** Plots that keep their world's sky. */
     public BrixModes(
             BrixService service,
             IslandProtectionListener islands,
@@ -53,6 +66,39 @@ public final class BrixModes implements Listener {
             Messages messages,
             InteractionEffects effects,
             InteractionEffectPlayer effectPlayer) {
+        this(
+                service,
+                islands,
+                scheduler,
+                modes,
+                sealed,
+                messages,
+                effects,
+                effectPlayer,
+                new BrixSkies(new BrixSkiesPort() {
+                    @Override
+                    public Map<IslandId, PlotSky> findAll() {
+                        return Map.of();
+                    }
+
+                    @Override
+                    public void save(IslandId islandId, PlotSky sky) {
+                        // Nothing is kept.
+                    }
+                }));
+    }
+
+    public BrixModes(
+            BrixService service,
+            IslandProtectionListener islands,
+            SchedulerPort scheduler,
+            BrixConfiguration.Modes modes,
+            SealedInventory sealed,
+            Messages messages,
+            InteractionEffects effects,
+            InteractionEffectPlayer effectPlayer,
+            BrixSkies skies) {
+        this.skies = Objects.requireNonNull(skies, "skies must not be null");
         this.service = Objects.requireNonNull(service, "service must not be null");
         this.islands = Objects.requireNonNull(islands, "islands must not be null");
         this.scheduler = Objects.requireNonNull(scheduler, "scheduler must not be null");
@@ -79,6 +125,11 @@ public final class BrixModes implements Listener {
         Location at = player.getLocation();
         Optional<Island> island = at == null ? Optional.empty() : islands.findIslandAt(at);
         boolean onPlot = island.isPresent() && service.isPlot(island.get().id());
+        if (onPlot) {
+            sky(player, skies.of(island.get().id()));
+        } else {
+            sky(player, PlotSky.WORLD);
+        }
         if (!onPlot) {
             if (sealed.unseal(player)) {
                 messages.send(player, "brix.left");
@@ -110,10 +161,48 @@ public final class BrixModes implements Listener {
         return wanted;
     }
 
+    /**
+     * Shows the player a plot's sky: its time and weather where it set them, the world's where it did not. Only a
+     * time or weather this class set is given back to the world, so another's is left alone.
+     */
+    private void sky(Player player, PlotSky sky) {
+        UUID id = player.getUniqueId();
+        boolean ours = skied.contains(id);
+        if (sky.time() != PlotSky.WORLD_TIME) {
+            if (player.isPlayerTimeRelative() || player.getPlayerTimeOffset() != sky.time()) {
+                player.setPlayerTime(sky.time(), false);
+            }
+        } else if (ours && !player.isPlayerTimeRelative()) {
+            player.resetPlayerTime();
+        }
+        WeatherType wanted =
+                switch (sky.weather()) {
+                    case CLEAR -> WeatherType.CLEAR;
+                    case RAIN -> WeatherType.DOWNFALL;
+                    case WORLD -> null;
+                };
+        if (wanted != null) {
+            if (player.getPlayerWeather() != wanted) {
+                player.setPlayerWeather(wanted);
+            }
+        } else if (ours && player.getPlayerWeather() != null) {
+            player.resetPlayerWeather();
+        }
+        if (sky.isWorld()) {
+            skied.remove(id);
+        } else {
+            skied.add(id);
+        }
+    }
+
     /** Gives a player leaving the server what they came with, so it is what the server saves. */
     @EventHandler(priority = EventPriority.MONITOR)
     public void onQuit(PlayerQuitEvent event) {
         sealed.unseal(event.getPlayer());
+        if (skied.remove(event.getPlayer().getUniqueId())) {
+            event.getPlayer().resetPlayerTime();
+            event.getPlayer().resetPlayerWeather();
+        }
     }
 
     /** Sets up a player coming back at once, rather than on the next beat. */

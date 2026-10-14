@@ -341,6 +341,13 @@ public final class IslandCommandTree {
 
     private com.uxplima.uxmskyblock.bukkit.parkour.@Nullable ParkourCourses parkourCourses;
 
+    private com.uxplima.uxmskyblock.bukkit.brix.@Nullable PlotSkyCommands plotSky;
+
+    /** What {@code /is plot time} and {@code /is plot weather} set, while islands can be Brix plots. */
+    public void usePlotSky(com.uxplima.uxmskyblock.bukkit.brix.@Nullable PlotSkyCommands sky) {
+        this.plotSky = sky;
+    }
+
     /** What {@code /is courses} opens, while islands can be Parkour courses. */
     public void useParkourCourses(com.uxplima.uxmskyblock.bukkit.parkour.@Nullable ParkourCourses courses) {
         this.parkourCourses = courses;
@@ -799,6 +806,19 @@ public final class IslandCommandTree {
                                                         com.mojang.brigadier.arguments.IntegerArgumentType.getInteger(
                                                                 ctx, "number")))))))
                 .then(Cmd.literal("courses").executes(this::executeCourses))
+                .then(Cmd.literal("plot")
+                        .then(Cmd.literal("time")
+                                .then(Cmd.argument("value", StringArgumentType.word())
+                                        .executes(ctx -> plotSky(
+                                                ctx,
+                                                (sky, player) ->
+                                                        sky.time(player, StringArgumentType.getString(ctx, "value"))))))
+                        .then(Cmd.literal("weather")
+                                .then(Cmd.argument("value", StringArgumentType.word())
+                                        .executes(ctx -> plotSky(
+                                                ctx,
+                                                (sky, player) -> sky.weather(
+                                                        player, StringArgumentType.getString(ctx, "value")))))))
                 .then(Cmd.literal("coursetag")
                         .then(courseTag(
                                 "difficulty", com.uxplima.uxmskyblock.bukkit.parkour.ParkourTagging.Kind.DIFFICULTY))
@@ -994,6 +1014,22 @@ public final class IslandCommandTree {
             return Cmd.OK;
         }
         courses.open(player);
+        return Cmd.OK;
+    }
+
+    private int plotSky(
+            CommandContext<CommandSourceStack> ctx,
+            java.util.function.BiConsumer<com.uxplima.uxmskyblock.bukkit.brix.PlotSkyCommands, Player> act) {
+        if (!(ctx.getSource().getSender() instanceof Player player)) {
+            send(ctx.getSource().getSender(), "error.players_only");
+            return Cmd.OK;
+        }
+        com.uxplima.uxmskyblock.bukkit.brix.PlotSkyCommands sky = this.plotSky;
+        if (sky == null) {
+            send(player, "brix.not_plot");
+            return Cmd.OK;
+        }
+        act.accept(sky, player);
         return Cmd.OK;
     }
 

@@ -165,6 +165,7 @@ public final class PersistenceBootstrap implements AutoCloseable {
     private final com.uxplima.uxmskyblock.persistence.parkour.SqlParkourAdapter parkourAdapter;
     private final com.uxplima.uxmskyblock.persistence.leaderboard.SqlModeStandingsAdapter modeStandingsAdapter;
     private final com.uxplima.uxmskyblock.persistence.brix.SqlBrixPlotsAdapter brixPlotsAdapter;
+    private final com.uxplima.uxmskyblock.persistence.brix.SqlBrixSkiesAdapter brixSkiesAdapter;
     private final com.uxplima.uxmskyblock.persistence.tradewinds.SqlVesselsAdapter vesselsAdapter;
     private final com.uxplima.uxmskyblock.persistence.inventory.VesselCargoJournalAdapter cargoJournal;
     private final com.uxplima.uxmskyblock.persistence.tradewinds.SqlVoyagesAdapter voyages;
@@ -284,6 +285,7 @@ public final class PersistenceBootstrap implements AutoCloseable {
         this.modeStandingsAdapter =
                 new com.uxplima.uxmskyblock.persistence.leaderboard.SqlModeStandingsAdapter(database.dataSource());
         this.brixPlotsAdapter = new com.uxplima.uxmskyblock.persistence.brix.SqlBrixPlotsAdapter(database.dataSource());
+        this.brixSkiesAdapter = new com.uxplima.uxmskyblock.persistence.brix.SqlBrixSkiesAdapter(database.dataSource());
         this.vesselsAdapter =
                 new com.uxplima.uxmskyblock.persistence.tradewinds.SqlVesselsAdapter(database.dataSource());
         this.cargoJournal = new com.uxplima.uxmskyblock.persistence.inventory.VesselCargoJournalAdapter(database);
@@ -590,6 +592,11 @@ public final class PersistenceBootstrap implements AutoCloseable {
     /** Which islands are Brix plots. */
     public com.uxplima.uxmskyblock.core.application.brix.BrixPlotsPort brixPlotsPort() {
         return brixPlotsAdapter;
+    }
+
+    /** The time and weather each Brix plot's team set. */
+    public com.uxplima.uxmskyblock.core.application.brix.BrixSkiesPort brixSkiesPort() {
+        return brixSkiesAdapter;
     }
 
     /** Which islands are TradeWinds vessels. */
