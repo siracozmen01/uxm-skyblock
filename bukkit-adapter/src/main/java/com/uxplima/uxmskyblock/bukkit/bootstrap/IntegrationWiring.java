@@ -173,7 +173,10 @@ public final class IntegrationWiring implements AutoCloseable {
         this.controlMenu.useVaultPages(gameplay.vaultService()::getMaxAllowedPages);
         this.controlMenu.useUpgradeStanding(gameplay.upgradeService()::standing);
         this.controlMenu.useUpgradeWords(new com.uxplima.uxmskyblock.bukkit.menu.UpgradeWords(
-                this.messages, gameplay.upgradeService()::definitions, config.generatorsConfig()));
+                this.messages,
+                gameplay.upgradeService()::definitions,
+                config.generatorsConfig(),
+                config.limitConfig().quotas()));
         WindowFiles.connect(gameplay, this.menuEngine, this.controlMenu);
 
         this.placeholderExpansion = new SkyblockPlaceholderExpansion(

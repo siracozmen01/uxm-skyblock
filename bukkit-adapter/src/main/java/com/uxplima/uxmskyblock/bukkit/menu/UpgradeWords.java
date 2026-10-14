@@ -21,6 +21,8 @@ import net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer;
 import com.uxplima.uxmskyblock.bukkit.config.GeneratorsConfiguration;
 import com.uxplima.uxmskyblock.bukkit.i18n.Messages;
 import com.uxplima.uxmskyblock.bukkit.i18n.MoneyText;
+import com.uxplima.uxmskyblock.core.domain.limit.LimitQuota;
+import com.uxplima.uxmskyblock.core.domain.limit.LimitType;
 import com.uxplima.uxmskyblock.core.domain.upgrade.UpgradeDefinition;
 import com.uxplima.uxmskyblock.core.domain.upgrade.UpgradeId;
 import com.uxplima.uxmskyblock.core.domain.upgrade.UpgradeTier;
@@ -46,14 +48,28 @@ public final class UpgradeWords {
     private final Messages messages;
     private final Supplier<Map<UpgradeId, UpgradeDefinition>> definitions;
     private final GeneratorsConfiguration generators;
+    private final Map<LimitType, LimitQuota> quotas;
 
     public UpgradeWords(
             Messages messages,
             Supplier<Map<UpgradeId, UpgradeDefinition>> definitions,
             GeneratorsConfiguration generators) {
+        this(messages, definitions, generators, Map.of());
+    }
+
+    /**
+     * Words that also say what a limit upgrade allows: every quota of {@code modules/limits.conf} that names the
+     * upgrade is a value of its own, {@code <hopper>} and so on, the limit an island on that tier is held to.
+     */
+    public UpgradeWords(
+            Messages messages,
+            Supplier<Map<UpgradeId, UpgradeDefinition>> definitions,
+            GeneratorsConfiguration generators,
+            Map<LimitType, LimitQuota> quotas) {
         this.messages = Objects.requireNonNull(messages, "messages must not be null");
         this.definitions = Objects.requireNonNull(definitions, "definitions must not be null");
         this.generators = Objects.requireNonNull(generators, "generators must not be null");
+        this.quotas = Map.copyOf(Objects.requireNonNull(quotas, "quotas must not be null"));
     }
 
     /** The words of every upgrade for an island standing on {@code tiers}, keyed as a menu asks for them. */
@@ -77,6 +93,7 @@ public final class UpgradeWords {
                     next.map(candidate -> MoneyText.of(candidate.costMinorUnits()))
                             .orElse(maxed));
             values.put(id + "_max", Integer.toString(definition.maxTier()));
+            values.put(id + "_tier", Integer.toString(tier));
         }
         return Map.copyOf(values);
     }
@@ -86,10 +103,12 @@ public final class UpgradeWords {
         String id = definition.id().key().toLowerCase(Locale.ROOT);
         boolean generator = id.equals(ORE_GENERATOR);
         Optional<UpgradeTier> held = definition.getTier(tier);
-        if (held.isEmpty() && !generator) {
+        Map<String, Integer> limits = limitsAt(definition.id(), tier);
+        if (held.isEmpty() && !generator && limits.isEmpty()) {
             return Optional.empty();
         }
         List<TagResolver> resolvers = new ArrayList<>();
+        limits.forEach((name, limit) -> resolvers.add(Placeholder.unparsed(name, Integer.toString(limit))));
         Map<String, Double> properties = held.map(UpgradeTier::properties).orElse(Map.of());
         properties.forEach((name, value) -> resolvers.add(Placeholder.unparsed(tagOf(name), number(value))));
         if (generator) {
@@ -101,7 +120,19 @@ public final class UpgradeWords {
         }
         List<String> written = new ArrayList<>();
         properties.forEach((name, value) -> written.add(name + " " + number(value)));
+        limits.forEach((name, limit) -> written.add(name + " " + limit));
         return written.isEmpty() ? Optional.empty() : Optional.of(String.join(", ", written));
+    }
+
+    /** The limit of every quota that names {@code upgrade}, as an island on {@code tier} is held to it. */
+    private Map<String, Integer> limitsAt(UpgradeId upgrade, int tier) {
+        Map<String, Integer> limits = new java.util.TreeMap<>();
+        quotas.forEach((type, quota) -> {
+            if (upgrade.equals(quota.upgradeId())) {
+                limits.put(tagOf(type.name()), quota.baseLimit() + tier * quota.perTierBonus());
+            }
+        });
+        return limits;
     }
 
     /** Every block a generator of {@code tier} turns up, the likeliest first, each with its share. */

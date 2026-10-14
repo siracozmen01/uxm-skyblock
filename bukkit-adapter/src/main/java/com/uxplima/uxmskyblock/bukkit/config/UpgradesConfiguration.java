@@ -120,6 +120,24 @@ public record UpgradesConfiguration(boolean enabled, Map<UpgradeId, UpgradeDefin
                                 new UpgradeTier(2, 90_000L, "PRIMARY", Map.of("rate_multiplier", 1.25)),
                                 new UpgradeTier(3, 250_000L, "PRIMARY", Map.of("rate_multiplier", 1.50)))));
 
+        // 8. The limit upgrades: each tier raises every quota of the limits file that names it.
+        Map<String, long[]> limitCosts = new LinkedHashMap<>();
+        limitCosts.put("hopper_limit", new long[] {25_000L, 75_000L, 200_000L});
+        limitCosts.put("piston_limit", new long[] {25_000L, 75_000L, 200_000L});
+        limitCosts.put("redstone_limit", new long[] {30_000L, 90_000L, 250_000L});
+        limitCosts.put("brewing_limit", new long[] {20_000L, 60_000L, 180_000L});
+        limitCosts.put("spawner_limit", new long[] {50_000L, 150_000L, 400_000L});
+        limitCosts.put("villager_limit", new long[] {40_000L, 120_000L, 300_000L});
+        limitCosts.put("entity_limit", new long[] {30_000L, 90_000L, 250_000L});
+        limitCosts.forEach((key, costs) -> {
+            List<UpgradeTier> tiers = new java.util.ArrayList<>();
+            for (int i = 0; i < costs.length; i++) {
+                tiers.add(new UpgradeTier(i + 1, costs[i], "PRIMARY", Map.of()));
+            }
+            UpgradeId id = UpgradeId.of(key);
+            defs.put(id, new UpgradeDefinition(id, "@upgrades.names." + key, tiers));
+        });
+
         return new UpgradesConfiguration(DEFAULT_ENABLED, defs);
     }
 

@@ -94,12 +94,12 @@ class UpgradeWordsTest extends MockBukkitHarness {
     @Test
     @DisplayName("An upgrade the operator added with no words of its own lists its properties as they are named")
     void anUpgradeWithNoWords() {
-        UpgradeId hoppers = UpgradeId.of("hopper_limit");
+        UpgradeId hoppers = UpgradeId.of("beacon_limit");
         Map<UpgradeId, UpgradeDefinition> withHoppers = Map.of(
                 hoppers,
                 new UpgradeDefinition(
                         hoppers,
-                        "Hoppers",
+                        "Beacons",
                         List.of(
                                 new UpgradeTier(1, 100L, "PRIMARY", Map.of("limit", 16.0)),
                                 new UpgradeTier(2, 200L, "PRIMARY", Map.of("limit", 32.0)))));
@@ -107,9 +107,9 @@ class UpgradeWordsTest extends MockBukkitHarness {
                 new UpgradeWords(Messages.bundled(), () -> withHoppers, GeneratorsConfiguration.defaultConfiguration());
 
         assertThat(custom.values(reader, Map.of(hoppers, 1)))
-                .containsEntry("hopper_limit_now", "limit 16")
-                .containsEntry("hopper_limit_next", "limit 32")
-                .containsEntry("hopper_limit_cost", "2.00");
+                .containsEntry("beacon_limit_now", "limit 16")
+                .containsEntry("beacon_limit_next", "limit 32")
+                .containsEntry("beacon_limit_cost", "2.00");
     }
 
     @Test
@@ -124,5 +124,60 @@ class UpgradeWordsTest extends MockBukkitHarness {
                 .containsKey(Material.STONE);
         assertThat(UpgradeWords.percent(12.345)).isEqualTo("12.3");
         assertThat(UpgradeWords.number(25.0)).isEqualTo("25");
+    }
+
+    @Test
+    @DisplayName("A limit upgrade says each limit an island on the tier is held to, from the limits file")
+    void aLimitUpgradeSaysItsLimits() {
+        UpgradeId entities = UpgradeId.of("entity_limit");
+        Map<UpgradeId, UpgradeDefinition> withEntities = Map.of(
+                entities,
+                new UpgradeDefinition(
+                        entities,
+                        "Entities",
+                        List.of(
+                                new UpgradeTier(1, 100L, "PRIMARY", Map.of()),
+                                new UpgradeTier(2, 200L, "PRIMARY", Map.of()))));
+        UpgradeWords limited = new UpgradeWords(
+                Messages.bundled(),
+                () -> withEntities,
+                GeneratorsConfiguration.defaultConfiguration(),
+                Map.of(
+                        com.uxplima.uxmskyblock.core.domain.limit.LimitType.ARMOR_STAND,
+                        new com.uxplima.uxmskyblock.core.domain.limit.LimitQuota(30, entities, 20),
+                        com.uxplima.uxmskyblock.core.domain.limit.LimitType.MINECART,
+                        new com.uxplima.uxmskyblock.core.domain.limit.LimitQuota(16, entities, 16),
+                        com.uxplima.uxmskyblock.core.domain.limit.LimitType.BOAT,
+                        new com.uxplima.uxmskyblock.core.domain.limit.LimitQuota(16, entities, 16),
+                        com.uxplima.uxmskyblock.core.domain.limit.LimitType.HOPPER,
+                        new com.uxplima.uxmskyblock.core.domain.limit.LimitQuota(
+                                50, UpgradeId.of("hopper_limit"), 50)));
+
+        assertThat(limited.values(reader, Map.of()))
+                .describedAs("nothing bought is the base")
+                .containsEntry("entity_limit_now", "Up to 30 armour stands, 16 minecarts and 16 boats")
+                .containsEntry("entity_limit_tier", "0");
+        assertThat(limited.values(reader, Map.of(entities, 1)))
+                .containsEntry("entity_limit_now", "Up to 50 armour stands, 32 minecarts and 32 boats")
+                .containsEntry("entity_limit_next", "Up to 70 armour stands, 48 minecarts and 48 boats")
+                .containsEntry("entity_limit_tier", "1");
+
+        UpgradeId droppers = UpgradeId.of("dropper_extra");
+        UpgradeWords unworded = new UpgradeWords(
+                Messages.bundled(),
+                () -> Map.of(
+                        droppers,
+                        new UpgradeDefinition(
+                                droppers, "Droppers", List.of(new UpgradeTier(1, 100L, "PRIMARY", Map.of())))),
+                GeneratorsConfiguration.defaultConfiguration(),
+                Map.of(
+                        com.uxplima.uxmskyblock.core.domain.limit.LimitType.DROPPER,
+                        new com.uxplima.uxmskyblock.core.domain.limit.LimitQuota(32, droppers, 32),
+                        com.uxplima.uxmskyblock.core.domain.limit.LimitType.HOPPER,
+                        new com.uxplima.uxmskyblock.core.domain.limit.LimitQuota(
+                                50, UpgradeId.of("hopper_limit"), 50)));
+        assertThat(unworded.values(reader, Map.of(droppers, 1)))
+                .describedAs("with no words of its own, it names its own limits and no other upgrade's")
+                .containsEntry("dropper_extra_now", "dropper 64");
     }
 }
