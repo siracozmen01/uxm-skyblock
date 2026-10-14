@@ -21,7 +21,6 @@ import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.builder.LiteralArgumentBuilder;
 import com.mojang.brigadier.context.CommandContext;
 import com.uxplima.uxmlib.command.Cmd;
-import com.uxplima.uxmskyblock.bukkit.i18n.DurationText;
 import com.uxplima.uxmskyblock.bukkit.i18n.Messages;
 import com.uxplima.uxmskyblock.bukkit.session.PlayerSessionCoordinator;
 import com.uxplima.uxmskyblock.core.application.activity.ActivityFeedService;
@@ -30,7 +29,6 @@ import com.uxplima.uxmskyblock.core.application.island.IslandLocationService;
 import com.uxplima.uxmskyblock.core.application.membership.IslandMembershipService;
 import com.uxplima.uxmskyblock.core.application.notification.NotificationService;
 import com.uxplima.uxmskyblock.core.application.scheduler.SchedulerPort;
-import com.uxplima.uxmskyblock.core.domain.activity.ActivityEventType;
 import com.uxplima.uxmskyblock.core.domain.identity.IslandId;
 import com.uxplima.uxmskyblock.core.domain.identity.PlayerUuid;
 import com.uxplima.uxmskyblock.core.domain.identity.ProfileId;
@@ -49,6 +47,15 @@ import org.jspecify.annotations.Nullable;
  * server was a solo island.
  */
 public final class IslandMembershipCommands {
+
+    /** {@code /is kick} and {@code /is leave}: a member taken off an island, or leaving it, and what each of them is told. */
+    private final RemovalVerbs removals = new RemovalVerbs(this);
+
+    /** {@code /is invite}, {@code /is accept} and {@code /is deny}: asking a player onto an island, and their answer under the co-op hopping lock. */
+    final InviteVerbs invites = new InviteVerbs(this);
+
+    /** {@code /is role} and {@code /is permissions}: the roles of an island, what each may do, and the window that shapes them. */
+    private final RoleVerbs roles = new RoleVerbs(this);
 
     /** Where a command named after a window opens it. */
     private CommandWindows windows = CommandWindows.none();
@@ -77,7 +84,7 @@ public final class IslandMembershipCommands {
     }
 
     /** Fires one milestone for one player, when the operator wrote anything for it. */
-    private void fireMilestone(String interaction, org.bukkit.entity.Player player) {
+    void fireMilestone(String interaction, org.bukkit.entity.Player player) {
         com.uxplima.uxmskyblock.bukkit.effect.InteractionEffects written = this.effects;
         com.uxplima.uxmskyblock.bukkit.effect.InteractionEffectPlayer plays = this.effectPlayer;
         if (written != null && plays != null) {
@@ -89,9 +96,9 @@ public final class IslandMembershipCommands {
             java.util.logging.Logger.getLogger(IslandMembershipCommands.class.getName());
 
     private final Supplier<@Nullable IslandMembershipService> membershipServiceProvider;
-    private final IslandLocationService islandLocationService;
-    private final SchedulerPort schedulerPort;
-    private final Messages messages;
+    final IslandLocationService islandLocationService;
+    final SchedulerPort schedulerPort;
+    final Messages messages;
     private final @Nullable PlayerSessionCoordinator sessionCoordinator;
 
     /**
@@ -101,9 +108,9 @@ public final class IslandMembershipCommands {
      * either, so {@code coop-join-cooldown} and the permission that bypasses it were two settings
      * an operator could write and watch do nothing.
      */
-    private volatile @Nullable IslandAntiAbuseService coopHoppingLock;
+    volatile @Nullable IslandAntiAbuseService coopHoppingLock;
 
-    private volatile com.uxplima.uxmskyblock.bukkit.config.@Nullable AntiAbuseConfiguration antiAbuseRules;
+    volatile com.uxplima.uxmskyblock.bukkit.config.@Nullable AntiAbuseConfiguration antiAbuseRules;
 
     /**
      * The inbox a player reads on their next join.
@@ -115,7 +122,7 @@ public final class IslandMembershipCommands {
     private volatile @Nullable NotificationService notificationService;
 
     /** Where what happens to this island's membership is written down for its members to read. */
-    private final IslandActivityLog activityLog = new IslandActivityLog();
+    final IslandActivityLog activityLog = new IslandActivityLog();
 
     public IslandMembershipCommands(
             Supplier<@Nullable IslandMembershipService> membershipServiceProvider,
@@ -133,7 +140,7 @@ public final class IslandMembershipCommands {
     }
 
     /** Tells this command group where to leave a notice for a player who is not here. */
-    private Supplier<com.uxplima.uxmskyblock.bukkit.lifecycle.@Nullable PlayerLifecycle> lifecycle = () -> null;
+    Supplier<com.uxplima.uxmskyblock.bukkit.lifecycle.@Nullable PlayerLifecycle> lifecycle = () -> null;
 
     /** What carries out the operator's lifecycle rules, looked up when a leave or a kick happens. */
     public void useLifecycle(Supplier<com.uxplima.uxmskyblock.bukkit.lifecycle.@Nullable PlayerLifecycle> lifecycle) {
@@ -153,10 +160,9 @@ public final class IslandMembershipCommands {
     }
 
     /** What makes and takes away an owner's own roles, and how many one may make. */
-    private Supplier<com.uxplima.uxmskyblock.core.application.membership.@Nullable IslandRoleShaper> roleShaper =
-            () -> null;
+    Supplier<com.uxplima.uxmskyblock.core.application.membership.@Nullable IslandRoleShaper> roleShaper = () -> null;
 
-    private Supplier<com.uxplima.uxmskyblock.bukkit.config.RoleConfiguration> roleConfiguration =
+    Supplier<com.uxplima.uxmskyblock.bukkit.config.RoleConfiguration> roleConfiguration =
             com.uxplima.uxmskyblock.bukkit.config.RoleConfiguration::defaults;
 
     /** Hands this group what makes an owner's own roles, and the allowance the operator wrote. */
@@ -181,7 +187,7 @@ public final class IslandMembershipCommands {
      * nothing until they logged in again. An invite has no notice at all, because it runs out long
      * before a later login.
      */
-    private void tellOrLeave(
+    void tellOrLeave(
             ProfileId recipient,
             String liveKey,
             NotificationCategory category,
@@ -248,24 +254,24 @@ public final class IslandMembershipCommands {
 
     public LiteralArgumentBuilder<CommandSourceStack> buildInvite() {
         return Cmd.literal("invite")
-                .then(Cmd.argument("player", StringArgumentType.word()).executes(this::executeInvite));
+                .then(Cmd.argument("player", StringArgumentType.word()).executes(invites::executeInvite));
     }
 
     public LiteralArgumentBuilder<CommandSourceStack> buildAccept() {
-        return Cmd.literal("accept").executes(this::executeAccept);
+        return Cmd.literal("accept").executes(invites::executeAccept);
     }
 
     public LiteralArgumentBuilder<CommandSourceStack> buildDeny() {
-        return Cmd.literal("deny").executes(this::executeDeny);
+        return Cmd.literal("deny").executes(invites::executeDeny);
     }
 
     public LiteralArgumentBuilder<CommandSourceStack> buildKick() {
         return Cmd.literal("kick")
-                .then(Cmd.argument("player", StringArgumentType.word()).executes(this::executeKick));
+                .then(Cmd.argument("player", StringArgumentType.word()).executes(removals::executeKick));
     }
 
     public LiteralArgumentBuilder<CommandSourceStack> buildLeave() {
-        return Cmd.literal("leave").executes(this::executeLeave);
+        return Cmd.literal("leave").executes(removals::executeLeave);
     }
 
     public LiteralArgumentBuilder<CommandSourceStack> buildMembers() {
@@ -278,23 +284,8 @@ public final class IslandMembershipCommands {
     public LiteralArgumentBuilder<CommandSourceStack> buildRole() {
         return Cmd.literal("role")
                 .then(Cmd.argument("player", StringArgumentType.word())
-                        .executes(this::executeRoleChoice)
-                        .then(Cmd.argument("role", StringArgumentType.word()).executes(this::executeRole)));
-    }
-
-    /** {@code /is role <player>}: the roles the player could be given, rather than an unknown command. */
-    private int executeRoleChoice(CommandContext<CommandSourceStack> ctx) {
-        String target = StringArgumentType.getString(ctx, "player");
-        return withService(
-                ctx,
-                (player, service, actor) -> schedulerPort.async(() -> service.assignableRoles(actor)
-                        .ifPresentOrElse(
-                                roles -> send(
-                                        player,
-                                        "member.role_choose",
-                                        Placeholder.unparsed("player", target),
-                                        Placeholder.unparsed("roles", roles)),
-                                () -> send(player, "error.no_island"))));
+                        .executes(roles::executeRoleChoice)
+                        .then(Cmd.argument("role", StringArgumentType.word()).executes(roles::executeRole)));
     }
 
     /**
@@ -308,344 +299,38 @@ public final class IslandMembershipCommands {
         return Cmd.literal("permissions")
                 .executes(ctx -> ctx.getSource().getSender() instanceof Player player && windows.openRoles(player)
                         ? Cmd.OK
-                        : executePermissionList(ctx))
-                .then(Cmd.literal("list").executes(this::executePermissionList))
+                        : roles.executePermissionList(ctx))
+                .then(Cmd.literal("list").executes(roles::executePermissionList))
                 .then(Cmd.literal("create")
-                        .then(Cmd.argument("name", StringArgumentType.word()).executes(this::executeCreateRole)))
+                        .then(Cmd.argument("name", StringArgumentType.word()).executes(roles::executeCreateRole)))
                 .then(Cmd.literal("delete")
                         .then(Cmd.argument("name", StringArgumentType.word()).executes(this::executeDeleteRole)))
                 .then(Cmd.argument("role", StringArgumentType.word())
                         .then(Cmd.argument("permission", StringArgumentType.word())
                                 .then(Cmd.argument("state", StringArgumentType.word())
-                                        .executes(this::executeSetPermission))));
-    }
-
-    /** {@code /is permissions create <name>}: a role of the owner's own, edited like the others. */
-    private int executeCreateRole(CommandContext<CommandSourceStack> ctx) {
-        String name = StringArgumentType.getString(ctx, "name");
-        return withShaper(ctx, (player, shaper, actor) -> {
-            // The owner's nodes are read here, on their own thread, and the number goes with the request.
-            int allowance = roleConfiguration.get().allowanceFor(player::hasPermission);
-            schedulerPort.async(() -> answer(player, shaper.create(actor, name, allowance)));
-        });
+                                        .executes(roles::executeSetPermission))));
     }
 
     /** {@code /is permissions delete <role>}: takes a role of the owner's own away. */
     private int executeDeleteRole(CommandContext<CommandSourceStack> ctx) {
         String name = StringArgumentType.getString(ctx, "name");
-        return withShaper(
-                ctx, (player, shaper, actor) -> schedulerPort.async(() -> answer(player, shaper.delete(actor, name))));
-    }
-
-    /** Runs {@code action} with the caller's profile when the roles of an owner can be made at all. */
-    private int withShaper(
-            CommandContext<CommandSourceStack> ctx,
-            TriConsumer<Player, com.uxplima.uxmskyblock.core.application.membership.IslandRoleShaper, ProfileId>
-                    action) {
-        return withService(ctx, (player, service, actor) -> {
-            com.uxplima.uxmskyblock.core.application.membership.IslandRoleShaper shaper = roleShaper.get();
-            if (shaper == null) {
-                send(player, "member.disabled");
-                return;
-            }
-            action.accept(player, shaper, actor);
-        });
+        return roles.withShaper(
+                ctx,
+                (player, shaper, actor) -> schedulerPort.async(() -> roles.answer(player, shaper.delete(actor, name))));
     }
 
     /** Three things at once, as a request to shape the roles needs them. */
     @FunctionalInterface
-    private interface TriConsumer<A, B, C> {
+    interface TriConsumer<A, B, C> {
         void accept(A first, B second, C third);
     }
 
-    /** Says what came of making or taking away a role. */
-    private void answer(
-            Player player, com.uxplima.uxmskyblock.core.application.membership.IslandRoleShaper.Outcome outcome) {
-        switch (outcome) {
-            case com.uxplima.uxmskyblock.core.application.membership.IslandRoleShaper.Outcome.Created created ->
-                send(player, "member.role_created", Placeholder.unparsed("role", created.roleId()));
-            case com.uxplima.uxmskyblock.core.application.membership.IslandRoleShaper.Outcome.Deleted deleted ->
-                send(
-                        player,
-                        "member.role_deleted",
-                        Placeholder.unparsed("role", deleted.roleId()),
-                        Placeholder.unparsed("count", Integer.toString(deleted.moved())));
-            case com.uxplima.uxmskyblock.core.application.membership.IslandRoleShaper.Outcome.NotOwner ignored ->
-                send(player, "member.role_owner_only");
-            case com.uxplima.uxmskyblock.core.application.membership.IslandRoleShaper.Outcome.NoIsland ignored ->
-                send(player, "error.no_island");
-            case com.uxplima.uxmskyblock.core.application.membership.IslandRoleShaper.Outcome.BadName bad ->
-                send(player, "member.role_bad_name", Placeholder.unparsed("name", bad.name()));
-            case com.uxplima.uxmskyblock.core.application.membership.IslandRoleShaper.Outcome.Taken taken ->
-                send(player, "member.role_taken", Placeholder.unparsed("role", taken.roleId()));
-            case com.uxplima.uxmskyblock.core.application.membership.IslandRoleShaper.Outcome.LimitReached limit ->
-                send(player, "member.role_limit", Placeholder.unparsed("limit", Integer.toString(limit.limit())));
-            case com.uxplima.uxmskyblock.core.application.membership.IslandRoleShaper.Outcome.UnknownRole unknown ->
-                send(
-                        player,
-                        "member.role_unknown_own",
-                        Placeholder.unparsed("role", unknown.roleId()),
-                        Placeholder.unparsed("roles", unknown.available()));
-            case com.uxplima.uxmskyblock.core.application.membership.IslandRoleShaper.Outcome.Shipped shipped ->
-                send(
-                        player,
-                        "member.role_shipped",
-                        Placeholder.unparsed(
-                                "role", messages.named(player, "roles", shipped.roleId(), shipped.roleId())));
-        }
-    }
-
-    private int executePermissionList(CommandContext<CommandSourceStack> ctx) {
-        return withService(
-                ctx,
-                (player, service, actor) -> schedulerPort.async(() -> {
-                    Optional<IslandId> optIsland = islandLocationService.findIslandId(actor);
-                    Optional<com.uxplima.uxmskyblock.core.domain.island.Island> optIslandRow =
-                            optIsland.flatMap(islandLocationService::findIsland);
-                    if (optIslandRow.isEmpty()) {
-                        send(player, "error.no_island");
-                        return;
-                    }
-                    com.uxplima.uxmskyblock.core.domain.island.Island island = optIslandRow.get();
-                    send(player, "member.permissions_header");
-                    island.roles().values().stream()
-                            .sorted(java.util.Comparator.comparingInt(
-                                    com.uxplima.uxmskyblock.core.domain.island.IslandRole::weight))
-                            .forEach(role -> send(
-                                    player,
-                                    "member.permissions_entry",
-                                    Placeholder.unparsed(
-                                            "role", messages.named(player, "roles", role.id(), role.displayName())),
-                                    Placeholder.unparsed("permissions", permissionsOf(player, role))));
-                }));
-    }
-
     /** The permissions a role carries, by the names the reader's language gives them, or a word saying none. */
-    private String permissionsOf(Player reader, com.uxplima.uxmskyblock.core.domain.island.IslandRole role) {
+    String permissionsOf(Player reader, com.uxplima.uxmskyblock.core.domain.island.IslandRole role) {
         return role.permissions().stream()
                 .map(permission -> messages.named(reader, "permissions", permission.name(), permission.name()))
                 .reduce((left, right) -> left + ", " + right)
                 .orElse("-");
-    }
-
-    private int executeSetPermission(CommandContext<CommandSourceStack> ctx) {
-        String role = StringArgumentType.getString(ctx, "role");
-        String permission = StringArgumentType.getString(ctx, "permission");
-        String state = StringArgumentType.getString(ctx, "state");
-        boolean allowed =
-                "on".equalsIgnoreCase(state) || "true".equalsIgnoreCase(state) || "yes".equalsIgnoreCase(state);
-        boolean denied =
-                "off".equalsIgnoreCase(state) || "false".equalsIgnoreCase(state) || "no".equalsIgnoreCase(state);
-        if (!allowed && !denied) {
-            send(ctx.getSource().getSender(), "member.permission_state", Placeholder.unparsed("state", state));
-            return Cmd.OK;
-        }
-
-        return withService(
-                ctx,
-                (player, service, actor) -> schedulerPort.async(() -> {
-                    switch (service.setRolePermission(actor, role, permission, allowed)) {
-                        case IslandMembershipService.PermissionOutcome.Changed changed ->
-                            send(
-                                    player,
-                                    changed.allowed() ? "member.permission_granted" : "member.permission_revoked",
-                                    Placeholder.unparsed(
-                                            "role",
-                                            messages.named(player, "roles", changed.roleId(), changed.roleId())),
-                                    Placeholder.unparsed(
-                                            "permission",
-                                            messages.named(
-                                                    player,
-                                                    "permissions",
-                                                    changed.permission(),
-                                                    changed.permission())));
-                        case IslandMembershipService.PermissionOutcome.NotAllowed ignored ->
-                            send(player, "member.role_no_permission");
-                        case IslandMembershipService.PermissionOutcome.OutOfReach ignored ->
-                            send(player, "member.permission_out_of_reach");
-                        case IslandMembershipService.PermissionOutcome.NoIsland ignored ->
-                            send(player, "error.no_island");
-                        case IslandMembershipService.PermissionOutcome.UnknownRole unknown ->
-                            send(
-                                    player,
-                                    "member.unknown_role",
-                                    Placeholder.unparsed("role", unknown.roleId()),
-                                    Placeholder.unparsed("roles", unknown.available()));
-                        case IslandMembershipService.PermissionOutcome.UnknownPermission unknown ->
-                            send(
-                                    player,
-                                    "member.unknown_permission",
-                                    Placeholder.unparsed("permission", unknown.permission()),
-                                    Placeholder.unparsed("permissions", unknown.available()));
-                        case IslandMembershipService.PermissionOutcome.CannotChangeOwnerRole ignored ->
-                            send(player, "member.owner_role_stays");
-                    }
-                }));
-    }
-
-    private int executeInvite(CommandContext<CommandSourceStack> ctx) {
-        String target = StringArgumentType.getString(ctx, "player");
-        return withService(
-                ctx,
-                (player, service, actor) -> schedulerPort.async(() -> {
-                    Optional<ProfileId> optTarget = resolveProfile(target);
-                    if (optTarget.isEmpty()) {
-                        send(player, "member.unknown_player", Placeholder.unparsed("player", target));
-                        return;
-                    }
-                    switch (service.invite(actor, optTarget.get())) {
-                        case IslandMembershipService.InviteOutcome.Sent sent -> {
-                            send(player, "member.invited", Placeholder.unparsed("player", target));
-                            tellOrLeave(
-                                    optTarget.get(),
-                                    "member.invite_received",
-                                    NotificationCategory.INVITE,
-                                    null,
-                                    Map.of("player", player.getName()));
-                        }
-                        case IslandMembershipService.InviteOutcome.NotAllowed ignored ->
-                            send(player, "member.invite_no_permission");
-                        case IslandMembershipService.InviteOutcome.NoIsland ignored -> send(player, "error.no_island");
-                        case IslandMembershipService.InviteOutcome.AlreadyAMember ignored ->
-                            send(player, "member.already_a_member", Placeholder.unparsed("player", target));
-                        case IslandMembershipService.InviteOutcome.AlreadyOnAnotherIsland ignored ->
-                            send(player, "member.already_elsewhere", Placeholder.unparsed("player", target));
-                        case IslandMembershipService.InviteOutcome.IslandFull full ->
-                            send(
-                                    player,
-                                    "member.island_full",
-                                    Placeholder.unparsed("max", Integer.toString(full.allowed())));
-                    }
-                }));
-    }
-
-    private int executeAccept(CommandContext<CommandSourceStack> ctx) {
-        return withService(
-                ctx,
-                (player, service, actor) -> schedulerPort.async(() -> {
-                    PlayerUuid joining = new PlayerUuid(player.getUniqueId());
-                    if (heldByTheCoopLock(player, joining)) {
-                        return;
-                    }
-                    switch (service.accept(actor, joining)) {
-                        case IslandMembershipService.JoinOutcome.Joined joined -> {
-                            activityLog.recordForMembers(
-                                    joined.islandId(),
-                                    actor,
-                                    ActivityEventType.MEMBER_JOINED,
-                                    "activity.member_joined",
-                                    Map.of("player", player.getName()));
-                            send(player, "member.joined");
-                            fireMilestone("member-joined", player);
-                            // The island's other members on this server hear it at once; the ones
-                            // who are not read it in the feed written above.
-                            for (IslandMember member : service.members(joined.islandId())) {
-                                if (!member.profileId().equals(actor)) {
-                                    tellOrLeave(
-                                            member.profileId(),
-                                            "member.joined_your_island",
-                                            NotificationCategory.INVITE,
-                                            null,
-                                            Map.of("player", player.getName()));
-                                }
-                            }
-                        }
-                        case IslandMembershipService.JoinOutcome.NoInvite ignored -> send(player, "member.no_invite");
-                        case IslandMembershipService.JoinOutcome.AlreadyOnAnIsland ignored ->
-                            send(player, "member.you_have_an_island");
-                        case IslandMembershipService.JoinOutcome.IslandMissing ignored ->
-                            send(player, "error.no_island");
-                        case IslandMembershipService.JoinOutcome.IslandFull full ->
-                            send(
-                                    player,
-                                    "member.island_full",
-                                    Placeholder.unparsed("max", Integer.toString(full.allowed())));
-                    }
-                }));
-    }
-
-    private int executeDeny(CommandContext<CommandSourceStack> ctx) {
-        return withService(
-                ctx,
-                (player, service, actor) -> schedulerPort.async(() -> {
-                    send(player, service.decline(actor) ? "member.declined" : "member.no_invite");
-                }));
-    }
-
-    private int executeKick(CommandContext<CommandSourceStack> ctx) {
-        String target = StringArgumentType.getString(ctx, "player");
-        return withService(
-                ctx,
-                (player, service, actor) -> schedulerPort.async(() -> {
-                    Optional<ProfileId> optTarget = resolveProfile(target);
-                    if (optTarget.isEmpty()) {
-                        send(player, "member.unknown_player", Placeholder.unparsed("player", target));
-                        return;
-                    }
-                    Optional<PlayerUuid> optTargetUuid = resolveUuid(target);
-                    IslandMembershipService.RemovalOutcome outcome = service.kick(actor, optTarget.get());
-                    if (outcome instanceof IslandMembershipService.RemovalOutcome.Removed removed) {
-                        optTargetUuid.ifPresent(this::lockOutOfTheNextIsland);
-                        com.uxplima.uxmskyblock.bukkit.lifecycle.PlayerLifecycle rules = lifecycle.get();
-                        if (rules != null && optTargetUuid.isPresent()) {
-                            rules.happened(
-                                    com.uxplima.uxmskyblock.core.domain.lifecycle.LifecycleEvent.KICK,
-                                    optTargetUuid.get(),
-                                    optTarget.get());
-                        }
-                        activityLog.recordForMembers(
-                                removed.islandId(),
-                                actor,
-                                ActivityEventType.MEMBER_LEFT,
-                                "activity.member_kicked",
-                                Map.of("player", target, "actor", player.getName()));
-                        tellOrLeave(
-                                optTarget.get(),
-                                "member.kicked_you",
-                                NotificationCategory.KICK,
-                                "notification.kicked",
-                                Map.of("player", player.getName()));
-                    }
-                    reportRemoval(player, outcome, target);
-                }));
-    }
-
-    private int executeLeave(CommandContext<CommandSourceStack> ctx) {
-        return withService(
-                ctx,
-                (player, service, actor) -> schedulerPort.async(() -> {
-                    IslandMembershipService.RemovalOutcome outcome = service.leave(actor);
-                    if (outcome instanceof IslandMembershipService.RemovalOutcome.Removed removed) {
-                        lockOutOfTheNextIsland(new PlayerUuid(player.getUniqueId()));
-                        com.uxplima.uxmskyblock.bukkit.lifecycle.PlayerLifecycle rules = lifecycle.get();
-                        if (rules != null) {
-                            rules.happened(
-                                    com.uxplima.uxmskyblock.core.domain.lifecycle.LifecycleEvent.LEAVE,
-                                    new PlayerUuid(player.getUniqueId()),
-                                    actor);
-                        }
-                        activityLog.recordForMembers(
-                                removed.islandId(),
-                                actor,
-                                ActivityEventType.MEMBER_LEFT,
-                                "activity.member_left",
-                                Map.of("player", player.getName()));
-                    }
-                    reportRemoval(player, outcome, player.getName());
-                }));
-    }
-
-    private void reportRemoval(Player player, IslandMembershipService.RemovalOutcome outcome, String target) {
-        switch (outcome) {
-            case IslandMembershipService.RemovalOutcome.Removed removed ->
-                send(player, "member.removed", Placeholder.unparsed("player", target));
-            case IslandMembershipService.RemovalOutcome.NotAllowed ignored -> send(player, "member.kick_no_permission");
-            case IslandMembershipService.RemovalOutcome.NoIsland ignored -> send(player, "error.no_island");
-            case IslandMembershipService.RemovalOutcome.NotAMember ignored ->
-                send(player, "member.not_a_member", Placeholder.unparsed("player", target));
-            case IslandMembershipService.RemovalOutcome.CannotRemoveOwner ignored -> send(player, "member.owner_stays");
-            case IslandMembershipService.RemovalOutcome.OutOfReach ignored -> send(player, "member.kick_out_of_reach");
-        }
     }
 
     private int executeMembers(CommandContext<CommandSourceStack> ctx) {
@@ -675,81 +360,13 @@ public final class IslandMembershipCommands {
                 }));
     }
 
-    private int executeRole(CommandContext<CommandSourceStack> ctx) {
-        String target = StringArgumentType.getString(ctx, "player");
-        String role = StringArgumentType.getString(ctx, "role");
-        return withService(
-                ctx,
-                (player, service, actor) -> schedulerPort.async(() -> {
-                    Optional<ProfileId> optTarget = resolveProfile(target);
-                    if (optTarget.isEmpty()) {
-                        send(player, "member.unknown_player", Placeholder.unparsed("player", target));
-                        return;
-                    }
-                    switch (service.setRole(actor, optTarget.get(), role)) {
-                        case IslandMembershipService.RoleOutcome.Changed changed -> {
-                            islandLocationService
-                                    .findIslandId(actor)
-                                    .ifPresent(islandId -> activityLog.recordForMembers(
-                                            islandId,
-                                            actor,
-                                            ActivityEventType.ROLE_CHANGED,
-                                            "activity.role_changed",
-                                            Map.of(
-                                                    "player",
-                                                    target,
-                                                    "role",
-                                                    messages.stored("roles", changed.roleId(), changed.roleId()))));
-                            tellOrLeave(
-                                    optTarget.get(),
-                                    "member.role_changed_you",
-                                    NotificationCategory.ROLE_CHANGED,
-                                    "notification.role_changed",
-                                    Map.of(
-                                            "player",
-                                            player.getName(),
-                                            "role",
-                                            messages.stored("roles", changed.roleId(), changed.roleId())));
-                            send(
-                                    player,
-                                    "member.role_changed",
-                                    Placeholder.unparsed("player", target),
-                                    Placeholder.unparsed(
-                                            "role",
-                                            messages.named(player, "roles", changed.roleId(), changed.roleId())));
-                        }
-                        case IslandMembershipService.RoleOutcome.NotAllowed ignored ->
-                            send(player, "member.role_no_permission");
-                        case IslandMembershipService.RoleOutcome.NoIsland ignored -> send(player, "error.no_island");
-                        case IslandMembershipService.RoleOutcome.NotAMember ignored ->
-                            send(player, "member.not_a_member", Placeholder.unparsed("player", target));
-                        case IslandMembershipService.RoleOutcome.UnknownRole unknown ->
-                            send(
-                                    player,
-                                    "member.unknown_role",
-                                    Placeholder.unparsed("role", unknown.roleId()),
-                                    Placeholder.unparsed("roles", unknown.available()));
-                        case IslandMembershipService.RoleOutcome.CannotChangeOwner ignored ->
-                            send(player, "member.owner_stays");
-                        case IslandMembershipService.RoleOutcome.NotAssignable anchor ->
-                            send(
-                                    player,
-                                    "member.role_not_assignable",
-                                    Placeholder.unparsed("role", anchor.roleId()),
-                                    Placeholder.unparsed("roles", anchor.available()));
-                        case IslandMembershipService.RoleOutcome.OutOfReach ignored ->
-                            send(player, "member.role_out_of_reach");
-                    }
-                }));
-    }
-
     /** What a membership command needs: a player, the service, and their own profile. */
     @FunctionalInterface
-    private interface MembershipAction {
+    interface MembershipAction {
         void run(Player player, IslandMembershipService service, ProfileId actor);
     }
 
-    private int withService(CommandContext<CommandSourceStack> ctx, MembershipAction action) {
+    int withService(CommandContext<CommandSourceStack> ctx, MembershipAction action) {
         if (!(ctx.getSource().getSender() instanceof Player player)) {
             send(ctx.getSource().getSender(), "error.players_only");
             return Cmd.OK;
@@ -768,47 +385,8 @@ public final class IslandMembershipCommands {
         return Cmd.OK;
     }
 
-    /**
-     * Whether this player left an island too recently to be recruited into another.
-     *
-     * <p>Leaving one island and being taken straight into the next is how a bank and a vault get
-     * emptied by somebody who was never going to stay. The file names how long that waits and the
-     * permission that lets staff past it, and both were read nowhere.
-     *
-     * <p>The refusal is sent here, so a caller that gets true has nothing left to say.
-     */
-    private boolean heldByTheCoopLock(Player player, PlayerUuid playerUuid) {
-        IslandAntiAbuseService lock = this.coopHoppingLock;
-        if (lock == null) {
-            return false;
-        }
-        com.uxplima.uxmskyblock.bukkit.config.AntiAbuseConfiguration rules = this.antiAbuseRules;
-        String node = rules == null
-                ? com.uxplima.uxmskyblock.bukkit.config.AntiAbuseConfiguration.DEFAULT_COOP_BYPASS_PERMISSION
-                : rules.coopBypassPermission();
-        boolean bypass = player.hasPermission(node) || player.isOp();
-
-        if (lock.checkCoopJoinAllowed(playerUuid, bypass)
-                instanceof com.uxplima.uxmskyblock.core.domain.antiabuse.CoopJoinCheckResult.CooldownActive held) {
-            send(
-                    player,
-                    "member.coop_cooldown",
-                    Placeholder.unparsed("remaining", DurationText.of(messages, player, held.remaining())));
-            return true;
-        }
-        return false;
-    }
-
-    /** Starts the wait that stops this player being recruited into another island straight away. */
-    private void lockOutOfTheNextIsland(PlayerUuid playerUuid) {
-        IslandAntiAbuseService lock = this.coopHoppingLock;
-        if (lock != null) {
-            var unused = lock.recordCoopDeparture(playerUuid, java.time.Instant.now());
-        }
-    }
-
     /** The player behind a name, for the rules that are about a player rather than a profile. */
-    private Optional<PlayerUuid> resolveUuid(String name) {
+    Optional<PlayerUuid> resolveUuid(String name) {
         Player online = Bukkit.getPlayerExact(name);
         if (online != null) {
             return Optional.of(new PlayerUuid(online.getUniqueId()));
@@ -827,7 +405,7 @@ public final class IslandMembershipCommands {
      * <p>An invite that only works while the target is standing there is barely an invite, and a
      * kick that only works while they are online is a member nobody can remove.
      */
-    private Optional<ProfileId> resolveProfile(String name) {
+    Optional<ProfileId> resolveProfile(String name) {
         if (sessionCoordinator == null) {
             return Optional.empty();
         }
@@ -856,7 +434,7 @@ public final class IslandMembershipCommands {
         return sessionCoordinator.activeProfile(player.getUniqueId());
     }
 
-    private void send(Audience audience, String key, TagResolver... resolvers) {
+    void send(Audience audience, String key, TagResolver... resolvers) {
         Component line = messages.render(audience, key, resolvers);
         if (audience instanceof Player player) {
             schedulerPort.onEntity(new PlayerUuid(player.getUniqueId()), () -> {
