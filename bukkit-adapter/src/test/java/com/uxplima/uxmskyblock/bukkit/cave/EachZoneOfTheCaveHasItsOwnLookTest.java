@@ -89,7 +89,8 @@ class EachZoneOfTheCaveHasItsOwnLookTest extends MockBukkitHarness {
     }
 
     private CavernStart cavern(Map<String, CaveBlockConfiguration.Zone> zones) {
-        return new CavernStart(scheduler, new CaveBlockConfiguration(true, SHAPE, "BEDROCK", ROCK, Map.of(), zones));
+        return new CavernStart(
+                scheduler, new CaveBlockConfiguration(true, SHAPE, "BEDROCK", ROCK, Map.of(), zones, Map.of()));
     }
 
     @Test

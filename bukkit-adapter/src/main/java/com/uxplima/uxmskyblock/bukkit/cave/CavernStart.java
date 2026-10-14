@@ -38,6 +38,9 @@ public final class CavernStart implements CreationActionProvider<IslandStart> {
     /** Mixed into a chunk's seed for the rolls of its zones' looks. */
     private static final long LOOKS = 0x5EEDC0DEL;
 
+    /** Mixed into the island's seed for where its pools lie. */
+    private static final long POOLS = 0x9001L;
+
     private static final Logger LOGGER = Logger.getLogger(CavernStart.class.getName());
 
     private final SchedulerPort scheduler;
@@ -87,6 +90,7 @@ public final class CavernStart implements CreationActionProvider<IslandStart> {
                 palette.deepBelow() == Integer.MAX_VALUE ? Integer.MIN_VALUE : start.y() - palette.deepBelow(),
                 resolved(palette.deepOres()));
         Zoning zoning = zoning(world, seed);
+        List<Pocket> pockets = pockets(world, start, seed);
         int minX = start.centerX() - shape.radius();
         int maxX = start.centerX() + shape.radius();
         int minZ = start.centerZ() - shape.radius();
@@ -101,7 +105,7 @@ public final class CavernStart implements CreationActionProvider<IslandStart> {
                 Chunk chunk =
                         new Chunk(fromX, toX, fromZ, toZ, seed ^ (((long) chunkX << 32) ^ (chunkZ & 0xFFFFFFFFL)));
                 scheduler.onRegion(
-                        world.getName(), chunkX, chunkZ, () -> fill(world, start, chunk, part, rock, zoning));
+                        world.getName(), chunkX, chunkZ, () -> fill(world, start, chunk, part, rock, zoning, pockets));
             }
         }
         // Queued after the rock of every chunk, so the rock never fills a hollow a structure carved.
@@ -111,7 +115,14 @@ public final class CavernStart implements CreationActionProvider<IslandStart> {
         }
     }
 
-    private void fill(World world, IslandStart start, Chunk chunk, CavePlan part, Rock rock, Zoning zoning) {
+    private void fill(
+            World world,
+            IslandStart start,
+            Chunk chunk,
+            CavePlan part,
+            Rock rock,
+            Zoning zoning,
+            List<Pocket> pockets) {
         CavePlan.Shape shape = config.shape();
         int bottom = start.y() - shape.below();
         int top = start.y() + shape.above();
@@ -129,8 +140,14 @@ public final class CavernStart implements CreationActionProvider<IslandStart> {
                         world.setBiome(x, y, z, look.biome());
                     }
                     Material material;
+                    // Never in the wall: a pool lies three blocks inside it.
+                    Pocket pocket = pocketAt(pockets, x, y, z);
                     if (wall || y == bottom || y == top) {
                         material = rock.shell();
+                    } else if (pocket != null) {
+                        setIfAir(
+                                world.getBlockAt(x, y, z), y <= pocket.surface() ? pocket.liquid() : Material.CAVE_AIR);
+                        continue;
                     } else if (part.carved(x, y, z)) {
                         continue;
                     } else if (y < rock.deepFrom() || (look != null && look.deep())) {
@@ -191,6 +208,67 @@ public final class CavernStart implements CreationActionProvider<IslandStart> {
             }
         }
         into.setBlockData(data, false);
+    }
+
+    private static @org.jspecify.annotations.Nullable Pocket pocketAt(List<Pocket> pockets, int x, int y, int z) {
+        for (Pocket pocket : pockets) {
+            if (pocket.holds(x, y, z)) {
+                return pocket;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * The pools of the world's dimension, each laid where the island's seed puts it: round the island beyond the room,
+     * inside the rock with two blocks to spare before the shell. One that cannot fit there is not laid.
+     */
+    List<Pocket> pockets(World world, IslandStart start, long seed) {
+        CavePlan.Shape shape = config.shape();
+        SplittableRandom random = new SplittableRandom(seed ^ POOLS);
+        List<Pocket> pockets = new java.util.ArrayList<>();
+        for (CaveBlockConfiguration.Pool pool : config.poolsOf(dimensionOf(world))) {
+            Material liquid = block(pool.block(), Material.AIR);
+            int high = Math.max(1, pool.radius() / 2);
+            int nearest = shape.room() + 3 + pool.radius();
+            int farthest = shape.radius() - 3 - pool.radius();
+            int deepest = Math.min(pool.depthTo(), shape.below() - 3 - high);
+            int highest = Math.max(pool.depthFrom(), -shape.above() + 3 + high);
+            for (int one = 0; one < pool.count(); one++) {
+                if (liquid == Material.AIR || farthest < nearest || deepest < highest) {
+                    LOGGER.warning(() -> "modules/caveblock.conf pools: '" + pool.block()
+                            + "' is no block, or the pool does not fit in the rock. It is not laid.");
+                    break;
+                }
+                double angle = random.nextDouble() * Math.PI * 2;
+                int distance = nearest + random.nextInt(farthest - nearest + 1);
+                int middleY = start.y() - (highest + random.nextInt(deepest - highest + 1));
+                int surface = middleY - high - 1 + (int) Math.round(pool.fill() * (2 * high + 1));
+                pockets.add(new Pocket(
+                        distance,
+                        start.centerX() + (int) Math.round(Math.cos(angle) * distance),
+                        middleY,
+                        start.centerZ() + (int) Math.round(Math.sin(angle) * distance),
+                        pool.radius(),
+                        high,
+                        liquid,
+                        surface));
+            }
+        }
+        return List.copyOf(pockets);
+    }
+
+    /**
+     * One pool: a flattened sphere, its middle {@code distance} from the island's centre, its liquid up to and
+     * including {@code surface}, air above.
+     */
+    record Pocket(int distance, int x, int y, int z, int radius, int high, Material liquid, int surface) {
+
+        boolean holds(int atX, int atY, int atZ) {
+            double across = (Math.pow(atX - x, 2) + Math.pow(atZ - z, 2)) / ((double) radius * radius);
+            double up = Math.pow(atY - y, 2) / ((double) high * high);
+            return across + up <= 1;
+        }
     }
 
     /** The zones of the world's dimension, each given its share of the round, turned by the island. */

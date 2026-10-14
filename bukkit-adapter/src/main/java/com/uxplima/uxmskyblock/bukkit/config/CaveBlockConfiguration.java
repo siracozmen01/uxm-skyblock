@@ -24,7 +24,8 @@ public record CaveBlockConfiguration(
         String shell,
         Map<String, Palette> palettes,
         Map<String, Structure> structures,
-        Map<String, Zone> zones) {
+        Map<String, Zone> zones,
+        Map<String, Pool> pools) {
 
     public static final String OVERWORLD = "overworld";
     public static final String NETHER = "the_nether";
@@ -111,6 +112,37 @@ public record CaveBlockConfiguration(
         }
     }
 
+    /**
+     * Pockets of liquid in the rock: lakes with air above the water, and pockets of lava filled to the top, each a
+     * flattened sphere well away from the room and the shell.
+     *
+     * @param block the liquid
+     * @param count how many are laid
+     * @param radius how far each reaches sideways; it reaches half as far up and down
+     * @param fill how much of its height, from the bottom, is the liquid, from 0 to 1; air is above it
+     * @param depthFrom how far below the block players arrive on its middle lies, at the least; below zero is above
+     * @param depthTo and at the most
+     * @param dimensions the dimensions the pool is in, by id
+     */
+    public record Pool(
+            String block, int count, int radius, double fill, int depthFrom, int depthTo, List<String> dimensions) {
+
+        public Pool {
+            Objects.requireNonNull(block, "block must not be null");
+            dimensions = List.copyOf(dimensions);
+            if (count < 0 || radius < 1 || !(fill >= 0 && fill <= 1) || depthTo < depthFrom) {
+                throw new IllegalArgumentException(
+                        "count must not be negative, radius must be above 0, fill from 0 to 1,"
+                                + " and depth-to not above depth-from");
+            }
+        }
+    }
+
+    /** The shipped pools: lakes of water in the overworld, pockets of lava in the overworld and the Nether. */
+    public static final Map<String, Pool> SHIPPED_POOLS = Map.of(
+            "lake", new Pool("WATER", 3, 4, 0.5, 2, 16, List.of(OVERWORLD)),
+            "lava", new Pool("LAVA", 2, 2, 1, 10, 20, List.of(OVERWORLD, NETHER)));
+
     /** The shipped zones of the overworld's caves: lush caves, dripstone caves and the deep dark. */
     public static final Map<String, Zone> SHIPPED_ZONES = Map.of(
             "lush",
@@ -175,6 +207,26 @@ public record CaveBlockConfiguration(
         this(enabled, shape, shell, palettes, structures, SHIPPED_ZONES);
     }
 
+    /** The shipped pools. */
+    public CaveBlockConfiguration(
+            boolean enabled,
+            CavePlan.Shape shape,
+            String shell,
+            Map<String, Palette> palettes,
+            Map<String, Structure> structures,
+            Map<String, Zone> zones) {
+        this(enabled, shape, shell, palettes, structures, zones, SHIPPED_POOLS);
+    }
+
+    /** The pools of a dimension, in the order of their names. */
+    public List<Pool> poolsOf(String dimension) {
+        return pools.entrySet().stream()
+                .sorted(Map.Entry.comparingByKey())
+                .map(Map.Entry::getValue)
+                .filter(pool -> pool.dimensions().contains(dimension))
+                .toList();
+    }
+
     /** The zones of a dimension, in the order of their names. */
     public List<Zone> zonesOf(String dimension) {
         return zones.entrySet().stream()
@@ -187,6 +239,7 @@ public record CaveBlockConfiguration(
     public CaveBlockConfiguration {
         structures = Map.copyOf(structures);
         zones = Map.copyOf(zones);
+        pools = Map.copyOf(pools);
         Objects.requireNonNull(shape, "shape must not be null");
         Objects.requireNonNull(shell, "shell must not be null");
         palettes = Map.copyOf(palettes);
@@ -276,7 +329,41 @@ public record CaveBlockConfiguration(
                 root.node("shell").getString(shipped.shell()).trim().toUpperCase(Locale.ROOT),
                 palettes,
                 structures(root.node("structures")),
-                zones(root.node("zones")));
+                zones(root.node("zones")),
+                pools(root.node("pools")));
+    }
+
+    /** The pools the file writes, by name, over the shipped ones, as the zones are. */
+    private static Map<String, Pool> pools(ConfigurationNode written) {
+        Map<String, Pool> all = new java.util.LinkedHashMap<>(SHIPPED_POOLS);
+        for (Map.Entry<Object, ? extends ConfigurationNode> entry :
+                written.childrenMap().entrySet()) {
+            String name = String.valueOf(entry.getKey()).trim().toLowerCase(Locale.ROOT);
+            ConfigurationNode node = entry.getValue();
+            Pool shipped = SHIPPED_POOLS.getOrDefault(name, new Pool("WATER", 1, 3, 0.5, 2, 16, List.of(OVERWORLD)));
+            try {
+                all.put(
+                        name,
+                        new Pool(
+                                node.node("block")
+                                        .getString(shipped.block())
+                                        .trim()
+                                        .toUpperCase(Locale.ROOT),
+                                node.node("count").getInt(shipped.count()),
+                                node.node("radius").getInt(shipped.radius()),
+                                node.node("fill").getDouble(shipped.fill()),
+                                node.node("depth-from").getInt(shipped.depthFrom()),
+                                node.node("depth-to").getInt(shipped.depthTo()),
+                                AcidIslandConfiguration.strings(node.node("dimensions"), shipped.dimensions()).stream()
+                                        .map(dimension -> dimension.trim().toLowerCase(Locale.ROOT))
+                                        .toList()));
+            } catch (IllegalArgumentException e) {
+                all.remove(name);
+                LOGGER.warning(
+                        () -> "modules/caveblock.conf pools." + name + ": " + e.getMessage() + ". It is left out.");
+            }
+        }
+        return all;
     }
 
     /**

@@ -63,7 +63,8 @@ class ANewCaveBlockIslandIsInTheRockTest extends MockBukkitHarness {
                             new OreTable(List.of(new OreTable.Ore("DEEPSLATE_DIAMOND_ORE", 0.2)))),
                     CaveBlockConfiguration.NETHER,
                     CaveBlockConfiguration.Palette.plain("NETHERRACK", OreTable.NONE)),
-            // The rock alone: the structures and zones laid over it have tests of their own.
+            // The rock alone: the structures, zones and pools laid over it have tests of their own.
+            Map.of(),
             Map.of(),
             Map.of());
 
