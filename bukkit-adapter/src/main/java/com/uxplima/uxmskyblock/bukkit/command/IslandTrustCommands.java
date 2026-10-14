@@ -25,10 +25,8 @@ import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.builder.LiteralArgumentBuilder;
 import com.mojang.brigadier.context.CommandContext;
 import com.uxplima.uxmlib.command.Cmd;
-import com.uxplima.uxmlib.common.Durations;
 import com.uxplima.uxmskyblock.bukkit.config.TemporaryAccessConfiguration;
 import com.uxplima.uxmskyblock.bukkit.i18n.Messages;
-import com.uxplima.uxmskyblock.bukkit.session.ActiveSession;
 import com.uxplima.uxmskyblock.bukkit.session.PlayerSessionCoordinator;
 import com.uxplima.uxmskyblock.core.application.access.TemporaryAccessService;
 import com.uxplima.uxmskyblock.core.application.activity.ActivityFeedService;
@@ -38,12 +36,10 @@ import com.uxplima.uxmskyblock.core.application.scheduler.SchedulerPort;
 import com.uxplima.uxmskyblock.core.domain.access.CurrentNodeProcessIdentity;
 import com.uxplima.uxmskyblock.core.domain.access.TemporaryAccessGrant;
 import com.uxplima.uxmskyblock.core.domain.access.TerminationPolicy;
-import com.uxplima.uxmskyblock.core.domain.activity.ActivityEventType;
 import com.uxplima.uxmskyblock.core.domain.identity.PlayerUuid;
 import com.uxplima.uxmskyblock.core.domain.identity.ProfileId;
 import com.uxplima.uxmskyblock.core.domain.island.Island;
 import com.uxplima.uxmskyblock.core.domain.island.IslandMember;
-import com.uxplima.uxmskyblock.core.domain.island.IslandPermission;
 import com.uxplima.uxmskyblock.core.domain.island.IslandRole;
 import com.uxplima.uxmskyblock.core.domain.notification.NotificationCategory;
 import com.uxplima.uxmskyblock.core.domain.profile.ProfileType;
@@ -63,6 +59,9 @@ import org.jspecify.annotations.Nullable;
  */
 public final class IslandTrustCommands {
 
+    /** {@code /is trust} and {@code /is untrust}: a player let onto the island for a while or until taken off, and the time they were given read. */
+    private final TrustGrantVerbs grants = new TrustGrantVerbs(this);
+
     private static final java.util.logging.Logger LOGGER =
             java.util.logging.Logger.getLogger(IslandTrustCommands.class.getName());
 
@@ -73,20 +72,20 @@ public final class IslandTrustCommands {
     private static final DateTimeFormatter WHEN =
             DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm", Locale.ROOT).withZone(ZoneId.systemDefault());
 
-    private final Supplier<@Nullable TemporaryAccessService> accessServiceProvider;
-    private final IslandLocationService islandLocationService;
-    private final SchedulerPort schedulerPort;
-    private final Supplier<TemporaryAccessConfiguration> configurationProvider;
-    private final Supplier<CurrentNodeProcessIdentity> nodeIdentitySupplier;
-    private final java.util.function.Function<ProfileId, ProfileType> profileTypes;
+    final Supplier<@Nullable TemporaryAccessService> accessServiceProvider;
+    final IslandLocationService islandLocationService;
+    final SchedulerPort schedulerPort;
+    final Supplier<TemporaryAccessConfiguration> configurationProvider;
+    final Supplier<CurrentNodeProcessIdentity> nodeIdentitySupplier;
+    final java.util.function.Function<ProfileId, ProfileType> profileTypes;
     private final Messages messages;
-    private final @Nullable PlayerSessionCoordinator sessionCoordinator;
+    final @Nullable PlayerSessionCoordinator sessionCoordinator;
 
     /** The inbox a player reads on their next join, for a revocation they were not here to see. */
     private volatile @Nullable NotificationService notificationService;
 
     /** Where trust given and taken back is written down for the island's members to read. */
-    private final IslandActivityLog activityLog = new IslandActivityLog();
+    final IslandActivityLog activityLog = new IslandActivityLog();
 
     public IslandTrustCommands(
             Supplier<@Nullable TemporaryAccessService> accessServiceProvider,
@@ -131,7 +130,7 @@ public final class IslandTrustCommands {
                             }
                             return builder.buildFuture();
                         })
-                        .executes(ctx -> executeTrust(ctx, null))
+                        .executes(ctx -> grants.executeTrust(ctx, null))
                         .then(Cmd.argument("until", StringArgumentType.word())
                                 .suggests((ctx, builder) -> {
                                     builder.suggest("session");
@@ -141,7 +140,8 @@ public final class IslandTrustCommands {
                                     builder.suggest("2h");
                                     return builder.buildFuture();
                                 })
-                                .executes(ctx -> executeTrust(ctx, StringArgumentType.getString(ctx, "until")))));
+                                .executes(
+                                        ctx -> grants.executeTrust(ctx, StringArgumentType.getString(ctx, "until")))));
     }
 
     /** {@code /is untrust <player or grant id>}. */
@@ -154,206 +154,12 @@ public final class IslandTrustCommands {
                             }
                             return builder.buildFuture();
                         })
-                        .executes(this::executeUntrust));
+                        .executes(grants::executeUntrust));
     }
 
     /** {@code /is trusted}: who holds a grant on this island right now. */
     public LiteralArgumentBuilder<CommandSourceStack> buildTrusted() {
         return Cmd.literal("trusted").executes(this::executeTrusted);
-    }
-
-    private int executeTrust(CommandContext<CommandSourceStack> ctx, @Nullable String untilRaw) {
-        Player player = playerOrNull(ctx);
-        if (player == null) {
-            return Cmd.OK;
-        }
-        TemporaryAccessService service = accessServiceProvider.get();
-        if (service == null) {
-            send(player, "trust.disabled");
-            return Cmd.OK;
-        }
-        Optional<ProfileId> optProfile = activeProfile(player);
-        if (optProfile.isEmpty()) {
-            send(player, "error.session_not_active");
-            return Cmd.OK;
-        }
-
-        String targetName = StringArgumentType.getString(ctx, "player");
-        Player target = Bukkit.getPlayerExact(targetName);
-        if (target == null || !target.isOnline()) {
-            send(player, "trust.player_not_found", Placeholder.unparsed("player", targetName));
-            return Cmd.OK;
-        }
-        if (target.getUniqueId().equals(player.getUniqueId())) {
-            send(player, "trust.not_yourself");
-            return Cmd.OK;
-        }
-        Optional<ProfileId> optTargetProfile = activeProfile(target);
-        if (optTargetProfile.isEmpty()) {
-            send(player, "trust.target_not_ready", Placeholder.unparsed("player", target.getName()));
-            return Cmd.OK;
-        }
-
-        TemporaryAccessConfiguration configuration = configurationProvider.get();
-        Until until;
-        try {
-            until = readUntil(untilRaw, configuration, target);
-        } catch (IllegalArgumentException e) {
-            send(player, "trust.bad_duration", Placeholder.unparsed("given", untilRaw == null ? "" : untilRaw));
-            return Cmd.OK;
-        }
-
-        ProfileId granterProfile = optProfile.get();
-        ProfileId granteeProfile = optTargetProfile.get();
-        // Both names are read here, on the thread that owns these players. Folia owns a player per
-        // region thread, so reading one from the async pool throws there and races on Paper.
-        String granterName = player.getName();
-        String granteeName = target.getName();
-        PlayerUuid granterUuid = new PlayerUuid(player.getUniqueId());
-        PlayerUuid granteeUuid = new PlayerUuid(target.getUniqueId());
-
-        schedulerPort.async(() -> {
-            Optional<Island> optIsland =
-                    islandLocationService.findIslandId(granterProfile).flatMap(islandLocationService::findIsland);
-            if (optIsland.isEmpty()) {
-                schedulerPort.onEntity(granterUuid, () -> send(player, "error.no_island"));
-                return;
-            }
-            Island island = optIsland.get();
-            if (!roleOf(island, granterProfile).hasPermission(IslandPermission.MEMBER_INVITE)) {
-                schedulerPort.onEntity(granterUuid, () -> send(player, "trust.no_permission"));
-                return;
-            }
-
-            try {
-                service.issueGrant(
-                        island.id().value().toString(),
-                        ISLAND_ROOT_TYPE,
-                        island.id().value().toString(),
-                        granteeProfile,
-                        granteeUuid,
-                        profileTypes.apply(granteeProfile),
-                        granterProfile,
-                        until.policy(),
-                        until.anchorPlayerUuid(),
-                        until.anchorSessionEpoch(),
-                        until.anchorNodeId(),
-                        until.anchorProcessGenerationId(),
-                        configuration.trustPermissions(),
-                        until.expiresAt());
-            } catch (RuntimeException e) {
-                schedulerPort.onEntity(granterUuid, () -> send(player, "trust.refused"));
-                return;
-            }
-
-            activityLog.recordForMembers(
-                    island.id(),
-                    granterProfile,
-                    ActivityEventType.TRUST_GRANTED,
-                    "activity.trust_granted",
-                    java.util.Map.of("player", granteeName, "actor", granterName));
-
-            String describedUntil = describe(until);
-            schedulerPort.onEntity(
-                    granterUuid,
-                    () -> send(
-                            player,
-                            "trust.granted",
-                            Placeholder.unparsed("player", target.getName()),
-                            Placeholder.unparsed("until", describedUntil)));
-            schedulerPort.onEntity(granteeUuid, () -> {
-                if (target.isOnline()) {
-                    send(
-                            target,
-                            "trust.received",
-                            Placeholder.unparsed("player", granterName),
-                            Placeholder.unparsed("until", describedUntil));
-                }
-            });
-        });
-        return Cmd.OK;
-    }
-
-    private int executeUntrust(CommandContext<CommandSourceStack> ctx) {
-        Player player = playerOrNull(ctx);
-        if (player == null) {
-            return Cmd.OK;
-        }
-        TemporaryAccessService service = accessServiceProvider.get();
-        if (service == null) {
-            send(player, "trust.disabled");
-            return Cmd.OK;
-        }
-        Optional<ProfileId> optProfile = activeProfile(player);
-        if (optProfile.isEmpty()) {
-            send(player, "error.session_not_active");
-            return Cmd.OK;
-        }
-        ProfileId revokerProfile = optProfile.get();
-        PlayerUuid revokerUuid = new PlayerUuid(player.getUniqueId());
-        String who = StringArgumentType.getString(ctx, "who");
-        // Who is here, and what they are called, is read on the thread that owns them. Folia owns a
-        // player per region thread, so asking one from the async pool throws there.
-        String revokerName = player.getName();
-        Map<ProfileId, Player> onlineByProfile = onlineByProfile();
-
-        schedulerPort.async(() -> {
-            Optional<Island> optIsland =
-                    islandLocationService.findIslandId(revokerProfile).flatMap(islandLocationService::findIsland);
-            if (optIsland.isEmpty()) {
-                schedulerPort.onEntity(revokerUuid, () -> send(player, "error.no_island"));
-                return;
-            }
-            Island island = optIsland.get();
-            if (!roleOf(island, revokerProfile).hasPermission(IslandPermission.MEMBER_INVITE)) {
-                schedulerPort.onEntity(revokerUuid, () -> send(player, "trust.no_permission"));
-                return;
-            }
-
-            List<TemporaryAccessGrant> held = service.getActiveGrantsForRoot(
-                    ISLAND_ROOT_TYPE, island.id().value().toString());
-            List<TemporaryAccessGrant> matching = matching(held, who, onlineByProfile);
-            if (matching.isEmpty()) {
-                schedulerPort.onEntity(
-                        revokerUuid, () -> send(player, "trust.nothing_to_revoke", Placeholder.unparsed("who", who)));
-                return;
-            }
-            for (TemporaryAccessGrant grant : matching) {
-                service.revokeGrant(grant.grantId(), revokerProfile);
-            }
-            activityLog.recordForMembers(
-                    island.id(),
-                    revokerProfile,
-                    ActivityEventType.TRUST_REVOKED,
-                    "activity.trust_revoked",
-                    java.util.Map.of("player", who, "actor", revokerName));
-
-            int revoked = matching.size();
-            schedulerPort.onEntity(
-                    revokerUuid,
-                    () -> send(
-                            player,
-                            "trust.revoked",
-                            Placeholder.unparsed("who", who),
-                            Placeholder.unparsed("count", Integer.toString(revoked))));
-            java.util.Set<ProfileId> told = new java.util.LinkedHashSet<>();
-            for (TemporaryAccessGrant grant : matching) {
-                if (!told.add(grant.granteeProfileId())) {
-                    continue;
-                }
-                Player grantee = onlineByProfile.get(grant.granteeProfileId());
-                if (grantee != null) {
-                    schedulerPort.onEntity(
-                            new PlayerUuid(grantee.getUniqueId()),
-                            () -> send(grantee, "trust.revoked_notice", Placeholder.unparsed("player", revokerName)));
-                    continue;
-                }
-                // Losing your standing on an island while you are away is exactly what the inbox is
-                // for. One notice per player, not one per grant they happened to hold.
-                leaveNotice(grant.granteeProfileId(), revokerName);
-            }
-        });
-        return Cmd.OK;
     }
 
     private int executeTrusted(CommandContext<CommandSourceStack> ctx) {
@@ -403,7 +209,7 @@ public final class IslandTrustCommands {
     }
 
     /** Writes a revocation down for a player who is not here to be told. */
-    private void leaveNotice(ProfileId recipient, String revokerName) {
+    void leaveNotice(ProfileId recipient, String revokerName) {
         NotificationService service = this.notificationService;
         if (service == null) {
             return;
@@ -423,7 +229,7 @@ public final class IslandTrustCommands {
     }
 
     /** Grants held by the named player, or the one grant whose id was typed. */
-    private List<TemporaryAccessGrant> matching(
+    List<TemporaryAccessGrant> matching(
             List<TemporaryAccessGrant> held, String who, Map<ProfileId, Player> onlineByProfile) {
         List<TemporaryAccessGrant> matches = new ArrayList<>();
         for (TemporaryAccessGrant grant : held) {
@@ -444,7 +250,7 @@ public final class IslandTrustCommands {
      * <p>Read once, on the thread the command arrives on, because everything that needs it happens
      * after a hop off that thread and a player belongs to whichever thread owns them.
      */
-    private Map<ProfileId, Player> onlineByProfile() {
+    Map<ProfileId, Player> onlineByProfile() {
         if (sessionCoordinator == null) {
             return Map.of();
         }
@@ -455,50 +261,8 @@ public final class IslandTrustCommands {
         return byProfile;
     }
 
-    /**
-     * What the operator's words mean in the domain's terms.
-     *
-     * <p>All four termination policies the documents name are reachable, because a feature is not
-     * half a feature: a word for the session, a word for the restart, a word for until revoked, and
-     * anything else read as a length of time.
-     */
-    private Until readUntil(@Nullable String raw, TemporaryAccessConfiguration configuration, Player target) {
-        if (raw == null || raw.isBlank()) {
-            return timed(configuration.defaultDuration(), configuration);
-        }
-        String word = raw.strip().toLowerCase(Locale.ROOT);
-        return switch (word) {
-            case "session", "logout" -> {
-                ActiveSession session =
-                        sessionCoordinator == null ? null : sessionCoordinator.getActiveSession(target.getUniqueId());
-                if (session == null) {
-                    throw new IllegalArgumentException("no live session to anchor to");
-                }
-                yield new Until(
-                        TerminationPolicy.UNTIL_SESSION_END,
-                        new PlayerUuid(target.getUniqueId()),
-                        session.sessionEpoch(),
-                        null,
-                        null,
-                        null);
-            }
-            case "restart" -> {
-                CurrentNodeProcessIdentity identity = nodeIdentitySupplier.get();
-                yield new Until(
-                        TerminationPolicy.NODE_PROCESS_RESTART,
-                        null,
-                        null,
-                        identity.nodeId(),
-                        identity.processGenerationId(),
-                        null);
-            }
-            case "forever", "revoked" -> new Until(TerminationPolicy.UNTIL_REVOKED, null, null, null, null, null);
-            default -> timed(Durations.parse(word), configuration);
-        };
-    }
-
     /** A length of time, never longer than the operator allows. */
-    private Until timed(Duration wanted, TemporaryAccessConfiguration configuration) {
+    Until timed(Duration wanted, TemporaryAccessConfiguration configuration) {
         if (wanted.isNegative() || wanted.isZero()) {
             throw new IllegalArgumentException("a grant must last longer than nothing: " + wanted);
         }
@@ -512,17 +276,17 @@ public final class IslandTrustCommands {
                 Instant.now().plus(capped));
     }
 
-    private String describe(Until until) {
+    String describe(Until until) {
         Instant expiresAt = until.expiresAt();
         return expiresAt != null ? WHEN.format(expiresAt) : word(until.policy());
     }
 
-    private String describe(TemporaryAccessGrant grant) {
+    String describe(TemporaryAccessGrant grant) {
         Instant expiresAt = grant.expiresAt();
         return expiresAt != null ? WHEN.format(expiresAt) : word(grant.terminationPolicy());
     }
 
-    private static String word(TerminationPolicy policy) {
+    static String word(TerminationPolicy policy) {
         return switch (policy) {
             case UNTIL_SESSION_END -> "session";
             case NODE_PROCESS_RESTART -> "restart";
@@ -531,7 +295,7 @@ public final class IslandTrustCommands {
         };
     }
 
-    private static IslandRole roleOf(Island island, ProfileId profileId) {
+    static IslandRole roleOf(Island island, ProfileId profileId) {
         if (island.ownerProfileId().equals(profileId)) {
             return IslandRole.OWNER;
         }
@@ -560,7 +324,7 @@ public final class IslandTrustCommands {
         return online != null ? online.getName() : profileId.value().toString();
     }
 
-    private @Nullable Player playerOrNull(CommandContext<CommandSourceStack> ctx) {
+    @Nullable Player playerOrNull(CommandContext<CommandSourceStack> ctx) {
         CommandSender sender = ctx.getSource().getSender();
         if (sender instanceof Player player) {
             return player;
@@ -569,19 +333,19 @@ public final class IslandTrustCommands {
         return null;
     }
 
-    private Optional<ProfileId> activeProfile(Player player) {
+    Optional<ProfileId> activeProfile(Player player) {
         if (sessionCoordinator == null) {
             return Optional.empty();
         }
         return sessionCoordinator.activeProfile(player.getUniqueId());
     }
 
-    private void send(CommandSender sender, String key, TagResolver... resolvers) {
+    void send(CommandSender sender, String key, TagResolver... resolvers) {
         messages.send(sender, key, resolvers);
     }
 
     /** One answer to "how long", in the shape issueGrant wants it. */
-    private record Until(
+    record Until(
             TerminationPolicy policy,
             @Nullable PlayerUuid anchorPlayerUuid,
             @Nullable Long anchorSessionEpoch,
