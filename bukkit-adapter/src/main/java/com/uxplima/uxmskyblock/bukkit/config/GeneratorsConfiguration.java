@@ -7,24 +7,47 @@ import java.util.Map;
 import java.util.Objects;
 
 import org.bukkit.Material;
+import org.bukkit.World;
 
 import org.spongepowered.configurate.ConfigurationNode;
 
 /**
  * Immutable configuration holder for cobblestone and stone generator ore generation rates by tier.
  */
-public record GeneratorsConfiguration(boolean enabled, Map<Integer, Map<Material, Double>> tierRates) {
+public record GeneratorsConfiguration(
+        boolean enabled,
+        Map<Integer, Map<Material, Double>> tierRates,
+        Map<World.Environment, Map<Integer, Map<Material, Double>>> dimensionRates) {
 
     public static final boolean DEFAULT_ENABLED = true;
 
+    /** The words a tier's own rates for a dimension are written under. */
+    private static final Map<String, World.Environment> DIMENSIONS =
+            Map.of("nether", World.Environment.NETHER, "end", World.Environment.THE_END);
+
     public GeneratorsConfiguration {
+        tierRates = frozen(tierRates);
+        Map<World.Environment, Map<Integer, Map<Material, Double>>> dimensions =
+                new java.util.EnumMap<>(World.Environment.class);
+        if (dimensionRates != null) {
+            dimensionRates.forEach((dimension, rates) -> dimensions.put(dimension, frozen(rates)));
+        }
+        dimensionRates = Collections.unmodifiableMap(dimensions);
+    }
+
+    /** Every tier the same in each dimension, the overworld's rates. */
+    public GeneratorsConfiguration(boolean enabled, Map<Integer, Map<Material, Double>> tierRates) {
+        this(enabled, tierRates, Map.of());
+    }
+
+    private static Map<Integer, Map<Material, Double>> frozen(Map<Integer, Map<Material, Double>> rates) {
         Map<Integer, Map<Material, Double>> copy = new LinkedHashMap<>();
-        if (tierRates != null) {
-            for (Map.Entry<Integer, Map<Material, Double>> entry : tierRates.entrySet()) {
+        if (rates != null) {
+            for (Map.Entry<Integer, Map<Material, Double>> entry : rates.entrySet()) {
                 copy.put(entry.getKey(), Collections.unmodifiableMap(new LinkedHashMap<>(entry.getValue())));
             }
         }
-        tierRates = Collections.unmodifiableMap(copy);
+        return Collections.unmodifiableMap(copy);
     }
 
     /**
@@ -39,15 +62,28 @@ public record GeneratorsConfiguration(boolean enabled, Map<Integer, Map<Material
     }
 
     /** The blocks a generator forms of its own, which an ore generator booster never makes likelier. */
-    private static final java.util.Set<Material> FORMED =
-            java.util.EnumSet.of(Material.COBBLESTONE, Material.STONE, Material.BASALT);
+    private static final java.util.Set<Material> FORMED = java.util.EnumSet.of(
+            Material.COBBLESTONE,
+            Material.STONE,
+            Material.BASALT,
+            Material.NETHERRACK,
+            Material.BLACKSTONE,
+            Material.END_STONE);
 
     /**
      * As {@link #roll(int, double)}, with every ore's weight times {@code oreBoost}: an ore generator booster turns
      * up the ores more often, and the stone the generator forms of its own as often as ever.
      */
     public Material roll(int tier, double randomValue, double oreBoost) {
-        Map<Material, Double> written = ratesFor(tier);
+        return roll(tier, World.Environment.NORMAL, randomValue, oreBoost);
+    }
+
+    /**
+     * As {@link #roll(int, double, double)}, in {@code dimension}: a tier that writes its own rates for the Nether or
+     * the End turns those up there, and a tier that writes none turns up its overworld rates everywhere.
+     */
+    public Material roll(int tier, World.Environment dimension, double randomValue, double oreBoost) {
+        Map<Material, Double> written = ratesFor(tier, dimension);
         if (written == null) {
             return Material.COBBLESTONE;
         }
@@ -114,9 +150,26 @@ public record GeneratorsConfiguration(boolean enabled, Map<Integer, Map<Material
      * lost every ore it paid for, rather than keeping the best tier still there.
      */
     private @org.jspecify.annotations.Nullable Map<Material, Double> ratesFor(int tier) {
+        Integer chosen = tierFor(tier);
+        return chosen == null ? null : tierRates.get(chosen);
+    }
+
+    /** The rates the tier chosen for {@code tier} writes for {@code dimension}, or its overworld rates. */
+    private @org.jspecify.annotations.Nullable Map<Material, Double> ratesFor(int tier, World.Environment dimension) {
+        Integer chosen = tierFor(tier);
+        if (chosen == null) {
+            return null;
+        }
+        Map<Material, Double> own =
+                dimensionRates.getOrDefault(dimension, Map.of()).get(chosen);
+        return own != null && !own.isEmpty() ? own : tierRates.get(chosen);
+    }
+
+    /** The tier the file writes that {@code tier} reads from, or none when it writes none. */
+    private @org.jspecify.annotations.Nullable Integer tierFor(int tier) {
         Map<Material, Double> exact = tierRates.get(tier);
         if (exact != null && !exact.isEmpty()) {
-            return exact;
+            return tier;
         }
         Integer below = null;
         Integer lowest = null;
@@ -132,8 +185,7 @@ public record GeneratorsConfiguration(boolean enabled, Map<Integer, Map<Material
                 lowest = written;
             }
         }
-        Integer chosen = below != null ? below : lowest;
-        return chosen == null ? null : tierRates.get(chosen);
+        return below != null ? below : lowest;
     }
 
     public static GeneratorsConfiguration defaultConfiguration() {
@@ -179,7 +231,46 @@ public record GeneratorsConfiguration(boolean enabled, Map<Integer, Map<Material
         t4.put(Material.ANCIENT_DEBRIS, 0.05);
         rates.put(4, t4);
 
-        return new GeneratorsConfiguration(DEFAULT_ENABLED, rates);
+        // The Nether and the End turn up their own blocks from tier 2.
+        Map<Integer, Map<Material, Double>> nether = new LinkedHashMap<>();
+        Map<Material, Double> n2 = new LinkedHashMap<>();
+        n2.put(Material.NETHERRACK, 0.60);
+        n2.put(Material.NETHER_QUARTZ_ORE, 0.25);
+        n2.put(Material.NETHER_GOLD_ORE, 0.15);
+        nether.put(2, n2);
+        Map<Material, Double> n3 = new LinkedHashMap<>();
+        n3.put(Material.NETHERRACK, 0.45);
+        n3.put(Material.BLACKSTONE, 0.15);
+        n3.put(Material.NETHER_QUARTZ_ORE, 0.22);
+        n3.put(Material.NETHER_GOLD_ORE, 0.15);
+        n3.put(Material.ANCIENT_DEBRIS, 0.03);
+        nether.put(3, n3);
+        Map<Material, Double> n4 = new LinkedHashMap<>();
+        n4.put(Material.NETHERRACK, 0.35);
+        n4.put(Material.BLACKSTONE, 0.15);
+        n4.put(Material.NETHER_QUARTZ_ORE, 0.25);
+        n4.put(Material.NETHER_GOLD_ORE, 0.17);
+        n4.put(Material.ANCIENT_DEBRIS, 0.08);
+        nether.put(4, n4);
+
+        Map<Integer, Map<Material, Double>> end = new LinkedHashMap<>();
+        Map<Material, Double> e2 = new LinkedHashMap<>();
+        e2.put(Material.END_STONE, 0.90);
+        e2.put(Material.OBSIDIAN, 0.10);
+        end.put(2, e2);
+        Map<Material, Double> e3 = new LinkedHashMap<>();
+        e3.put(Material.END_STONE, 0.80);
+        e3.put(Material.OBSIDIAN, 0.15);
+        e3.put(Material.PURPUR_BLOCK, 0.05);
+        end.put(3, e3);
+        Map<Material, Double> e4 = new LinkedHashMap<>();
+        e4.put(Material.END_STONE, 0.70);
+        e4.put(Material.OBSIDIAN, 0.20);
+        e4.put(Material.PURPUR_BLOCK, 0.10);
+        end.put(4, e4);
+
+        return new GeneratorsConfiguration(
+                DEFAULT_ENABLED, rates, Map.of(World.Environment.NETHER, nether, World.Environment.THE_END, end));
     }
 
     public static GeneratorsConfiguration load(ConfigurationNode root) {
@@ -196,25 +287,22 @@ public record GeneratorsConfiguration(boolean enabled, Map<Integer, Map<Material
         }
 
         Map<Integer, Map<Material, Double>> rates = new LinkedHashMap<>();
+        Map<World.Environment, Map<Integer, Map<Material, Double>>> dimensions =
+                new java.util.EnumMap<>(World.Environment.class);
         for (Map.Entry<Object, ? extends ConfigurationNode> entry :
                 tiersNode.childrenMap().entrySet()) {
             try {
                 int tierNum = Integer.parseInt(String.valueOf(entry.getKey()));
                 ConfigurationNode tierNode = entry.getValue();
-                Map<Material, Double> matRates = new LinkedHashMap<>();
-
-                ConfigurationNode ratesNode = tierNode.node("rates");
-                if (!ratesNode.virtual() && ratesNode.isMap()) {
-                    for (Map.Entry<Object, ? extends ConfigurationNode> rEntry :
-                            ratesNode.childrenMap().entrySet()) {
-                        String matName = String.valueOf(rEntry.getKey()).toUpperCase(Locale.ROOT);
-                        Material mat = Material.matchMaterial(matName);
-                        if (mat != null) {
-                            matRates.put(mat, rEntry.getValue().getDouble(0.0));
-                        }
+                rates.put(tierNum, ratesOf(tierNode.node("rates")));
+                DIMENSIONS.forEach((word, dimension) -> {
+                    Map<Material, Double> own = ratesOf(tierNode.node(word, "rates"));
+                    if (!own.isEmpty()) {
+                        dimensions
+                                .computeIfAbsent(dimension, any -> new LinkedHashMap<>())
+                                .put(tierNum, own);
                     }
-                }
-                rates.put(tierNum, matRates);
+                });
             } catch (NumberFormatException ignored) {
                 // Skip invalid tier keys
             }
@@ -224,6 +312,21 @@ public record GeneratorsConfiguration(boolean enabled, Map<Integer, Map<Material
             return defaultConfiguration();
         }
 
-        return new GeneratorsConfiguration(enabled, rates);
+        return new GeneratorsConfiguration(enabled, rates, dimensions);
+    }
+
+    private static Map<Material, Double> ratesOf(ConfigurationNode ratesNode) {
+        Map<Material, Double> matRates = new LinkedHashMap<>();
+        if (!ratesNode.virtual() && ratesNode.isMap()) {
+            for (Map.Entry<Object, ? extends ConfigurationNode> rEntry :
+                    ratesNode.childrenMap().entrySet()) {
+                String matName = String.valueOf(rEntry.getKey()).toUpperCase(Locale.ROOT);
+                Material mat = Material.matchMaterial(matName);
+                if (mat != null) {
+                    matRates.put(mat, rEntry.getValue().getDouble(0.0));
+                }
+            }
+        }
+        return matRates;
     }
 }

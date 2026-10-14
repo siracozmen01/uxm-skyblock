@@ -179,4 +179,31 @@ class OreGeneratorListenerTest extends MockBukkitHarness {
                 .describedAs("a booster a million strong turns up the ore nearly always")
                 .isEqualTo(Material.DIAMOND_ORE);
     }
+
+    @Test
+    @DisplayName("A generator in the Nether turns up its tier's Nether rates, and one in the overworld its own")
+    void theNetherTurnsUpItsOwn() {
+        org.bukkit.World nether = server.createWorld(
+                new org.bukkit.WorldCreator("skyblock_nether").environment(org.bukkit.World.Environment.NETHER));
+        assertThat(nether.getEnvironment()).isEqualTo(org.bukkit.World.Environment.NETHER);
+        spatialIndex.indexIsland(sampleIsland, nether.getName());
+        GeneratorsConfiguration config = new GeneratorsConfiguration(
+                true,
+                Map.of(1, Map.of(Material.DIAMOND_ORE, 1.0)),
+                Map.of(org.bukkit.World.Environment.NETHER, Map.of(1, Map.of(Material.NETHER_QUARTZ_ORE, 1.0))));
+        when(mockUpgradeService.getCachedTier(islandId, ORE_UPGRADE_ID)).thenReturn(1);
+        OreGeneratorListener listener = new OreGeneratorListener(mockUpgradeService, config, spatialIndex);
+
+        BlockState there = nether.getBlockAt(0, 64, 0).getState();
+        there.setType(Material.COBBLESTONE);
+        BlockFormEvent inTheNether = new BlockFormEvent(nether.getBlockAt(0, 64, 0), there);
+        listener.onBlockForm(inTheNether);
+        BlockState here = world.getBlockAt(0, 64, 0).getState();
+        here.setType(Material.COBBLESTONE);
+        BlockFormEvent inTheOverworld = new BlockFormEvent(world.getBlockAt(0, 64, 0), here);
+        listener.onBlockForm(inTheOverworld);
+
+        assertThat(inTheNether.getNewState().getType()).isEqualTo(Material.NETHER_QUARTZ_ORE);
+        assertThat(inTheOverworld.getNewState().getType()).isEqualTo(Material.DIAMOND_ORE);
+    }
 }

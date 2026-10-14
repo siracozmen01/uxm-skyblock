@@ -78,8 +78,11 @@ public final class OreGeneratorListener implements Listener {
         }
 
         double roll = ThreadLocalRandom.current().nextDouble();
-        Material oreMaterial =
-                configuration.roll(tier, roll, boosters.applyAsDouble(islandId, BoosterCategory.ORE_GENERATOR));
+        Material oreMaterial = configuration.roll(
+                tier,
+                loc.getWorld().getEnvironment(),
+                roll,
+                boosters.applyAsDouble(islandId, BoosterCategory.ORE_GENERATOR));
         if (oreMaterial != formedType) {
             event.getNewState().setType(oreMaterial);
         }
