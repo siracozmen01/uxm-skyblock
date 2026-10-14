@@ -508,6 +508,7 @@ final class IslandCommandWiring {
         tree.setRewardInboxService(gameplay.rewardInboxService());
         tree.useMarkerSynchroniser(integration.markerSynchroniser());
         tree.setMissionService(gameplay.missionService());
+        tree.useIslandFly(gameplay.islandFly());
         return tree;
     }
 

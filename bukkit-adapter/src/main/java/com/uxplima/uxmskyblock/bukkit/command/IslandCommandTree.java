@@ -353,6 +353,13 @@ public final class IslandCommandTree {
     }
 
     /** {@code /is contest}, while Brix is enabled. */
+    private com.uxplima.uxmskyblock.bukkit.fly.@Nullable IslandFly islandFly;
+
+    /** {@code /is fly}. */
+    public void useIslandFly(com.uxplima.uxmskyblock.bukkit.fly.@Nullable IslandFly fly) {
+        this.islandFly = fly;
+    }
+
     public void useBrixContests(com.uxplima.uxmskyblock.bukkit.brix.@Nullable BrixContestPlay contests) {
         this.brixContests = contests;
     }
@@ -826,6 +833,7 @@ public final class IslandCommandTree {
                                                                 ctx, "number")))))))
                 .then(Cmd.literal("courses").executes(this::executeCourses))
                 .then(Cmd.literal("plots").executes(this::executePlots))
+                .then(Cmd.literal("fly").executes(this::islandFly))
                 .then(Cmd.literal("contest")
                         .executes(ctx -> brixContest(ctx, com.uxplima.uxmskyblock.bukkit.brix.BrixContestPlay::show))
                         .then(Cmd.literal("join")
@@ -1065,6 +1073,23 @@ public final class IslandCommandTree {
             return Cmd.OK;
         }
         gallery.open(player);
+        return Cmd.OK;
+    }
+
+    private int islandFly(CommandContext<CommandSourceStack> ctx) {
+        if (!(ctx.getSource().getSender() instanceof Player player)) {
+            send(ctx.getSource().getSender(), "error.players_only");
+            return Cmd.OK;
+        }
+        com.uxplima.uxmskyblock.bukkit.fly.IslandFly fly = this.islandFly;
+        if (fly == null) {
+            send(player, "fly.disabled");
+            return Cmd.OK;
+        }
+        // The flight and the island read here are the player's, so the work is done on their own thread.
+        schedulerPort.onEntity(
+                new com.uxplima.uxmskyblock.core.domain.identity.PlayerUuid(player.getUniqueId()),
+                () -> fly.toggle(player));
         return Cmd.OK;
     }
 

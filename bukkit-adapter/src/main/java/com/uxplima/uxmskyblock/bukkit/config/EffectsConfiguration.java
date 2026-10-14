@@ -207,6 +207,9 @@ public final class EffectsConfiguration {
         defaults.put(
                 "upside-down-mirrored",
                 parseAll("upside-down-mirrored", List.of("[sound] block.sculk.spread 0.4 0.6")));
+        defaults.put("island-fly-on", parseAll("island-fly-on", List.of("[sound] entity.phantom.flap 0.8 1.4")));
+        defaults.put("island-fly-off", parseAll("island-fly-off", List.of("[sound] entity.phantom.flap 0.8 0.8")));
+        defaults.put("island-fly-lost", parseAll("island-fly-lost", List.of("[sound] block.note_block.bass 1.0 0.6")));
         return new InteractionEffects(defaults);
     }
 

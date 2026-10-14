@@ -180,6 +180,8 @@ public final class BootstrapEventRegistrar {
         {
             pm.registerEvents(gameplayWiring.notificationListener(), plugin);
         }
+        pm.registerEvents(gameplayWiring.islandFly(), plugin);
+        gameplayWiring.arrivalWatch().observe(gameplayWiring.islandFly());
         if (featureModuleWiring.moduleRegistry().isModuleEnabled("social")) {
             pm.registerEvents(gameplayWiring.visitRecorder(), plugin);
             gameplayWiring.arrivalWatch().observe(gameplayWiring.visitRecorder());

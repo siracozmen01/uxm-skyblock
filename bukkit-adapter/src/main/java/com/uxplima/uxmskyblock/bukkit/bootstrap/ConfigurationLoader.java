@@ -471,6 +471,12 @@ public final class ConfigurationLoader {
                 "walls.conf",
                 com.uxplima.uxmskyblock.bukkit.wall.WallConfiguration::load,
                 com.uxplima.uxmskyblock.bukkit.wall.WallConfiguration.defaultConfiguration()));
+        wiring.useFlyConfig(loadConfig(
+                plugin,
+                dataDir,
+                "fly.conf",
+                com.uxplima.uxmskyblock.bukkit.config.IslandFlyConfiguration::load,
+                com.uxplima.uxmskyblock.bukkit.config.IslandFlyConfiguration.defaultConfiguration()));
         wiring.useCarriedStateConfig(loadConfig(
                 plugin,
                 dataDir,

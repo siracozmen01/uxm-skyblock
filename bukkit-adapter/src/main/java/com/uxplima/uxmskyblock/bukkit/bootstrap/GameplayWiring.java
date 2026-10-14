@@ -134,6 +134,7 @@ public final class GameplayWiring {
     private final TradeWindsWiring tradeWindsWiring;
     private final com.uxplima.uxmskyblock.bukkit.lifecycle.PlayerLifecycle playerLifecycle;
     private final com.uxplima.uxmskyblock.bukkit.arrival.ArrivalWatch arrivalWatch;
+    private final com.uxplima.uxmskyblock.bukkit.fly.IslandFly islandFly;
     private @Nullable AutoCloseable arrivalRounds;
     private final IslandBorderService borderService;
     private final IslandMembershipService membershipService;
@@ -276,6 +277,16 @@ public final class GameplayWiring {
         this.arrivalWatch = new com.uxplima.uxmskyblock.bukkit.arrival.ArrivalWatch(
                 scheduler,
                 () -> org.bukkit.Bukkit.getWorlds().getFirst().getSpawnLocation(),
+                java.time.Clock.systemUTC());
+        com.uxplima.uxmskyblock.bukkit.effect.InteractionEffectPlayer flyEffects =
+                new com.uxplima.uxmskyblock.bukkit.effect.InteractionEffectPlayer(scheduler, config.messages());
+        this.islandFly = new com.uxplima.uxmskyblock.bukkit.fly.IslandFly(
+                config.flyConfig(),
+                protectionListener::findIslandAt,
+                authority.sessionCoordinator()::activeProfile,
+                this.economicWiring.upgradeService()::getCurrentTier,
+                config.messages(),
+                (interaction, player) -> flyEffects.fire(config.effectsConfig(), interaction, player),
                 java.time.Clock.systemUTC());
 
         this.socialWiring = new SocialWiring(
@@ -514,6 +525,11 @@ public final class GameplayWiring {
     /** Which game mode instance each profile plays, and so which mode its island is. */
     public com.uxplima.uxmskyblock.core.application.gamemode.GameModeHierarchyService gameModeHierarchyService() {
         return creationWiring.gameModeHierarchyService();
+    }
+
+    /** {@code /is fly}, and the watch that sets a flier down off their island. */
+    public com.uxplima.uxmskyblock.bukkit.fly.IslandFly islandFly() {
+        return islandFly;
     }
 
     /** What carries out the operator's lifecycle rules on players. */

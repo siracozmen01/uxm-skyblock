@@ -70,6 +70,7 @@ public record IslandRole(String id, int weight, String displayName, Set<IslandPe
                     IslandPermission.VAULT_DEPOSIT,
                     IslandPermission.VAULT_WITHDRAW,
                     IslandPermission.CHAT_VIEW,
+                    IslandPermission.ISLAND_FLY,
                     IslandPermission.CHAT_SEND),
             false);
 
@@ -96,6 +97,7 @@ public record IslandRole(String id, int weight, String displayName, Set<IslandPe
                     IslandPermission.VAULT_DEPOSIT,
                     IslandPermission.VAULT_WITHDRAW,
                     IslandPermission.CHAT_VIEW,
+                    IslandPermission.ISLAND_FLY,
                     IslandPermission.CHAT_SEND),
             false);
 
@@ -119,6 +121,7 @@ public record IslandRole(String id, int weight, String displayName, Set<IslandPe
                     IslandPermission.VAULT_VIEW,
                     IslandPermission.VAULT_DEPOSIT,
                     IslandPermission.CHAT_VIEW,
+                    IslandPermission.ISLAND_FLY,
                     IslandPermission.CHAT_SEND),
             false);
 

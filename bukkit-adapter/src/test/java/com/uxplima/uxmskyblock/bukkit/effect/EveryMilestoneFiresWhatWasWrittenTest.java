@@ -140,7 +140,10 @@ class EveryMilestoneFiresWhatWasWrittenTest {
                         "vessel-customs-cleared",
                         "vessel-plunder",
                         "vessel-plundered",
-                        "upside-down-mirrored"));
+                        "upside-down-mirrored",
+                        "island-fly-on",
+                        "island-fly-off",
+                        "island-fly-lost"));
     }
 
     private static Set<String> firedInteractions() throws IOException {

@@ -601,6 +601,19 @@ public final class ConfigurationWiring {
         return acidIslandConfig;
     }
 
+    /** Flight on islands, {@code modules/fly.conf}, the shipped one until the loader hands the file over. */
+    private volatile com.uxplima.uxmskyblock.bukkit.config.IslandFlyConfiguration flyConfig =
+            com.uxplima.uxmskyblock.bukkit.config.IslandFlyConfiguration.defaultConfiguration();
+
+    public com.uxplima.uxmskyblock.bukkit.config.IslandFlyConfiguration flyConfig() {
+        return flyConfig;
+    }
+
+    /** Hands over {@code modules/fly.conf} as the server read it. */
+    public void useFlyConfig(com.uxplima.uxmskyblock.bukkit.config.IslandFlyConfiguration config) {
+        this.flyConfig = Objects.requireNonNull(config, "config must not be null");
+    }
+
     /** The walls, {@code modules/walls.conf}, the shipped ones until the loader hands the file over. */
     private volatile com.uxplima.uxmskyblock.bukkit.wall.WallConfiguration wallConfig =
             com.uxplima.uxmskyblock.bukkit.wall.WallConfiguration.defaultConfiguration();

@@ -50,6 +50,8 @@ public enum IslandPermission {
     BIOME_CHANGE,
     /** Moving a Boxed island's box with an ender pearl. */
     BOX_MOVE,
+    /** Flying on the island with {@code /is fly}. */
+    ISLAND_FLY,
     WARP_CREATE,
     WARP_DELETE,
 
