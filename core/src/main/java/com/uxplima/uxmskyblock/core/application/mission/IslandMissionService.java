@@ -31,7 +31,7 @@ public final class IslandMissionService {
             java.util.logging.Logger.getLogger(IslandMissionService.class.getName());
 
     private final IslandMissionStoragePort storagePort;
-    private final @Nullable IslandMissionRewardPort rewardPort;
+    private volatile @Nullable IslandMissionRewardPort rewardPort;
 
     /**
      * Told when a mission is finished, once, by whoever finished it.
@@ -306,8 +306,9 @@ public final class IslandMissionService {
         }
         updated.add(next);
         if (advance.finishedItNow()) {
-            if (rewardPort != null) {
-                rewardPort.dispatchReward(islandId, profileId, def);
+            IslandMissionRewardPort rewards = this.rewardPort;
+            if (rewards != null) {
+                rewards.dispatchReward(islandId, profileId, def);
             }
             tellSomebodyItFinished(islandId, profileId, def);
         }
@@ -355,8 +356,9 @@ public final class IslandMissionService {
         storagePort.saveProgress(islandId, profileId, next);
 
         if (advance.finishedItNow()) {
-            if (rewardPort != null) {
-                rewardPort.dispatchReward(islandId, profileId, def);
+            IslandMissionRewardPort rewards = this.rewardPort;
+            if (rewards != null) {
+                rewards.dispatchReward(islandId, profileId, def);
             }
             tellSomebodyItFinished(islandId, profileId, def);
         }
@@ -388,6 +390,11 @@ public final class IslandMissionService {
             Objects.requireNonNull(profileId, "profileId must not be null");
             Objects.requireNonNull(definition, "definition must not be null");
         }
+    }
+
+    /** Hands this service what pays a finished mission's reward, once for each finish. */
+    public void useRewards(@Nullable IslandMissionRewardPort rewards) {
+        this.rewardPort = rewards;
     }
 
     /** Tells this service who to tell when a mission is finished. */

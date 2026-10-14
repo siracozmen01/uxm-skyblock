@@ -303,6 +303,27 @@ public final class GameplayWiring {
                 boosters == null ? (island, kind) -> 1.0 : boosters::cachedMultiplier,
                 scheduler,
                 () -> java.util.concurrent.ThreadLocalRandom.current().nextDouble());
+        // A finished mission's reward was never paid: the service was built with nothing to pay it.
+        boolean missionBoosters = config.moduleSettings().isModuleEnabled("boosters");
+        com.uxplima.uxmskyblock.core.application.booster.IslandBoosterService missionBoost =
+                this.economicWiring.boosterService();
+        this.creationWiring
+                .missionService()
+                .useRewards(new com.uxplima.uxmskyblock.bukkit.mission.MissionPayout(
+                        this.economicWiring.bankService(),
+                        persistence.islandStoragePort(),
+                        config.nodeConfig().nodeId(),
+                        island -> missionBoosters
+                                ? missionBoost.getEffectiveMultiplier(
+                                        island,
+                                        com.uxplima.uxmskyblock.core.domain.booster.BoosterCategory.MISSION_REWARDS,
+                                        java.time.Instant.now())
+                                : 1.0,
+                        scheduler,
+                        player -> java.util.Optional.ofNullable(org.bukkit.Bukkit.getOfflinePlayer(player.value())
+                                .getName()),
+                        line -> org.bukkit.Bukkit.dispatchCommand(org.bukkit.Bukkit.getConsoleSender(), line)));
+
         this.islandEffects = new com.uxplima.uxmskyblock.bukkit.islandeffect.IslandEffects(
                 config.islandEffectsConfig(),
                 protectionListener::findIslandAt,

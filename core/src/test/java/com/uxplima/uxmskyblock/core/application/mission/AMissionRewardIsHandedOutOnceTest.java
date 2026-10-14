@@ -261,4 +261,18 @@ class AMissionRewardIsHandedOutOnceTest {
             pool.shutdownNow();
         }
     }
+
+    @Test
+    @DisplayName("A payer handed over after the service was built is the one paid, once, and none pays nothing")
+    void aPayerHandedOverLaterIsPaid() throws Exception {
+        IslandMissionService service = new IslandMissionService(new InMemoryMissionStorage(), null);
+        service.registerMission(missionNeeding(2));
+        fireTogether(service, 1);
+
+        CountingRewards rewards = new CountingRewards();
+        service.useRewards(rewards);
+        fireTogether(service, 1);
+
+        assertThat(rewards.dispatched.get()).isEqualTo(1);
+    }
 }
