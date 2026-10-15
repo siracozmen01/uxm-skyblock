@@ -168,6 +168,30 @@ val verifyJar by tasks.registering {
                     "or another plugin's copy of a library answers for ours.",
             )
         }
+        // The list above names the libraries bundled today, and a library added tomorrow is on no
+        // list. So every class must also sit in this plugin's namespace, or be the SQLite driver,
+        // which finds its native library by its own package name, and the same for the copies a
+        // multi-release jar keeps for later Java versions.
+        val allowed = listOf("com/uxplima/uxmskyblock/", "org/sqlite/")
+        val stray = sortedSetOf<String>()
+        ZipFile(jar.get().asFile).use { zip ->
+            for (entry in zip.entries()) {
+                val path = Regex("^META-INF/versions/\\d+/").replace(entry.name, "")
+                if (path.endsWith(".class") &&
+                    !path.endsWith("module-info.class") &&
+                    allowed.none { path.startsWith(it) }
+                ) {
+                    stray.add(path.substringBeforeLast('/'))
+                }
+            }
+        }
+        if (stray.isNotEmpty()) {
+            throw GradleException(
+                "The shaded jar holds classes outside this plugin's namespace: " +
+                    stray.take(10).joinToString(", ") +
+                    ". Relocate their library in the shadowJar block, or say there why it may not move.",
+            )
+        }
         // A JDBC driver is found through the services file, not by its class being present. The
         // PostgreSQL driver sat in the jar unlisted once, and a server pointed at PostgreSQL did not
         // start: "No suitable driver".
