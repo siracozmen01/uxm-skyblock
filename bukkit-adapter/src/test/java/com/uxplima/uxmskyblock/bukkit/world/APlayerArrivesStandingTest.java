@@ -164,6 +164,22 @@ class APlayerArrivesStandingTest extends MockBukkitHarness {
                 .isEmpty();
     }
 
+    @Test
+    @DisplayName("A pocket of air under the sea is no arrival: the shore of the chunk is")
+    void aPocketUnderTheSeaIsNoArrival() {
+        clearTheChunkAndItsNeighbour();
+        column(X, Z, 40, 48, Material.STONE);
+        column(X, Z, 49, 50, Material.AIR);
+        column(X, Z, 51, 52, Material.STONE);
+        column(X, Z, 53, 62, Material.WATER);
+        column(47, -33, 40, 70, Material.STONE);
+
+        assertThat(SafeArrival.standingY(world, X, 101, Z))
+                .describedAs("the pocket is safe by itself")
+                .hasValue(49);
+        assertThat(SafeArrival.standingInChunk(world, X, 101, Z, false)).hasValue(new SafeArrival.Spot(47, 71, -33));
+    }
+
     /** The chunk the test column stands in, 32 to 47 by -48 to -33, and the column at x 31 beside it, all air. */
     private void clearTheChunkAndItsNeighbour() {
         for (int x = 31; x <= 47; x++) {

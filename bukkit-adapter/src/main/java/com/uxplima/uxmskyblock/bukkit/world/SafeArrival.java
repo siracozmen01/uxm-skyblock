@@ -72,14 +72,14 @@ public final class SafeArrival {
 
     /**
      * Where a player can arrive standing nearest the column at {@code (x, z)}, within the chunk that column stands in:
-     * the column itself at the height nearest {@code feet}, or else the nearest column of that chunk with ground on
-     * its top. An island of real land whose centre fell in the sea had no ground under its spawn, and its player
+     * the column itself at the height nearest {@code feet}, unless that is under the sea topping it, or else the
+     * nearest column of that chunk with ground on its top. An island of real land whose centre fell in the sea had no ground under its spawn, and its player
      * arrived high over the water and sank; the shore in the same chunk is where they stand now. Only that chunk is
      * read, so this is safe on the thread that owns it. Empty when the chunk has no ground anywhere.
      */
     public static Optional<Spot> standingInChunk(World world, int x, int feet, int z, boolean underwater) {
         OptionalInt here = standingY(world, x, feet, z, underwater);
-        if (here.isPresent()) {
+        if (here.isPresent() && (underwater || !underTheSea(world, x, here.getAsInt(), z))) {
             return Optional.of(new Spot(x, here.getAsInt(), z));
         }
         int baseX = Math.floorDiv(x, 16) * 16;
@@ -99,6 +99,16 @@ public final class SafeArrival {
             }
         }
         return Optional.empty();
+    }
+
+    /**
+     * Whether a height in the column at {@code (x, z)} lies under the sea that tops it: a pocket of air under the sea
+     * floor is safe to stand in and no place to arrive, shut in under the water with no way up. The lab's bot arrived
+     * in one under a StrangerRealms island's sea.
+     */
+    private static boolean underTheSea(World world, int x, int feet, int z) {
+        Block top = world.getHighestBlockAt(x, z);
+        return top.isLiquid() && feet <= top.getY();
     }
 
     /**
