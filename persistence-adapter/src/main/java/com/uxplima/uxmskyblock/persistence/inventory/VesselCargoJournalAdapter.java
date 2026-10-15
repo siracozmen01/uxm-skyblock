@@ -39,19 +39,22 @@ import org.jspecify.annotations.Nullable;
  */
 public final class VesselCargoJournalAdapter implements CargoJournalPort {
 
+    /** The rows a cargo move's journal reads and writes inside the connection that moves it: the move's state locked, every participant set and written, the hold's lease and version read, and the player's inventory fingerprinted. */
+    private final CargoJournalRows rows = new CargoJournalRows(this);
+
     private static final Pattern BEFORE = Pattern.compile("\"before\"\\s*:\\s*\"([A-Za-z0-9+/=]*)\"");
 
     private final Database database;
-    private final InventoryMutationJournalSql sql;
+    final InventoryMutationJournalSql sql;
     private final JournalTransaction transaction;
     private final SessionAuthorityGate authority;
     private final String insertJournal;
-    private final String insertParticipant;
-    private final String selectLease;
-    private final String selectCargo;
-    private final String selectDurableInventory;
+    final String insertParticipant;
+    final String selectLease;
+    final String selectCargo;
+    final String selectDurableInventory;
     private final String selectParticipants;
-    private final String updateParticipantsState;
+    final String updateParticipantsState;
     private final String updateCargo;
 
     public VesselCargoJournalAdapter(Database database) {
@@ -93,12 +96,12 @@ public final class VesselCargoJournalAdapter implements CargoJournalPort {
         Objects.requireNonNull(move, "move");
         Objects.requireNonNull(expiry, "expiry");
         return transaction.run("recordCargoIntent", conn -> {
-            if (state(conn, operationId).isPresent()) {
+            if (rows.lockedState(conn, operationId).isPresent()) {
                 return InventoryMutationJournalOutcome.conflict("OPERATION_CONFLICT");
             }
             Optional<String> refusal = refusal(conn, move.player(), node);
             if (refusal.isEmpty()) {
-                refusal = leaseRefusal(conn, move.hold(), node);
+                refusal = rows.leaseRefusal(conn, move.hold(), node);
             }
             if (refusal.isPresent()) {
                 return InventoryMutationJournalOutcome.rejected(refusal.get());
@@ -111,7 +114,7 @@ public final class VesselCargoJournalAdapter implements CargoJournalPort {
                     }
                 }
             }
-            Optional<Long> cargoVersion = cargoVersion(conn, move.hold());
+            Optional<Long> cargoVersion = rows.cargoVersion(conn, move.hold());
             if (cargoVersion.isEmpty() || cargoVersion.get() != move.cargoVersion()) {
                 return InventoryMutationJournalOutcome.rejected("CARGO_VERSION_MISMATCH");
             }
@@ -125,7 +128,7 @@ public final class VesselCargoJournalAdapter implements CargoJournalPort {
                 ps.setTimestamp(3, new Timestamp(System.currentTimeMillis() + expiry.toMillis()));
                 ps.executeUpdate();
             }
-            insertParticipant(
+            rows.writeParticipant(
                     conn,
                     operationId,
                     0,
@@ -139,7 +142,7 @@ public final class VesselCargoJournalAdapter implements CargoJournalPort {
                     InventoryFingerprint.of(move.playerBefore()),
                     InventoryFingerprint.of(move.playerAfter()),
                     "{\"before\":\"" + Base64.getEncoder().encodeToString(move.playerBefore()) + "\"}");
-            insertParticipant(
+            rows.writeParticipant(
                     conn,
                     operationId,
                     1,
@@ -161,7 +164,7 @@ public final class VesselCargoJournalAdapter implements CargoJournalPort {
     public InventoryMutationJournalOutcome markApplied(InventoryMutationOperationId operationId, int index) {
         Objects.requireNonNull(operationId, "operationId");
         return transaction.run("markCargoSideApplied", conn -> {
-            if (!state(conn, operationId).map("INTENT"::equals).orElse(false)) {
+            if (!rows.lockedState(conn, operationId).map("INTENT"::equals).orElse(false)) {
                 return InventoryMutationJournalOutcome.rejected("MOVE_NOT_OPEN");
             }
             try (PreparedStatement ps = conn.prepareStatement(sql.updateParticipantState())) {
@@ -182,7 +185,7 @@ public final class VesselCargoJournalAdapter implements CargoJournalPort {
         Objects.requireNonNull(node, "node");
         Objects.requireNonNull(move, "move");
         return transaction.run("commitCargoMove", conn -> {
-            Optional<String> state = state(conn, operationId);
+            Optional<String> state = rows.lockedState(conn, operationId);
             if (state.isEmpty()) {
                 return InventoryMutationJournalOutcome.rejected("JOURNAL_NOT_FOUND");
             }
@@ -194,7 +197,7 @@ public final class VesselCargoJournalAdapter implements CargoJournalPort {
             }
             Optional<String> refusal = refusal(conn, move.player(), node);
             if (refusal.isEmpty()) {
-                refusal = leaseRefusal(conn, move.hold(), node);
+                refusal = rows.leaseRefusal(conn, move.hold(), node);
             }
             if (refusal.isPresent()) {
                 return InventoryMutationJournalOutcome.rejected(refusal.get());
@@ -220,7 +223,7 @@ public final class VesselCargoJournalAdapter implements CargoJournalPort {
                     return InventoryMutationJournalOutcome.rejected("CARGO_VERSION_MISMATCH");
                 }
             }
-            setEveryParticipant(conn, operationId, ParticipantApplyState.APPLIED);
+            rows.setEveryParticipant(conn, operationId, ParticipantApplyState.APPLIED);
             setState(conn, operationId, InventoryMutationJournalState.COMMITTED);
             return InventoryMutationJournalOutcome.success();
         });
@@ -233,7 +236,7 @@ public final class VesselCargoJournalAdapter implements CargoJournalPort {
         Objects.requireNonNull(node, "node");
         Objects.requireNonNull(player, "player");
         return transaction.run("abortCargoMove", conn -> {
-            Optional<String> state = state(conn, operationId);
+            Optional<String> state = rows.lockedState(conn, operationId);
             if (state.isEmpty()) {
                 return InventoryMutationJournalOutcome.rejected("JOURNAL_NOT_FOUND");
             }
@@ -249,11 +252,11 @@ public final class VesselCargoJournalAdapter implements CargoJournalPort {
                 return InventoryMutationJournalOutcome.rejected(refusal.get());
             }
             Recorded mine = participants(conn, operationId).get(0);
-            if (!durableFingerprint(conn, player.profile()).equals(mine.before())) {
+            if (!rows.durableFingerprint(conn, player.profile()).equals(mine.before())) {
                 // A player who left mid-move with their half: recovery puts them back.
                 return InventoryMutationJournalOutcome.rejected("SIDE_WRITTEN");
             }
-            setEveryParticipant(conn, operationId, ParticipantApplyState.REVERTED);
+            rows.setEveryParticipant(conn, operationId, ParticipantApplyState.REVERTED);
             setState(conn, operationId, InventoryMutationJournalState.ABORTED);
             return InventoryMutationJournalOutcome.success();
         });
@@ -334,7 +337,7 @@ public final class VesselCargoJournalAdapter implements CargoJournalPort {
             throw new IllegalArgumentException("A move settles as ABORTED or RECOVERY_REQUIRED, not " + settledAs);
         }
         return transaction.run("settleCargoMove", conn -> {
-            Optional<String> state = state(conn, operationId);
+            Optional<String> state = rows.lockedState(conn, operationId);
             if (state.isEmpty()) {
                 return InventoryMutationJournalOutcome.rejected("JOURNAL_NOT_FOUND");
             }
@@ -355,7 +358,7 @@ public final class VesselCargoJournalAdapter implements CargoJournalPort {
             }
             if (settledAs == InventoryMutationJournalState.ABORTED) {
                 // Recovery decided from what it read before this transaction; it acts only while that holds.
-                String holds = durableFingerprint(conn, player.profile());
+                String holds = rows.durableFingerprint(conn, player.profile());
                 Recorded mine = sides.get(0);
                 if (!holds.equals(restore != null ? mine.after() : mine.before())) {
                     return InventoryMutationJournalOutcome.rejected("SIDE_MOVED");
@@ -363,7 +366,7 @@ public final class VesselCargoJournalAdapter implements CargoJournalPort {
                 if (restore != null && !writeInventory(conn, player, restore, restoreOver)) {
                     return InventoryMutationJournalOutcome.rejected("OCC_VERSION_MISMATCH");
                 }
-                setEveryParticipant(conn, operationId, ParticipantApplyState.REVERTED);
+                rows.setEveryParticipant(conn, operationId, ParticipantApplyState.REVERTED);
             }
             setState(conn, operationId, settledAs);
             return InventoryMutationJournalOutcome.success();
@@ -378,38 +381,6 @@ public final class VesselCargoJournalAdapter implements CargoJournalPort {
     private Optional<String> refusal(Connection conn, TradeJournalPort.Holder player, ServerNodeId node)
             throws SQLException {
         return authority.refusal(conn, player.player(), player.profile(), node, player.sessionEpoch(), true);
-    }
-
-    /** Why this node may not write the vessel's hold now, or empty while its lease is this node's and live. */
-    private Optional<String> leaseRefusal(Connection conn, Hold hold, ServerNodeId node) throws SQLException {
-        try (PreparedStatement ps = conn.prepareStatement(selectLease)) {
-            ps.setString(1, LEASE_PROVIDER);
-            ps.setString(2, hold.vessel().value().toString());
-            try (ResultSet rs = ps.executeQuery()) {
-                if (!rs.next()) {
-                    return Optional.of("LEASE_NOT_FOUND");
-                }
-                if (!node.value().equals(rs.getString("authoritative_node"))) {
-                    return Optional.of("WRONG_NODE");
-                }
-                if (rs.getLong("authority_epoch") != hold.leaseEpoch()) {
-                    return Optional.of("STALE_EPOCH");
-                }
-                if (rs.getInt("lease_valid") != 1) {
-                    return Optional.of("LEASE_EXPIRED");
-                }
-                return Optional.empty();
-            }
-        }
-    }
-
-    private Optional<Long> cargoVersion(Connection conn, Hold hold) throws SQLException {
-        try (PreparedStatement ps = conn.prepareStatement(selectCargo)) {
-            ps.setString(1, hold.vessel().value().toString());
-            try (ResultSet rs = ps.executeQuery()) {
-                return rs.next() ? Optional.of(rs.getLong("cargo_version")) : Optional.empty();
-            }
-        }
     }
 
     private boolean writeInventory(Connection conn, TradeJournalPort.Holder player, byte[] inventory, long over)
@@ -430,57 +401,6 @@ public final class VesselCargoJournalAdapter implements CargoJournalPort {
         return true;
     }
 
-    private String durableFingerprint(Connection conn, ProfileId profile) throws SQLException {
-        try (PreparedStatement ps = conn.prepareStatement(selectDurableInventory)) {
-            ps.setString(1, profile.value().toString());
-            try (ResultSet rs = ps.executeQuery()) {
-                return InventoryFingerprint.of(rs.next() ? rs.getBytes(1) : null);
-            }
-        }
-    }
-
-    @SuppressWarnings("TooManyParameters")
-    private void insertParticipant(
-            Connection conn,
-            InventoryMutationOperationId operationId,
-            int index,
-            String inventoryType,
-            String ownerType,
-            String owner,
-            long expectedVersion,
-            String authorityType,
-            String authorityId,
-            long authorityEpoch,
-            String before,
-            String after,
-            String payload)
-            throws SQLException {
-        try (PreparedStatement ps = conn.prepareStatement(insertParticipant)) {
-            ps.setString(1, operationId.value().toString());
-            ps.setInt(2, index);
-            ps.setString(3, inventoryType);
-            ps.setString(4, ownerType);
-            ps.setString(5, owner);
-            ps.setLong(6, expectedVersion);
-            ps.setString(7, authorityType);
-            ps.setString(8, authorityId);
-            ps.setLong(9, authorityEpoch);
-            ps.setString(10, before);
-            ps.setString(11, after);
-            ps.setString(12, payload);
-            ps.executeUpdate();
-        }
-    }
-
-    private Optional<String> state(Connection conn, InventoryMutationOperationId operationId) throws SQLException {
-        try (PreparedStatement ps = conn.prepareStatement(sql.selectJournalForUpdate())) {
-            ps.setString(1, operationId.value().toString());
-            try (ResultSet rs = ps.executeQuery()) {
-                return rs.next() ? Optional.of(rs.getString("state")) : Optional.empty();
-            }
-        }
-    }
-
     private List<Recorded> participants(Connection conn, InventoryMutationOperationId operationId) throws SQLException {
         try (PreparedStatement ps = conn.prepareStatement(selectParticipants)) {
             ps.setString(1, operationId.value().toString());
@@ -499,18 +419,9 @@ public final class VesselCargoJournalAdapter implements CargoJournalPort {
         }
     }
 
-    private static byte[] before(@Nullable String payload) {
+    static byte[] before(@Nullable String payload) {
         Matcher kept = BEFORE.matcher(payload == null ? "" : payload);
         return kept.find() ? Base64.getDecoder().decode(kept.group(1)) : new byte[0];
-    }
-
-    private void setEveryParticipant(
-            Connection conn, InventoryMutationOperationId operationId, ParticipantApplyState to) throws SQLException {
-        try (PreparedStatement ps = conn.prepareStatement(updateParticipantsState)) {
-            ps.setString(1, to.name());
-            ps.setString(2, operationId.value().toString());
-            ps.executeUpdate();
-        }
     }
 
     private void setState(Connection conn, InventoryMutationOperationId operationId, InventoryMutationJournalState to)

@@ -20,7 +20,6 @@ import com.uxplima.uxmlib.storage.sql.Database;
 import com.uxplima.uxmlib.storage.sql.Dialect;
 import com.uxplima.uxmskyblock.core.application.trade.TradeJournalPort;
 import com.uxplima.uxmskyblock.core.domain.identity.ProfileId;
-import com.uxplima.uxmskyblock.core.domain.inventory.InventoryFingerprint;
 import com.uxplima.uxmskyblock.core.domain.inventory.InventoryMutationJournalOutcome;
 import com.uxplima.uxmskyblock.core.domain.inventory.InventoryMutationJournalState;
 import com.uxplima.uxmskyblock.core.domain.inventory.InventoryMutationOperationId;
@@ -37,17 +36,20 @@ import org.jspecify.annotations.Nullable;
  */
 public final class PlayerTradeJournalAdapter implements TradeJournalPort {
 
+    /** The rows a trade's journal reads and writes inside the connection that moves it: the trade's state locked, every side set, a side's inventory written and fingerprinted, and whether another side still holds its half. */
+    private final TradeJournalRows rows = new TradeJournalRows(this);
+
     private static final Pattern BEFORE = Pattern.compile("\"before\"\\s*:\\s*\"([A-Za-z0-9+/=]*)\"");
 
     private final Database database;
-    private final InventoryMutationJournalSql sql;
-    private final JournalTransaction transaction;
+    final InventoryMutationJournalSql sql;
+    final JournalTransaction transaction;
     private final SessionAuthorityGate authority;
     private final String insertJournal;
     private final String insertParticipant;
     private final String selectParticipants;
-    private final String updateParticipantsState;
-    private final String selectDurableInventory;
+    final String updateParticipantsState;
+    final String selectDurableInventory;
 
     public PlayerTradeJournalAdapter(Database database) {
         this.database = Objects.requireNonNull(database, "database");
@@ -92,7 +94,7 @@ public final class PlayerTradeJournalAdapter implements TradeJournalPort {
             throw new IllegalArgumentException("A trade has at least two sides");
         }
         return transaction.run("recordTradeIntent", conn -> {
-            if (state(conn, operationId).isPresent()) {
+            if (rows.lockedState(conn, operationId).isPresent()) {
                 return InventoryMutationJournalOutcome.conflict("OPERATION_CONFLICT");
             }
             for (Side side : inLockOrder(sides, Side::holder)) {
@@ -116,7 +118,7 @@ public final class PlayerTradeJournalAdapter implements TradeJournalPort {
                 // so recovery and the abort read the trade, not the minute. The version moves so that
                 // nothing written at the version the session knew, a player's last write as they leave
                 // mid-trade, lands over the trade: only the trade's own commit writes this side now.
-                if (!writeInventory(conn, side.holder(), side.beforeInventory(), side.expectedVersion())) {
+                if (!rows.writeInventory(conn, side.holder(), side.beforeInventory(), side.expectedVersion())) {
                     return InventoryMutationJournalOutcome.rejected("OCC_VERSION_MISMATCH");
                 }
             }
@@ -151,7 +153,7 @@ public final class PlayerTradeJournalAdapter implements TradeJournalPort {
     public InventoryMutationJournalOutcome markApplied(InventoryMutationOperationId operationId, int index) {
         Objects.requireNonNull(operationId, "operationId");
         return transaction.run("markTradeSideApplied", conn -> {
-            if (!state(conn, operationId).map("INTENT"::equals).orElse(false)) {
+            if (!rows.lockedState(conn, operationId).map("INTENT"::equals).orElse(false)) {
                 return InventoryMutationJournalOutcome.rejected("TRADE_NOT_OPEN");
             }
             try (PreparedStatement ps = conn.prepareStatement(sql.updateParticipantState())) {
@@ -172,7 +174,7 @@ public final class PlayerTradeJournalAdapter implements TradeJournalPort {
         Objects.requireNonNull(node, "node");
         Objects.requireNonNull(sides, "sides");
         return transaction.run("commitTrade", conn -> {
-            Optional<String> state = state(conn, operationId);
+            Optional<String> state = rows.lockedState(conn, operationId);
             if (state.isEmpty()) {
                 return InventoryMutationJournalOutcome.rejected("JOURNAL_NOT_FOUND");
             }
@@ -204,11 +206,11 @@ public final class PlayerTradeJournalAdapter implements TradeJournalPort {
                         || participant.expectedVersion() + 1 != side.expectedVersion()) {
                     return InventoryMutationJournalOutcome.rejected("PARTICIPANT_MISMATCH");
                 }
-                if (!writeInventory(conn, side.holder(), side.inventory(), side.expectedVersion())) {
+                if (!rows.writeInventory(conn, side.holder(), side.inventory(), side.expectedVersion())) {
                     return InventoryMutationJournalOutcome.rejected("OCC_VERSION_MISMATCH");
                 }
             }
-            setEveryParticipant(conn, operationId, ParticipantApplyState.APPLIED);
+            rows.setEveryParticipant(conn, operationId, ParticipantApplyState.APPLIED);
             setState(conn, operationId, InventoryMutationJournalState.COMMITTED);
             return InventoryMutationJournalOutcome.success();
         });
@@ -221,7 +223,7 @@ public final class PlayerTradeJournalAdapter implements TradeJournalPort {
         Objects.requireNonNull(node, "node");
         Objects.requireNonNull(holders, "holders");
         return transaction.run("abortTrade", conn -> {
-            Optional<String> state = state(conn, operationId);
+            Optional<String> state = rows.lockedState(conn, operationId);
             if (state.isEmpty()) {
                 return InventoryMutationJournalOutcome.rejected("JOURNAL_NOT_FOUND");
             }
@@ -242,11 +244,11 @@ public final class PlayerTradeJournalAdapter implements TradeJournalPort {
             // stays open for recovery to put back.
             for (Participant side : participants(conn, operationId)) {
                 if (side.applyState() != ParticipantApplyState.REVERTED
-                        && !durableFingerprint(conn, side.profile()).equals(side.beforeFingerprint())) {
+                        && !rows.durableFingerprint(conn, side.profile()).equals(side.beforeFingerprint())) {
                     return InventoryMutationJournalOutcome.rejected("SIDE_WRITTEN");
                 }
             }
-            setEveryParticipant(conn, operationId, ParticipantApplyState.REVERTED);
+            rows.setEveryParticipant(conn, operationId, ParticipantApplyState.REVERTED);
             setState(conn, operationId, InventoryMutationJournalState.ABORTED);
             return InventoryMutationJournalOutcome.success();
         });
@@ -288,7 +290,7 @@ public final class PlayerTradeJournalAdapter implements TradeJournalPort {
     public Optional<InventoryMutationJournalState> state(InventoryMutationOperationId operationId) {
         Objects.requireNonNull(operationId, "operationId");
         try (Connection conn = database.connection()) {
-            return state(conn, operationId, sql.selectJournalRead()).map(InventoryMutationJournalState::valueOf);
+            return readState(conn, operationId, sql.selectJournalRead()).map(InventoryMutationJournalState::valueOf);
         } catch (SQLException e) {
             throw new InventoryPersistenceException("Failed to read trade " + operationId, e);
         }
@@ -307,7 +309,7 @@ public final class PlayerTradeJournalAdapter implements TradeJournalPort {
         Objects.requireNonNull(node, "node");
         Objects.requireNonNull(holder, "holder");
         return transaction.run("settleTradeSide", conn -> {
-            Optional<String> state = state(conn, operationId);
+            Optional<String> state = rows.lockedState(conn, operationId);
             if (state.isEmpty()) {
                 return InventoryMutationJournalOutcome.rejected("JOURNAL_NOT_FOUND");
             }
@@ -329,17 +331,17 @@ public final class PlayerTradeJournalAdapter implements TradeJournalPort {
             // running at once must not each act on a picture the other just changed.
             Participant mine = recorded.get(index);
             boolean putBack = mine.applyState() == ParticipantApplyState.REVERTED;
-            String holds = durableFingerprint(conn, mine.profile());
+            String holds = rows.durableFingerprint(conn, mine.profile());
             if (restore != null && (putBack || !holds.equals(mine.afterFingerprint()))) {
                 return InventoryMutationJournalOutcome.rejected("SIDE_MOVED");
             }
             if (restore == null && !putBack && !holds.equals(mine.beforeFingerprint())) {
                 return InventoryMutationJournalOutcome.rejected("SIDE_MOVED");
             }
-            if (closeTrade && anotherHoldsItsHalf(conn, recorded, index)) {
+            if (closeTrade && rows.anotherHoldsItsHalf(conn, recorded, index)) {
                 return InventoryMutationJournalOutcome.rejected("ANOTHER_SIDE_HOLDS_ITS_HALF");
             }
-            if (restore != null && !writeInventory(conn, holder, restore, restoreOver)) {
+            if (restore != null && !rows.writeInventory(conn, holder, restore, restoreOver)) {
                 return InventoryMutationJournalOutcome.rejected("OCC_VERSION_MISMATCH");
             }
             try (PreparedStatement ps = conn.prepareStatement(sql.updateParticipantState())) {
@@ -349,7 +351,7 @@ public final class PlayerTradeJournalAdapter implements TradeJournalPort {
                 ps.executeUpdate();
             }
             if (closeTrade) {
-                setEveryParticipant(conn, operationId, ParticipantApplyState.REVERTED);
+                rows.setEveryParticipant(conn, operationId, ParticipantApplyState.REVERTED);
                 setState(conn, operationId, InventoryMutationJournalState.ABORTED);
             }
             return InventoryMutationJournalOutcome.success();
@@ -370,7 +372,7 @@ public final class PlayerTradeJournalAdapter implements TradeJournalPort {
             throw new IllegalArgumentException("A trade settles as COMMITTED or RECOVERY_REQUIRED, not " + settledAs);
         }
         return transaction.run("settleTrade", conn -> {
-            Optional<String> state = state(conn, operationId);
+            Optional<String> state = rows.lockedState(conn, operationId);
             if (state.isEmpty()) {
                 return InventoryMutationJournalOutcome.rejected("JOURNAL_NOT_FOUND");
             }
@@ -392,13 +394,13 @@ public final class PlayerTradeJournalAdapter implements TradeJournalPort {
                 // A trade is committed as it stands only while every side still holds its outcome.
                 for (Participant side : recorded) {
                     if (side.applyState() == ParticipantApplyState.REVERTED
-                            || !durableFingerprint(conn, side.profile()).equals(side.afterFingerprint())) {
+                            || !rows.durableFingerprint(conn, side.profile()).equals(side.afterFingerprint())) {
                         return InventoryMutationJournalOutcome.rejected("NOT_EVERY_SIDE_HOLDS_IT");
                     }
                 }
             }
             if (settledAs == InventoryMutationJournalState.COMMITTED) {
-                setEveryParticipant(conn, operationId, ParticipantApplyState.APPLIED);
+                rows.setEveryParticipant(conn, operationId, ParticipantApplyState.APPLIED);
             }
             setState(conn, operationId, settledAs);
             return InventoryMutationJournalOutcome.success();
@@ -421,56 +423,12 @@ public final class PlayerTradeJournalAdapter implements TradeJournalPort {
         return ordered;
     }
 
-    /** Whether a side other than {@code index}, not put back yet, holds what the trade gives it. */
-    private boolean anotherHoldsItsHalf(Connection conn, List<Participant> recorded, int index) throws SQLException {
-        for (Participant side : recorded) {
-            if (side.index() != index
-                    && side.applyState() != ParticipantApplyState.REVERTED
-                    && durableFingerprint(conn, side.profile()).equals(side.afterFingerprint())) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    /** What {@code profile}'s durable inventory holds, as the journal fingerprints it, its row locked. */
-    private String durableFingerprint(Connection conn, ProfileId profile) throws SQLException {
-        try (PreparedStatement ps = conn.prepareStatement(selectDurableInventory)) {
-            ps.setString(1, profile.value().toString());
-            try (ResultSet rs = ps.executeQuery()) {
-                return InventoryFingerprint.of(rs.next() ? rs.getBytes(1) : null);
-            }
-        }
-    }
-
     private Optional<String> refusal(Connection conn, Holder holder, ServerNodeId node, boolean requireActive)
             throws SQLException {
         return authority.refusal(conn, holder.player(), holder.profile(), node, holder.sessionEpoch(), requireActive);
     }
 
-    private boolean writeInventory(Connection conn, Holder holder, byte[] inventory, long over) throws SQLException {
-        try (PreparedStatement ps = conn.prepareStatement(sql.updateInventoryOcc())) {
-            ps.setBytes(1, inventory);
-            ps.setString(2, holder.profile().value().toString());
-            ps.setLong(3, over);
-            if (ps.executeUpdate() != 1) {
-                return false;
-            }
-        }
-        try (PreparedStatement ps = conn.prepareStatement(sql.updateSessionLastDurableVersion())) {
-            ps.setLong(1, over + 1);
-            ps.setString(2, holder.player().value().toString());
-            ps.executeUpdate();
-        }
-        return true;
-    }
-
-    /** The trade's state, its row locked for the rest of the transaction. */
-    private Optional<String> state(Connection conn, InventoryMutationOperationId operationId) throws SQLException {
-        return state(conn, operationId, sql.selectJournalForUpdate());
-    }
-
-    private static Optional<String> state(Connection conn, InventoryMutationOperationId operationId, String select)
+    static Optional<String> readState(Connection conn, InventoryMutationOperationId operationId, String select)
             throws SQLException {
         try (PreparedStatement ps = conn.prepareStatement(select)) {
             ps.setString(1, operationId.value().toString());
@@ -504,15 +462,6 @@ public final class PlayerTradeJournalAdapter implements TradeJournalPort {
     private static byte[] before(@Nullable String payload) {
         Matcher kept = BEFORE.matcher(payload == null ? "" : payload);
         return kept.find() ? Base64.getDecoder().decode(kept.group(1)) : new byte[0];
-    }
-
-    private void setEveryParticipant(
-            Connection conn, InventoryMutationOperationId operationId, ParticipantApplyState to) throws SQLException {
-        try (PreparedStatement ps = conn.prepareStatement(updateParticipantsState)) {
-            ps.setString(1, to.name());
-            ps.setString(2, operationId.value().toString());
-            ps.executeUpdate();
-        }
     }
 
     private void setState(Connection conn, InventoryMutationOperationId operationId, InventoryMutationJournalState to)
