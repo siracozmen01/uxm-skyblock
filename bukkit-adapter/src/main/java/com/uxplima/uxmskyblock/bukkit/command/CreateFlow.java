@@ -154,12 +154,12 @@ final class CreateFlow {
                                             failure,
                                             () -> "Building the island of " + player.getName() + " failed."),
                                     () -> host.schedulerPort.onRegion(targetWorld, chunkX, chunkZ, () -> {
-                                        double arrivalY = arrivalOn(
+                                        Arrival at = arrivalOn(
                                                 w,
                                                 success.island().id(),
                                                 success.location(),
                                                 success.preset().mode().playedUnderwater());
-                                        arrive(player, playerUuid, w, success, arrivalY);
+                                        arrive(player, playerUuid, w, success, at);
                                     }));
                         });
                     } else {
@@ -191,24 +191,39 @@ final class CreateFlow {
         }
         return executeCreate(ctx, host.presetCatalog.defaultPreset().id());
     }
-    /** Sends the player who made the island onto it, standing at {@code standingY}, and tells them. */
+    /** Where a player arrives on a new island: its spawn, or the spot creation moved it to. */
+    private record Arrival(double x, double y, double z) {}
+
+    /** Sends the player who made the island onto it, standing at {@code standingY} over its spawn, and tells them. */
     private void arrive(
             Player player,
             PlayerUuid playerUuid,
             World world,
             CreateIslandUseCase.CreateIslandResult.Success success,
             double standingY) {
+        arrive(
+                player,
+                playerUuid,
+                world,
+                success,
+                new Arrival(
+                        success.location().spawnX(),
+                        standingY,
+                        success.location().spawnZ()));
+    }
+
+    /** Sends the player who made the island onto it, standing at {@code at}, and tells them. */
+    private void arrive(
+            Player player,
+            PlayerUuid playerUuid,
+            World world,
+            CreateIslandUseCase.CreateIslandResult.Success success,
+            Arrival at) {
         host.schedulerPort.onEntity(playerUuid, () -> {
             if (!player.isOnline()) {
                 return;
             }
-            Location destination = new Location(
-                    world,
-                    success.location().spawnX(),
-                    standingY,
-                    success.location().spawnZ(),
-                    0.0f,
-                    0.0f);
+            Location destination = new Location(world, at.x(), at.y(), at.z(), 0.0f, 0.0f);
             var unused = player.teleportAsync(destination).thenAccept(teleported -> {
                 if (Boolean.TRUE.equals(teleported)) {
                     player.setVelocity(new org.bukkit.util.Vector(0, 0, 0));
@@ -223,30 +238,45 @@ final class CreateFlow {
         });
     }
     /**
-     * The height a player arrives standing at on a new island, found in the column it was built in, on
-     * the thread that owns it. A spawn that had to move is written back, so a home is not inside a hill
-     * either.
+     * Where a player arrives standing on a new island, found in the chunk it was built in, on the thread that owns
+     * it: the spawn's column at the nearest safe height, or the nearest column of that chunk with ground, or the top
+     * of the water when the chunk is all sea. A spawn that had to move is written back, so a home is not inside a hill
+     * or out over the sea either.
      */
-    private double arrivalOn(World world, IslandId islandId, IslandLocation location, boolean underwater) {
+    private Arrival arrivalOn(World world, IslandId islandId, IslandLocation location, boolean underwater) {
+        int x = (int) Math.floor(location.spawnX());
         int planned = (int) Math.floor(location.spawnY());
-        java.util.OptionalInt safe = com.uxplima.uxmskyblock.bukkit.world.SafeArrival.standingY(
-                world, (int) Math.floor(location.spawnX()), planned, (int) Math.floor(location.spawnZ()), underwater);
+        int z = (int) Math.floor(location.spawnZ());
+        java.util.Optional<com.uxplima.uxmskyblock.bukkit.world.SafeArrival.Spot> safe =
+                com.uxplima.uxmskyblock.bukkit.world.SafeArrival.standingInChunk(world, x, planned, z, underwater);
         if (safe.isEmpty()) {
+            java.util.OptionalInt floating = underwater
+                    ? java.util.OptionalInt.empty()
+                    : com.uxplima.uxmskyblock.bukkit.world.SafeArrival.onTheWater(world, x, z);
+            if (floating.isPresent()) {
+                return heightMoved(islandId, location, floating.getAsInt());
+            }
             // Rock as far as the search reaches: the room above the platform is cleared instead.
-            com.uxplima.uxmskyblock.bukkit.world.SafeArrival.makeRoom(
-                    world,
-                    (int) Math.floor(location.spawnX()),
-                    planned,
-                    (int) Math.floor(location.spawnZ()),
-                    underwater);
-            return location.spawnY();
+            com.uxplima.uxmskyblock.bukkit.world.SafeArrival.makeRoom(world, x, planned, z, underwater);
+            return new Arrival(location.spawnX(), location.spawnY(), location.spawnZ());
         }
-        if (safe.getAsInt() == planned) {
-            return location.spawnY();
+        com.uxplima.uxmskyblock.bukkit.world.SafeArrival.Spot spot = safe.get();
+        if (spot.x() != x || spot.z() != z) {
+            Arrival moved = new Arrival(spot.x() + 0.5, spot.y(), spot.z() + 0.5);
+            host.schedulerPort.async(
+                    () -> host.islandLocationService.moveSpawn(islandId, moved.x(), moved.y(), moved.z()));
+            return moved;
         }
-        double moved = safe.getAsInt();
-        host.schedulerPort.async(() -> host.islandLocationService.moveSpawnHeight(islandId, moved));
-        return moved;
+        if (spot.y() == planned) {
+            return new Arrival(location.spawnX(), location.spawnY(), location.spawnZ());
+        }
+        return heightMoved(islandId, location, spot.y());
+    }
+
+    /** The spawn's own column at {@code y}, written back. */
+    private Arrival heightMoved(IslandId islandId, IslandLocation location, double y) {
+        host.schedulerPort.async(() -> host.islandLocationService.moveSpawnHeight(islandId, y));
+        return new Arrival(location.spawnX(), y, location.spawnZ());
     }
     /** The preset ids an operator can actually pass, read off the catalogue rather than typed. */
     private String availablePresetIds() {

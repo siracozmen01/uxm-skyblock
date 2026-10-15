@@ -1,5 +1,9 @@
 package com.uxplima.uxmskyblock.bukkit.world;
 
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.List;
+import java.util.Optional;
 import java.util.OptionalInt;
 import java.util.Set;
 
@@ -61,6 +65,50 @@ public final class SafeArrival {
             }
         }
         return OptionalInt.empty();
+    }
+
+    /** Where a player arrives: the column, and the height their feet stand at. */
+    public record Spot(int x, int y, int z) {}
+
+    /**
+     * Where a player can arrive standing nearest the column at {@code (x, z)}, within the chunk that column stands in:
+     * the column itself at the height nearest {@code feet}, or else the nearest column of that chunk with ground on
+     * its top. An island of real land whose centre fell in the sea had no ground under its spawn, and its player
+     * arrived high over the water and sank; the shore in the same chunk is where they stand now. Only that chunk is
+     * read, so this is safe on the thread that owns it. Empty when the chunk has no ground anywhere.
+     */
+    public static Optional<Spot> standingInChunk(World world, int x, int feet, int z, boolean underwater) {
+        OptionalInt here = standingY(world, x, feet, z, underwater);
+        if (here.isPresent()) {
+            return Optional.of(new Spot(x, here.getAsInt(), z));
+        }
+        int baseX = Math.floorDiv(x, 16) * 16;
+        int baseZ = Math.floorDiv(z, 16) * 16;
+        List<Spot> columns = new ArrayList<>();
+        for (int dx = 0; dx < 16; dx++) {
+            for (int dz = 0; dz < 16; dz++) {
+                columns.add(new Spot(baseX + dx, 0, baseZ + dz));
+            }
+        }
+        columns.sort(Comparator.comparingInt(
+                column -> (column.x() - x) * (column.x() - x) + (column.z() - z) * (column.z() - z)));
+        for (Spot column : columns) {
+            int top = world.getHighestBlockYAt(column.x(), column.z()) + 1;
+            if (safe(world, column.x(), top, column.z(), underwater)) {
+                return Optional.of(new Spot(column.x(), top, column.z()));
+            }
+        }
+        return Optional.empty();
+    }
+
+    /**
+     * The height a player floats at on the open water of the column at {@code (x, z)}, its surface, for a chunk with no
+     * ground at all: better to arrive swimming at the top of the sea than to fall into it from high above. Empty when
+     * the column's top is not water.
+     */
+    public static OptionalInt onTheWater(World world, int x, int z) {
+        Block top = world.getHighestBlockAt(x, z);
+        return top.getType() == Material.WATER ? OptionalInt.of(top.getY() + 1) : OptionalInt.empty();
     }
 
     /**

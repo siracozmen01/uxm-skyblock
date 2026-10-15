@@ -84,4 +84,28 @@ class ASpawnMovedAtCreationIsKeptTest {
         assertThat(locations.moveSpawnInto(IslandId.of(UUID.randomUUID()), bounds, 0, 0, 0))
                 .isFalse();
     }
+
+    @Test
+    @DisplayName("A spawn moves to another column of the island, and never off it")
+    void aSpawnMovesToTheShore() {
+        IslandId islandId = IslandId.of(UUID.randomUUID());
+        IslandBounds bounds = IslandBounds.fromCenterAndRadius(0, 0, 50);
+        Island island = Island.create(
+                islandId, bounds, PlayerUuid.of(UUID.randomUUID()), ProfileId.of(UUID.randomUUID()), Instant.now());
+        IslandStoragePort storage = mock(IslandStoragePort.class);
+        when(storage.findIslandById(islandId)).thenReturn(Optional.of(island));
+        when(storage.findLocationByIslandId(islandId))
+                .thenReturn(Optional.of(new IslandLocation(islandId, "boxed", bounds, 0.5, 101.0, 0.5, 90f, 10f)));
+        IslandLocationService locations = new IslandLocationService(storage);
+
+        assertThat(locations.moveSpawn(islandId, 80.5, 64.0, 0.5))
+                .describedAs("a column off the island")
+                .isFalse();
+        verify(storage, never()).saveIsland(any(Island.class), any(IslandLocation.class));
+        assertThat(locations.moveSpawn(islandId, 7.5, 64.0, -3.5)).isTrue();
+        ArgumentCaptor<IslandLocation> written = ArgumentCaptor.forClass(IslandLocation.class);
+        verify(storage).saveIsland(any(Island.class), written.capture());
+        assertThat(written.getValue())
+                .isEqualTo(new IslandLocation(islandId, "boxed", bounds, 7.5, 64.0, -3.5, 90f, 10f));
+    }
 }

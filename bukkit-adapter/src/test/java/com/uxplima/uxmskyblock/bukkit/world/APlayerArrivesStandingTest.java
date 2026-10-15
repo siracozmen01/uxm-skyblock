@@ -128,6 +128,57 @@ class APlayerArrivesStandingTest extends MockBukkitHarness {
         assertThat(world.getBlockAt(X, 103, Z).getType()).isEqualTo(Material.NETHERRACK);
     }
 
+    @Test
+    @DisplayName("A centre in the sea arrives on the nearest ground of its own chunk, never of the chunk beside it")
+    void aCentreInTheSeaArrivesOnItsShore() {
+        int floor = 40;
+        int surface = 62;
+        clearTheChunkAndItsNeighbour();
+        column(X, Z, floor, floor, Material.STONE);
+        column(X, Z, floor + 1, surface, Material.WATER);
+        // Land at the far corner of the chunk, and nearer land just over its edge in the next chunk.
+        column(47, -33, floor, 70, Material.STONE);
+        column(31, -40, floor, 70, Material.STONE);
+
+        assertThat(SafeArrival.standingY(world, X, 101, Z))
+                .describedAs("the sea's own column has nowhere to stand")
+                .isEmpty();
+        assertThat(SafeArrival.standingInChunk(world, X, 101, Z, false)).hasValue(new SafeArrival.Spot(47, 71, -33));
+        assertThat(SafeArrival.standingInChunk(world, X, 101, Z, true))
+                .describedAs("under water, the sea floor of the centre is the place")
+                .hasValue(new SafeArrival.Spot(X, floor + 1, Z));
+    }
+
+    @Test
+    @DisplayName("A chunk that is all sea arrives at the top of the water, not high above it")
+    void anAllSeaChunkArrivesOnTheWater() {
+        clearTheChunkAndItsNeighbour();
+        column(X, Z, 40, 40, Material.STONE);
+        column(X, Z, 41, 62, Material.WATER);
+
+        assertThat(SafeArrival.standingInChunk(world, X, 101, Z, false)).isEmpty();
+        assertThat(SafeArrival.onTheWater(world, X, Z)).hasValue(63);
+        column(X, Z, 63, 63, Material.STONE);
+        assertThat(SafeArrival.onTheWater(world, X, Z))
+                .describedAs("a top that is not water")
+                .isEmpty();
+    }
+
+    /** The chunk the test column stands in, 32 to 47 by -48 to -33, and the column at x 31 beside it, all air. */
+    private void clearTheChunkAndItsNeighbour() {
+        for (int x = 31; x <= 47; x++) {
+            for (int z = -48; z <= -33; z++) {
+                column(x, z, world.getMinHeight(), world.getMaxHeight() - 1, Material.AIR);
+            }
+        }
+    }
+
+    private void column(int x, int z, int fromY, int toY, Material material) {
+        for (int y = fromY; y <= toY; y++) {
+            world.getBlockAt(x, y, z).setType(material);
+        }
+    }
+
     private void fill(int fromY, int toY, Material material) {
         for (int y = fromY; y <= toY; y++) {
             world.getBlockAt(X, y, Z).setType(material);

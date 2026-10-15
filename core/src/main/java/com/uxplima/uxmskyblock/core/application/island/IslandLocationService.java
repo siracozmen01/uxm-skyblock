@@ -83,6 +83,38 @@ public final class IslandLocationService {
     }
 
     /**
+     * Moves the island's spawn to another column of its own, when creation found no ground in the planned one: an island
+     * of real land whose centre fell in the sea arrives on its shore. A spot off the island is refused. Returns whether
+     * the spawn moved.
+     */
+    public boolean moveSpawn(IslandId islandId, double x, double y, double z) {
+        Objects.requireNonNull(islandId, "islandId must not be null");
+        return mutationLock.inside(islandId, () -> {
+            Optional<Island> island = islandStoragePort.findIslandById(islandId);
+            Optional<IslandLocation> location = islandStoragePort.findLocationByIslandId(islandId);
+            if (island.isEmpty() || location.isEmpty()) {
+                return false;
+            }
+            IslandLocation current = location.get();
+            if (!current.bounds().contains((int) Math.floor(x), (int) Math.floor(z))) {
+                return false;
+            }
+            islandStoragePort.saveIsland(
+                    island.get(),
+                    new IslandLocation(
+                            islandId,
+                            current.worldName(),
+                            current.bounds(),
+                            x,
+                            y,
+                            z,
+                            current.spawnYaw(),
+                            current.spawnPitch()));
+            return true;
+        });
+    }
+
+    /**
      * Moves the island's spawn to {@code x}, {@code y}, {@code z} in its own world when it stands outside {@code keep},
      * as when a Boxed island's box moved away from it. Returns whether it moved.
      */
