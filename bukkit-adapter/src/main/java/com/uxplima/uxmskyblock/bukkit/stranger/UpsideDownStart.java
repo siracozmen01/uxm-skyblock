@@ -51,6 +51,23 @@ public final class UpsideDownStart implements CreationActionProvider<IslandStart
     private final DistressPalette palette;
     private final Supplier<String> upsideDownWorld;
     private final Map<String, @Nullable Material> materials = new ConcurrentHashMap<>();
+    private final ChunkLoads chunks;
+
+    /**
+     * How a chunk is made ready to read or write: answered once it is loaded. A block read or written in a chunk that
+     * is not loaded loads it there and then, and on Folia that holds the region's thread until the disk or the
+     * generator answers.
+     */
+    @FunctionalInterface
+    public interface ChunkLoads {
+        /** The server's own: at once for a loaded chunk, else loaded off the region's thread. */
+        ChunkLoads SERVER = (world, chunkX, chunkZ) -> world.isChunkLoaded(chunkX, chunkZ)
+                ? java.util.concurrent.CompletableFuture.completedFuture(null)
+                : world.getChunkAtAsync(chunkX, chunkZ).thenApply(chunk -> null);
+
+        /** Completes once the chunk is loaded, at once when it already is. Asked on the thread that owns it. */
+        java.util.concurrent.CompletableFuture<@Nullable Void> load(World world, int chunkX, int chunkZ);
+    }
 
     /** @param upsideDownWorld the name of the world the Upside Down is, which dimensions.conf gives the Nether */
     public UpsideDownStart(
@@ -58,6 +75,17 @@ public final class UpsideDownStart implements CreationActionProvider<IslandStart
             SchedulerPort scheduler,
             StrangerRealmsConfiguration.UpsideDown upsideDown,
             Supplier<String> upsideDownWorld) {
+        this(service, scheduler, upsideDown, upsideDownWorld, ChunkLoads.SERVER);
+    }
+
+    /** As the server builds it, with {@code chunks} to make each chunk ready before it is read or written. */
+    public UpsideDownStart(
+            StrangerRealmsService service,
+            SchedulerPort scheduler,
+            StrangerRealmsConfiguration.UpsideDown upsideDown,
+            Supplier<String> upsideDownWorld,
+            ChunkLoads chunks) {
+        this.chunks = Objects.requireNonNull(chunks, "chunks must not be null");
         this.service = Objects.requireNonNull(service, "service must not be null");
         this.scheduler = Objects.requireNonNull(scheduler, "scheduler must not be null");
         this.upsideDown = Objects.requireNonNull(upsideDown, "upsideDown must not be null");
@@ -140,8 +168,40 @@ public final class UpsideDownStart implements CreationActionProvider<IslandStart
     void mirror(World source, World target, int chunkX, int chunkZ, Predicate<Material> copied) {
         int bottom = Math.max(source.getMinHeight(), target.getMinHeight());
         int top = Math.min(source.getMaxHeight(), target.getMaxHeight());
-        BlockData[] copy = read(source, chunkX, chunkZ, bottom, top, copied);
-        scheduler.onRegion(target.getName(), chunkX, chunkZ, () -> write(target, chunkX, chunkZ, bottom, top, copy));
+        whenLoaded(source, chunkX, chunkZ, () -> {
+            BlockData[] copy = read(source, chunkX, chunkZ, bottom, top, copied);
+            scheduler.onRegion(
+                    target.getName(),
+                    chunkX,
+                    chunkZ,
+                    () -> whenLoaded(target, chunkX, chunkZ, () -> write(target, chunkX, chunkZ, bottom, top, copy)));
+        });
+    }
+
+    /**
+     * Runs {@code then} once the chunk is loaded, asked on the thread that owns it: at once when it is, and otherwise
+     * on that thread again after the server has loaded it off it. A block read or written in a chunk that is not
+     * loaded loads it there and then, and on Folia that held the region's thread until the disk or the generator
+     * answered: the lab's watchdog caught a region of the land stalled six seconds while one island's Upside Down
+     * was laid.
+     */
+    private void whenLoaded(World world, int chunkX, int chunkZ, Runnable then) {
+        java.util.concurrent.CompletableFuture<@Nullable Void> ready = chunks.load(world, chunkX, chunkZ);
+        if (ready.isDone() && !ready.isCompletedExceptionally()) {
+            then.run();
+            return;
+        }
+        var unused = ready.whenComplete((loaded, failed) -> {
+            if (failed != null) {
+                LOGGER.log(
+                        Level.WARNING,
+                        failed,
+                        () -> "Chunk " + chunkX + ", " + chunkZ + " of " + world.getName()
+                                + " could not be loaded for the Upside Down.");
+                return;
+            }
+            scheduler.onRegion(world.getName(), chunkX, chunkZ, then);
+        });
     }
 
     /** The chunk's blocks from the bottom to the top, distressed, on the thread that owns the chunk. */

@@ -45,6 +45,10 @@ import org.mockbukkit.mockbukkit.entity.PlayerMock;
  */
 class AnOperatorLaysTheUpsideDownAgainTest extends MockBukkitHarness {
 
+    /** Every chunk is there at once, as MockBukkit has it: the mirror's own work is what these tests read. */
+    private static final UpsideDownStart.ChunkLoads LOADED =
+            (world, chunkX, chunkZ) -> java.util.concurrent.CompletableFuture.completedFuture(null);
+
     private static final String UPSIDE_DOWN = "upside";
     private static final int Y = 70;
     private static final IslandId ISLAND = IslandId.of(UUID.randomUUID());
@@ -101,7 +105,8 @@ class AnOperatorLaysTheUpsideDownAgainTest extends MockBukkitHarness {
                 service,
                 scheduler,
                 new StrangerRealmsConfiguration.UpsideDown(16, List.of("GRASS_BLOCK:MYCELIUM")),
-                () -> UPSIDE_DOWN);
+                () -> UPSIDE_DOWN,
+                LOADED);
         IslandLocationService locations = mock(IslandLocationService.class);
         when(locations.findLocation(any(IslandId.class))).thenReturn(Optional.empty());
         // Blocks -2 to 18 each way: chunks -1 to 1.

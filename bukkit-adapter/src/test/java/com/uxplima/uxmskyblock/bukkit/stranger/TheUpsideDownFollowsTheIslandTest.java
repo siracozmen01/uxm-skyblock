@@ -43,6 +43,10 @@ import org.junit.jupiter.api.Test;
  */
 class TheUpsideDownFollowsTheIslandTest extends MockBukkitHarness {
 
+    /** Every chunk is there at once, as MockBukkit has it: the mirror's own work is what these tests read. */
+    private static final UpsideDownStart.ChunkLoads LOADED =
+            (world, chunkX, chunkZ) -> java.util.concurrent.CompletableFuture.completedFuture(null);
+
     private static final String UPSIDE_DOWN = "skyblock_nether";
     private static final int Y = 64;
 
@@ -122,7 +126,8 @@ class TheUpsideDownFollowsTheIslandTest extends MockBukkitHarness {
                 service,
                 scheduler,
                 new StrangerRealmsConfiguration.UpsideDown(16, List.of("GRASS_BLOCK:MYCELIUM")),
-                () -> UPSIDE_DOWN);
+                () -> UPSIDE_DOWN,
+                LOADED);
         Map<String, World> worlds = Map.of("realms", land, UPSIDE_DOWN, upsideDown);
         reach = new UpsideDownReach(
                 realms,

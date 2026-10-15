@@ -49,6 +49,10 @@ import org.spongepowered.configurate.hocon.HoconConfigurationLoader;
  */
 class TheUpsideDownMirrorsTheLandTest extends MockBukkitHarness {
 
+    /** Every chunk is there at once, as MockBukkit has it: the mirror's own work is what these tests read. */
+    private static final UpsideDownStart.ChunkLoads LOADED =
+            (world, chunkX, chunkZ) -> java.util.concurrent.CompletableFuture.completedFuture(null);
+
     private static final int CENTER = 8;
     private static final int LOW = 60;
     private static final int HIGH = 72;
@@ -175,7 +179,8 @@ class TheUpsideDownMirrorsTheLandTest extends MockBukkitHarness {
                         service,
                         scheduler,
                         new StrangerRealmsConfiguration.UpsideDown(16, List.of()),
-                        () -> "no_such_world")
+                        () -> "no_such_world",
+                        LOADED)
                 .apply(new IslandStart(land, island, CENTER, 64, CENTER, preset()));
         assertThat(recorded).containsExactly(island);
         assertThat(regions).isEmpty();
@@ -250,9 +255,48 @@ class TheUpsideDownMirrorsTheLandTest extends MockBukkitHarness {
                 .doesNotContain("DIAMOND_ORE", "CHEST", "DIAMOND_BLOCK");
     }
 
+    @Test
+    @DisplayName("A chunk not loaded is loaded before it is read, and nothing is read or laid until it is")
+    void aChunkIsLoadedBeforeItIsRead() {
+        land.getBlockAt(CENTER, 64, CENTER).setType(Material.GRASS_BLOCK);
+        upsideDown.getBlockAt(CENTER, 64, CENTER).setType(Material.NETHERRACK);
+        java.util.concurrent.CompletableFuture<@org.jspecify.annotations.Nullable Void> landLoaded =
+                new java.util.concurrent.CompletableFuture<>();
+        List<String> asked = new ArrayList<>();
+        UpsideDownStart mirror = new UpsideDownStart(
+                service,
+                scheduler,
+                new StrangerRealmsConfiguration.UpsideDown(16, List.of()),
+                () -> UPSIDE_DOWN,
+                (world, chunkX, chunkZ) -> {
+                    asked.add(world.getName() + ":" + chunkX + "," + chunkZ);
+                    return world.getName().equals(UPSIDE_DOWN)
+                            ? java.util.concurrent.CompletableFuture.completedFuture(null)
+                            : landLoaded;
+                });
+        int chunk = CENTER >> 4;
+
+        mirror.mirror(land, upsideDown, chunk, chunk);
+
+        assertThat(upsideDown.getBlockAt(CENTER, 64, CENTER).getType())
+                .describedAs("the land's chunk is still loading")
+                .isEqualTo(Material.NETHERRACK);
+        assertThat(asked).containsExactly(land.getName() + ":" + chunk + "," + chunk);
+
+        landLoaded.complete(null);
+
+        assertThat(upsideDown.getBlockAt(CENTER, 64, CENTER).getType()).isEqualTo(Material.GRASS_BLOCK);
+        assertThat(asked)
+                .containsExactly(land.getName() + ":" + chunk + "," + chunk, UPSIDE_DOWN + ":" + chunk + "," + chunk);
+    }
+
     private UpsideDownStart start(int radius, List<String> palette) {
         return new UpsideDownStart(
-                service, scheduler, new StrangerRealmsConfiguration.UpsideDown(radius, palette), () -> UPSIDE_DOWN);
+                service,
+                scheduler,
+                new StrangerRealmsConfiguration.UpsideDown(radius, palette),
+                () -> UPSIDE_DOWN,
+                LOADED);
     }
 
     private static org.bukkit.block.data.BlockData axis(Material material, Axis axis) {
