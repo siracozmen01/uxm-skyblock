@@ -67,7 +67,16 @@ class EverySeamTheEffectEngineOffersIsWiredTest {
         assertThat(seams())
                 .describedAs("if this set changed, the library moved and every context here must answer for it")
                 .containsExactlyInAnyOrder(
-                        "later", "broadcast", "consoleSink", "playerSink", "wallet", "itemStore", "words", "style");
+                        "later",
+                        "broadcast",
+                        "consoleSink",
+                        "playerSink",
+                        "wallet",
+                        "itemStore",
+                        "words",
+                        "style",
+                        "barShown",
+                        "perReader");
         assertThat(everySeam()).contains(SUBJECT, TARGET);
     }
 
@@ -78,14 +87,17 @@ class EverySeamTheEffectEngineOffersIsWiredTest {
         return named;
     }
 
-    /** Every public one argument method of the builder that returns the builder. */
+    /**
+     * Every public method of the builder that takes something and returns the builder. A seam may take two
+     * halves, as the per reader words and paint do, and counting one argument methods only let one through.
+     */
     private static Set<String> everySeam() {
         Set<String> found = new LinkedHashSet<>();
         for (Method method : ActionContext.Builder.class.getDeclaredMethods()) {
             if (Modifier.isPublic(method.getModifiers())
                     && !Modifier.isStatic(method.getModifiers())
                     && method.getReturnType() == ActionContext.Builder.class
-                    && method.getParameterCount() == 1) {
+                    && method.getParameterCount() >= 1) {
                 found.add(method.getName());
             }
         }

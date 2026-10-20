@@ -139,7 +139,15 @@ public final class InteractionEffectPlayer {
                 .words(key -> messages.raw(player, key))
                 // The text is painted with this server's theme in the player's language. Unwired,
                 // the library's default colours painted it rather than the operator's.
-                .style(line -> messages.paint(player, line));
+                .style(line -> messages.paint(player, line))
+                // The broadcast reaches only this player today. Read per reader all the same, so a broadcast
+                // widened later reads each recipient in their own language without anybody remembering this.
+                .perReader(
+                        (reader, key) -> messages.raw(reader instanceof Player one ? one : player, key),
+                        (reader, line) -> messages.paint(reader instanceof Player one ? one : player, line))
+                // The engine hands a bar to whoever built the context, so a wait that ends early can take it
+                // down. Nothing here waits, so a bar runs its seconds.
+                .barShown((shownTo, shownBar) -> {});
         if (scheduler != null) {
             builder.later(scheduler::asyncAfter);
         }
