@@ -136,7 +136,9 @@ class TheCatalogueIsPaintedFromTheThemeTest {
     @DisplayName("A language a client makes up does not grow what the catalogue keeps")
     void aMadeUpLanguageKeepsNothingNew() throws IOException {
         MessageProvider provider = provider();
-        provider.useStyler(new Styler(theme("small-caps { en = true }")));
+        // One language in small capitals and one in its own letters, named here rather than taken from the
+        // shipped theme, which writes Turkish in small capitals too.
+        provider.useStyler(new Styler(theme("small-caps { en = true, tr = false }")));
         provider.getComponent("bank.paid", "en");
         provider.getComponent("bank.paid", "tr");
         int kept = provider.styledLines();
