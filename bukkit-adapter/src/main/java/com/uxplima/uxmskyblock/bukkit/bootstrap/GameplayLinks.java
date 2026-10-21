@@ -46,6 +46,8 @@ final class GameplayLinks {
             wiring.cacheEviction().whenForgotten(web.service()::forget);
         }
         wiring.cacheEviction().whenForgotten(wiring.creationWiring().missionService()::forgetIsland);
+        // The line over a OneBlock is sent, not spawned, so nothing takes it away with the island but this.
+        wiring.cacheEviction().whenForgotten(oneBlockWiring.blockLines()::take);
         // A mode's own events count for the missions that ask for them, when there are missions.
         com.uxplima.uxmskyblock.bukkit.mission.IslandMissionListener missions =
                 wiring.creationWiring().missionListener();

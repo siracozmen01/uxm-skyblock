@@ -286,6 +286,17 @@ class AClosedChunkCarriesASignTest extends MockBukkitHarness {
     }
 
     @Test
+    @DisplayName("A chunk loaded before its island's web was read stands its sign once the loaded chunks are drawn")
+    void aChunkLoadedEarlierStandsItsSign() {
+        world.getChunkAt(1, 0).load();
+        assertThat(signsIn(1, 0)).isEmpty();
+
+        signs.drawLoaded(List.of(world));
+
+        assertThat(signsIn(1, 0)).hasSize(1);
+    }
+
+    @Test
     @DisplayName("A chunk that unloads takes its sign down, and stands it again when it loads")
     void anUnloadTakesTheSignDown() {
         load(1, 0);

@@ -28,6 +28,11 @@ public final class ChunkBlockWiring implements AutoCloseable {
     /** The webs of the island's Nether and End, each its own, for the dimensions a world is named for. */
     private final List<Web> dimensions;
 
+    /** Done once every web is in memory, read ahead off the game's threads at start. */
+    private final java.util.concurrent.CompletableFuture<Void> primed = new java.util.concurrent.CompletableFuture<>();
+
+    private final SchedulerPort scheduler;
+
     /** The beats that show Bedrock players the edge, while they run. */
     private final List<AutoCloseable> bedrockEdges = new java.util.concurrent.CopyOnWriteArrayList<>();
 
@@ -79,6 +84,7 @@ public final class ChunkBlockWiring implements AutoCloseable {
                     activeProfile,
             com.uxplima.uxmskyblock.bukkit.chunkblock.SignPainter painter) {
         this.config = Objects.requireNonNull(configuration.chunkBlockConfig(), "chunkBlockConfig must not be null");
+        this.scheduler = Objects.requireNonNull(scheduler, "scheduler must not be null");
         Objects.requireNonNull(painter, "painter must not be null");
         // The worlds of the island's Nether and End, while dimensions are on: each holds a web of its own.
         java.util.Map<String, String> dimensionWorlds = new java.util.LinkedHashMap<>();
@@ -152,7 +158,32 @@ public final class ChunkBlockWiring implements AutoCloseable {
                     LOGGER.log(Level.WARNING, "The ChunkBlock islands could not be read ahead.", e);
                 }
             }
+            primed.complete(null);
         });
+    }
+
+    /**
+     * Once every web is in memory, stands the sign of each chunk that loaded before it was: a chunk a world keeps
+     * loaded from its start loads before the webs are read, and loads no second time.
+     */
+    public void drawLoadedSigns(java.util.function.Supplier<List<org.bukkit.World>> worlds) {
+        Objects.requireNonNull(worlds, "worlds must not be null");
+        List<com.uxplima.uxmskyblock.bukkit.chunkblock.ChunkSigns> painted = new java.util.ArrayList<>();
+        if (signs != null) {
+            painted.add(signs);
+        }
+        for (Web web : dimensions) {
+            if (web.signs() != null) {
+                painted.add(web.signs());
+            }
+        }
+        if (painted.isEmpty()) {
+            return;
+        }
+        var unused = primed.thenRun(() -> scheduler.onGlobal(() -> {
+            List<org.bukkit.World> loaded = worlds.get();
+            painted.forEach(each -> each.drawLoaded(loaded));
+        }));
     }
 
     /** Builds one dimension's edge, walls, signs and Bedrock dust over {@code own}, guarding {@code guarded} worlds. */

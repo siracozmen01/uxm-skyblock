@@ -70,7 +70,10 @@ public final class OneBlockBlockLines {
         }
     }
 
-    /** Takes the island's line away, as while its phase waits or when the line is turned off. On its region. */
+    /**
+     * Takes the island's line away, as while its phase waits, when the line is turned off or when the island is gone.
+     * Any thread may ask.
+     */
     public void take(IslandId islandId) {
         OneBlockPauses.Shown gone = shown.remove(islandId);
         if (gone != null) {

@@ -1,5 +1,6 @@
 package com.uxplima.uxmskyblock.bukkit.stack;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -95,8 +96,25 @@ public final class PacketStackWorld implements StackWorld, Listener {
     /** A chunk loads: every stack in it shows its line again. */
     @EventHandler(priority = EventPriority.MONITOR)
     public void onChunkLoad(ChunkLoadEvent event) {
-        Chunk chunk = event.getChunk();
-        BlockStacks.in(chunk).forEach((place, size) -> show(chunk.getWorld(), place.x(), place.y(), place.z(), size));
+        drawFrom(event.getChunk());
+    }
+
+    /**
+     * Shows the line of every stack in a chunk that was loaded before these lines listened, such as a chunk a world
+     * keeps loaded from its start. Each chunk is read on the thread that owns it.
+     */
+    public void drawLoaded(Collection<World> worlds) {
+        for (World world : worlds) {
+            for (Chunk loaded : world.getLoadedChunks()) {
+                int x = loaded.getX();
+                int z = loaded.getZ();
+                scheduler.region(new Location(world, (x << 4) + 8, 0, (z << 4) + 8), () -> {
+                    if (world.isChunkLoaded(x, z)) {
+                        drawFrom(world.getChunkAt(x, z));
+                    }
+                });
+            }
+        }
     }
 
     /** A chunk unloads: its lines come down with it. */
@@ -115,6 +133,10 @@ public final class PacketStackWorld implements StackWorld, Listener {
     /** How many lines are up, which a test reads. */
     public int showing() {
         return lines.size();
+    }
+
+    private void drawFrom(Chunk chunk) {
+        BlockStacks.in(chunk).forEach((place, size) -> show(chunk.getWorld(), place.x(), place.y(), place.z(), size));
     }
 
     private void show(World world, int x, int y, int z, int size) {

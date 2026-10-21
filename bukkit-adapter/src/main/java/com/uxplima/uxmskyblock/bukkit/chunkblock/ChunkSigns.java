@@ -99,9 +99,22 @@ public final class ChunkSigns implements Listener {
     /** A chunk of a ChunkBlock island that loads stands its sign, on its own thread. */
     @EventHandler(priority = EventPriority.MONITOR)
     public void onChunkLoad(ChunkLoadEvent event) {
-        World world = event.getWorld();
-        int chunkX = event.getChunk().getX();
-        int chunkZ = event.getChunk().getZ();
+        loaded(event.getWorld(), event.getChunk().getX(), event.getChunk().getZ());
+    }
+
+    /**
+     * Stands the sign of every chunk that loaded before its island's web was in memory: a chunk a world keeps loaded
+     * from its start loads before the webs are read, and loads no second time.
+     */
+    public void drawLoaded(java.util.Collection<World> loadedWorlds) {
+        for (World world : loadedWorlds) {
+            for (org.bukkit.Chunk chunk : world.getLoadedChunks()) {
+                loaded(world, chunk.getX(), chunk.getZ());
+            }
+        }
+    }
+
+    private void loaded(World world, int chunkX, int chunkZ) {
         Optional<Island> island = islandAt(new Location(world, (chunkX << 4) + 8, 0, (chunkZ << 4) + 8));
         if (island.isEmpty() || service.inMemory(island.get().id()).isEmpty()) {
             return;

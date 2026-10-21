@@ -40,20 +40,28 @@ public final class SentLines implements OneBlockPauses.Lines {
     @Override
     public OneBlockPauses.Shown show(World world, Location at, Function<Player, Component> line) {
         Objects.requireNonNull(at, "at must not be null");
-        Said said = new Said(Objects.requireNonNull(line, "line must not be null"));
+        Said said = new Said(Objects.requireNonNull(line, "line must not be null"), scheduler, at.clone());
         said.hologram = PacketHologram.show(packets, scheduler, at, LOOK, viewer -> List.of(said.line.apply(viewer)));
         return said;
     }
 
-    /** One line up: the words it says, which a change swaps and every frame reads, and the hologram saying them. */
+    /**
+     * One line up: the words it says, which a change swaps and every frame reads, and the hologram saying them. It
+     * is taken down on the thread that owns its block, since a line may be taken away from any thread, such as when
+     * its island is deleted.
+     */
     private static final class Said implements OneBlockPauses.Shown {
 
+        private final Scheduler scheduler;
+        private final Location at;
         private volatile Function<Player, Component> line;
         private volatile boolean removed;
         private @Nullable PacketHologram hologram;
 
-        private Said(Function<Player, Component> line) {
+        private Said(Function<Player, Component> line, Scheduler scheduler, Location at) {
             this.line = line;
+            this.scheduler = scheduler;
+            this.at = at;
         }
 
         @Override
@@ -66,7 +74,7 @@ public final class SentLines implements OneBlockPauses.Lines {
             removed = true;
             PacketHologram shown = hologram;
             if (shown != null) {
-                shown.remove();
+                var unused = scheduler.region(at, shown::remove);
             }
         }
 

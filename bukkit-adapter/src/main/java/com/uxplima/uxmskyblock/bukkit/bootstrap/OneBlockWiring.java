@@ -27,6 +27,7 @@ public final class OneBlockWiring implements AutoCloseable {
     private final OneBlockService service;
     private final AutoCloseable saving;
     private final com.uxplima.uxmskyblock.bukkit.oneblock.OneBlockListener listener;
+    private final com.uxplima.uxmskyblock.bukkit.oneblock.OneBlockBlockLines blockLines;
     private final com.uxplima.uxmskyblock.bukkit.oneblock.OneBlockPanel panel;
     private final com.uxplima.uxmskyblock.bukkit.oneblock.OneBlockDraws draws;
     private final com.uxplima.uxmskyblock.bukkit.oneblock.OneBlockBranches branches;
@@ -94,8 +95,9 @@ public final class OneBlockWiring implements AutoCloseable {
                 () -> config, scheduler, configuration.messages());
         panel.useBars(bars);
         listener.useBars(bars);
-        listener.useBlockLines(new com.uxplima.uxmskyblock.bukkit.oneblock.OneBlockBlockLines(
-                () -> config, configuration.messages(), bedrockPlayer(), lines));
+        this.blockLines = new com.uxplima.uxmskyblock.bukkit.oneblock.OneBlockBlockLines(
+                () -> config, configuration.messages(), bedrockPlayer(), lines);
+        listener.useBlockLines(blockLines);
         this.biomes = new com.uxplima.uxmskyblock.bukkit.oneblock.OneBlockBiomes(
                 () -> config, scheduler, persistence.islandStoragePort()::findIslandById);
         listener.useBiomes(biomes);
@@ -208,6 +210,11 @@ public final class OneBlockWiring implements AutoCloseable {
 
     public com.uxplima.uxmskyblock.bukkit.oneblock.OneBlockListener listener() {
         return listener;
+    }
+
+    /** The line over each island's block, which goes with an island that is gone. */
+    public com.uxplima.uxmskyblock.bukkit.oneblock.OneBlockBlockLines blockLines() {
+        return blockLines;
     }
 
     /**

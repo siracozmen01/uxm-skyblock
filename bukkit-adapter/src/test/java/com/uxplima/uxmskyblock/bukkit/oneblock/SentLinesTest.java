@@ -51,6 +51,10 @@ class SentLinesTest extends MockBukkitHarness {
 
         shown.remove();
         assertThat(shown.showing()).isFalse();
+        assertThat(new HologramProbe(packets).heldBy(ann))
+                .describedAs("taken down on the thread that owns the block, whichever thread asked")
+                .hasSize(1);
+        frames.firstFrame();
         assertThat(new HologramProbe(packets).heldBy(ann)).isEmpty();
     }
 

@@ -119,6 +119,7 @@ public final class BootstrapEventRegistrar {
                 }
                 gameplayWiring.arrivalWatch().admit(web.listener());
             }
+            gameplayWiring.chunkBlockWiring().drawLoadedSigns(plugin.getServer()::getWorlds);
         }
         if (gameplayWiring.boxedWiring().enabled()) {
             pm.registerEvents(gameplayWiring.boxedWiring().listener(), plugin);
@@ -229,6 +230,7 @@ public final class BootstrapEventRegistrar {
                     gameplayWiring.sentHolograms().regions(),
                     gameplayWiring.sentHolograms().packets());
             pm.registerEvents(stackLines, plugin);
+            stackLines.drawLoaded(plugin.getServer().getWorlds());
             pm.registerEvents(
                     new com.uxplima.uxmskyblock.bukkit.stack.BlockStackListener(
                             configWiring::stackingConfig,
