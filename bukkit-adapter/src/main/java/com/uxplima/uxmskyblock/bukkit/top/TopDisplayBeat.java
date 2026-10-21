@@ -104,33 +104,42 @@ public final class TopDisplayBeat implements AutoCloseable {
         scheduler.onRegion(display.world(), display.x() >> 4, display.z() >> 4, () -> painter.paint(display, shown));
     }
 
-    /** The words a display shows for {@code entry}, chosen here where the owner's name may be read. */
+    /**
+     * What a display shows for {@code entry}. The owner's name is read here, off the game's threads; the words are
+     * chosen for each reader as they are drawn.
+     */
     TopPainter.Shown shown(LeaderboardCategory board, LeaderboardEntry entry) {
         Optional<UUID> owner = ownerOf.apply(entry.islandId());
         String ownerName = owner.flatMap(nameOf).orElse("");
+        return new TopPainter.Shown(reader -> words(reader, board, entry, ownerName), ownerName, owner.orElse(null));
+    }
+
+    private TopPainter.Words words(
+            Audience reader, LeaderboardCategory board, LeaderboardEntry entry, String ownerName) {
         String island;
         if (entry.named()) {
             island = entry.islandName();
         } else if (!ownerName.isEmpty()) {
-            island = plain("leaderboard.owned", "owner", ownerName);
+            island = plain(reader, "leaderboard.owned", "owner", ownerName);
         } else {
             island = plain(
+                    reader,
                     "leaderboard.unnamed",
                     "id",
                     entry.islandId().value().toString().substring(0, 8));
         }
         String score = board == LeaderboardCategory.LEVEL
-                ? plain("leaderboard.score_level", "island_level", Long.toString(entry.score()))
-                : plain("leaderboard.score_money", "amount", MoneyText.of(entry.score()));
+                ? plain(reader, "leaderboard.score_level", "island_level", Long.toString(entry.score()))
+                : plain(reader, "leaderboard.score_money", "amount", MoneyText.of(entry.score()));
         String boardName = PlainTextComponentSerializer.plainText()
                 .serialize(messages.renderPlain(
-                        Audience.empty(), "leaderboard.category_" + board.name().toLowerCase(Locale.ROOT)));
-        return new TopPainter.Shown(boardName, island, ownerName, owner.orElse(null), score);
+                        reader, "leaderboard.category_" + board.name().toLowerCase(Locale.ROOT)));
+        return new TopPainter.Words(boardName, island, score);
     }
 
-    private String plain(String key, String name, String value) {
+    private String plain(Audience reader, String key, String name, String value) {
         return PlainTextComponentSerializer.plainText()
-                .serialize(messages.renderPlain(Audience.empty(), key, Placeholder.unparsed(name, value)));
+                .serialize(messages.renderPlain(reader, key, Placeholder.unparsed(name, value)));
     }
 
     @Override

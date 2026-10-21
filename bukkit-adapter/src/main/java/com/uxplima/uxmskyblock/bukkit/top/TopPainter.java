@@ -2,6 +2,9 @@ package com.uxplima.uxmskyblock.bukkit.top;
 
 import java.util.Optional;
 import java.util.UUID;
+import java.util.function.Function;
+
+import net.kyori.adventure.audience.Audience;
 
 import org.jspecify.annotations.Nullable;
 
@@ -9,16 +12,23 @@ import org.jspecify.annotations.Nullable;
 public interface TopPainter {
 
     /**
-     * The island a display shows, in words already chosen.
+     * The island a display shows: its words as each reader reads them, and its owner for a head.
      *
      * @param owner the island owner's id, for a head, or nothing when unknown
      */
     record Shown(
-            String board,
-            String island,
+            Function<Audience, Words> words,
             String ownerName,
-            @Nullable UUID owner,
-            String score) {}
+            @Nullable UUID owner) {
+
+        /** The words of this place, in {@code reader}'s language. */
+        public Words in(Audience reader) {
+            return words.apply(reader);
+        }
+    }
+
+    /** The words of a place, in one reader's language. */
+    record Words(String board, String island, String score) {}
 
     /** Draws {@code shown} on {@code display}, or that nobody holds its place yet. */
     void paint(TopDisplay display, Optional<Shown> shown);

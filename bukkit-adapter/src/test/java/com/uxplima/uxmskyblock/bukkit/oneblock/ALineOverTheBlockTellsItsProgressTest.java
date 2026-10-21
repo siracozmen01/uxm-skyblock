@@ -97,11 +97,11 @@ class ALineOverTheBlockTellsItsProgressTest extends MockBukkitHarness {
                 new InteractionEffects(Map.of()),
                 new InteractionEffectPlayer(null, Messages.bundled()));
         OneBlockPauses.Lines drawn = (where, at, line) -> {
-            lines.add("new " + at.getX() + " " + at.getY() + " " + at.getZ() + " " + text(line));
+            lines.add("new " + at.getX() + " " + at.getY() + " " + at.getZ() + " " + text(line.apply(player)));
             return new OneBlockPauses.Shown() {
                 @Override
-                public void say(Component again) {
-                    lines.add("say " + text(again));
+                public void say(java.util.function.Function<org.bukkit.entity.Player, Component> again) {
+                    lines.add("say " + text(again.apply(player)));
                 }
 
                 @Override

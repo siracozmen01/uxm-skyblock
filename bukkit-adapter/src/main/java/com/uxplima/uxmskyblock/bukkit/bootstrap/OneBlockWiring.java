@@ -41,8 +41,10 @@ public final class OneBlockWiring implements AutoCloseable {
             com.uxplima.uxmskyblock.bukkit.listener.IslandProtectionListener islands,
             java.util.function.Function<
                             java.util.UUID, java.util.Optional<com.uxplima.uxmskyblock.core.domain.identity.ProfileId>>
-                    activeProfile) {
+                    activeProfile,
+            com.uxplima.uxmskyblock.bukkit.oneblock.OneBlockPauses.Lines lines) {
         this.config = Objects.requireNonNull(configuration.oneBlockConfig(), "oneBlockConfig must not be null");
+        Objects.requireNonNull(lines, "lines must not be null");
         this.enabledAtStart = config.enabled();
         this.service = new OneBlockService(
                 persistence.oneBlockProgressPort(),
@@ -73,7 +75,7 @@ public final class OneBlockWiring implements AutoCloseable {
         listener.useDraws(draws);
         com.uxplima.uxmskyblock.bukkit.oneblock.OneBlockPauses pauses =
                 new com.uxplima.uxmskyblock.bukkit.oneblock.OneBlockPauses(
-                        () -> config, service, scheduler, configuration.messages(), draws, bedrockPlayer());
+                        () -> config, service, scheduler, configuration.messages(), draws, bedrockPlayer(), lines);
         listener.usePauses(pauses);
         this.branches = new com.uxplima.uxmskyblock.bukkit.oneblock.OneBlockBranches(
                 () -> config, service, scheduler, configuration.messages(), java.time.Clock.systemUTC());
@@ -81,7 +83,7 @@ public final class OneBlockWiring implements AutoCloseable {
         listener.usePhaseLists(new com.uxplima.uxmskyblock.bukkit.oneblock.OneBlockPhaseLists(
                 () -> config, scheduler, org.bukkit.Bukkit::getPlayer));
         listener.useMoments(new com.uxplima.uxmskyblock.bukkit.oneblock.OneBlockMoments(
-                () -> config, scheduler, configuration.messages(), bedrockPlayer()));
+                () -> config, scheduler, configuration.messages(), bedrockPlayer(), lines));
         this.panel = new com.uxplima.uxmskyblock.bukkit.oneblock.OneBlockPanel(
                 service, persistence.islandStoragePort(), scheduler, configuration.messages(), activeProfile);
         panel.useConfiguration(() -> config);
@@ -93,7 +95,7 @@ public final class OneBlockWiring implements AutoCloseable {
         panel.useBars(bars);
         listener.useBars(bars);
         listener.useBlockLines(new com.uxplima.uxmskyblock.bukkit.oneblock.OneBlockBlockLines(
-                () -> config, configuration.messages(), bedrockPlayer()));
+                () -> config, configuration.messages(), bedrockPlayer(), lines));
         this.biomes = new com.uxplima.uxmskyblock.bukkit.oneblock.OneBlockBiomes(
                 () -> config, scheduler, persistence.islandStoragePort()::findIslandById);
         listener.useBiomes(biomes);

@@ -40,6 +40,9 @@ public final class GameplayWiring extends GameplayParts {
     private final StorageBucket backupBucket;
     private final IslandCacheEviction cacheEviction;
     private final OneBlockWiring oneBlockWiring;
+    /** What a hologram a player only reads is sent with. */
+    private final SentHolograms sent;
+
     private final ChunkBlockWiring chunkBlockWiring;
     private final AcidIslandWiring acidIslandWiring;
     private final BoxedWiring boxedWiring;
@@ -126,11 +129,24 @@ public final class GameplayWiring extends GameplayParts {
         this.economicWiring = new EconomicWiring(
                 plugin, config, persistence, authority, protectionListener, scheduler, economyBridgeSupplier);
 
+        // What a player only reads is sent per viewer and never spawned: one set of packets and one click router.
+        this.sent = SentHolograms.of(plugin);
         // Before creation, because a game mode brings the actions that build its islands.
         this.oneBlockWiring = new OneBlockWiring(
-                config, persistence, scheduler, protectionListener, authority.sessionCoordinator()::activeProfile);
+                config,
+                persistence,
+                scheduler,
+                protectionListener,
+                authority.sessionCoordinator()::activeProfile,
+                new com.uxplima.uxmskyblock.bukkit.oneblock.SentLines(sent.regions(), sent.packets()));
         this.chunkBlockWiring = new ChunkBlockWiring(
-                config, persistence, scheduler, protectionListener, authority.sessionCoordinator()::activeProfile);
+                config,
+                persistence,
+                scheduler,
+                protectionListener,
+                authority.sessionCoordinator()::activeProfile,
+                new com.uxplima.uxmskyblock.bukkit.chunkblock.ChunkSignHolograms(
+                        sent.regions(), sent.packets(), sent.clicks()));
         this.acidIslandWiring = new AcidIslandWiring(config, persistence, scheduler, protectionListener);
         this.boxedWiring = new BoxedWiring(
                 config, persistence, scheduler, protectionListener, authority.sessionCoordinator()::activeProfile);
@@ -447,12 +463,17 @@ public final class GameplayWiring extends GameplayParts {
         return topDisplays;
     }
 
+    /** What a hologram a player only reads is sent with; its click router is registered with the other listeners. */
+    SentHolograms sentHolograms() {
+        return sent;
+    }
+
     /** Reads the displays placed and starts drawing them, when the leaderboards are on. */
     void startTopDisplays(ConfigurationWiring config) {
         if (!config.moduleSettings().isModuleEnabled("leaderboards") || topDisplays != null) {
             return;
         }
-        this.topDisplays = GameplayLinks.topDisplays(config, leaderboardService(), locationService(), scheduler);
+        this.topDisplays = GameplayLinks.topDisplays(config, leaderboardService(), locationService(), scheduler, sent);
         this.topDisplays.start();
     }
 

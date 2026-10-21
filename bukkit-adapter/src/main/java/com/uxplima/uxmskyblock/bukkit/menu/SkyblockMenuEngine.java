@@ -91,17 +91,13 @@ public final class SkyblockMenuEngine implements AutoCloseable {
         MenuRenderer renderer = new MenuRenderer(itemRenderer, bindings.conditions(), bindings.contents());
         PaperScheduler scheduler = new PaperScheduler(plugin);
 
-        this.menus = new Menus(
-                renderer,
-                scheduler,
-                bindings.lists(),
-                null,
-                bindings.actions(),
-                bindings.conditions(),
-                null,
-                LateBedrockDetector.forServer(Bukkit.getServer()),
-                LateBedrockScreen.forServer(Bukkit.getServer()),
-                bindings.pagedLists());
+        this.menus = Menus.builder(renderer, scheduler, bindings.lists())
+                .openRegistries(bindings.actions(), bindings.conditions())
+                .bedrock(
+                        LateBedrockDetector.forServer(Bukkit.getServer()),
+                        LateBedrockScreen.forServer(Bukkit.getServer()))
+                .pagedLists(bindings.pagedLists())
+                .build();
         // The text prompt behind an input: step. Without it a menu file can ask for a warp name and
         // the engine has nowhere to ask it, so the step cancels and the button does nothing. It is
         // also how a Bedrock player gets asked: the seam sends them a native Cumulus form instead of
@@ -119,22 +115,12 @@ public final class SkyblockMenuEngine implements AutoCloseable {
                 LateBedrockDetector.forServer(Bukkit.getServer()),
                 LateBedrockScreen.forServer(Bukkit.getServer()));
 
-        this.listener = new MenuListener(
-                renderer,
-                bindings.actions(),
-                bindings.conditions(),
-                scheduler,
-                plugin,
-                null,
-                null,
-                null,
-                0L,
-                System::currentTimeMillis,
-                bindings.pagedLists(),
-                this.textInput.textInput()::promptResolved,
-                bindings.contents(),
-                MenuSounds.defaults(),
-                refs -> false);
+        this.listener = MenuListener.builder(renderer, bindings.actions(), bindings.conditions(), scheduler, plugin)
+                .pagedLists(bindings.pagedLists())
+                .textPrompt(this.textInput.textInput()::promptResolved)
+                .contents(bindings.contents())
+                .feedback(MenuSounds.defaults(), refs -> false)
+                .build();
 
         // close, open, command, message and sound mean the same in every plugin, so they come from
         // the library. Anything a skyblock menu can do that a generic menu cannot is registered by

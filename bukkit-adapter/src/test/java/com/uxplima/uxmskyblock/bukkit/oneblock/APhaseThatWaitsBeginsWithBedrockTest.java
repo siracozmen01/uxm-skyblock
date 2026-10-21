@@ -151,11 +151,11 @@ class APhaseThatWaitsBeginsWithBedrockTest extends MockBukkitHarness {
                 who -> bedrock.contains(who.getUniqueId()),
                 clock,
                 (where, at, line) -> {
-                    said.add(text(line));
+                    said.add(text(line.apply(player)));
                     return new OneBlockPauses.Shown() {
                         @Override
-                        public void say(Component again) {
-                            said.add(text(again));
+                        public void say(java.util.function.Function<org.bukkit.entity.Player, Component> again) {
+                            said.add(text(again.apply(player)));
                         }
 
                         @Override

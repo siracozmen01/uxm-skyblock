@@ -15,14 +15,14 @@ import java.util.function.Function;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.World;
-import org.bukkit.entity.Interaction;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
-import org.bukkit.event.player.PlayerInteractEntityEvent;
 import org.bukkit.event.world.ChunkLoadEvent;
+import org.bukkit.event.world.ChunkUnloadEvent;
 
+import net.kyori.adventure.audience.Audience;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.minimessage.tag.resolver.Placeholder;
 
@@ -129,31 +129,33 @@ public final class ChunkSigns implements Listener {
         redrawAround(islandId, chunks);
     }
 
-    /** A click on a sign: a member of its island sees the window of the chunk's price. */
-    @EventHandler(priority = EventPriority.HIGH)
-    public void onClick(PlayerInteractEntityEvent event) {
-        if (!(event.getRightClicked() instanceof Interaction box)) {
-            return;
-        }
-        Optional<ChunkSignEntities.Marked> marked = ChunkSignEntities.marked(box);
+    /** A chunk unloads: its sign comes down with it, and is drawn again when it loads. */
+    @EventHandler(priority = EventPriority.MONITOR)
+    public void onChunkUnload(ChunkUnloadEvent event) {
+        painter.unloaded(event.getChunk());
+    }
+
+    /**
+     * A click on the sign {@code owner} stands at {@code at}: a member of that island sees the window of the chunk's
+     * price, anybody else is told no.
+     */
+    void clicked(Player player, String owner, ChunkPos chunk, Location at) {
+        org.bukkit.World where = at.getWorld();
         // A sign of another dimension's web is that web's to answer.
-        org.bukkit.World where = box.getLocation().getWorld();
-        if (marked.isEmpty() || where == null || !worlds.test(where.getName())) {
+        if (where == null || !worlds.test(where.getName())) {
             return;
         }
-        event.setCancelled(true);
-        Player player = event.getPlayer();
-        Optional<Island> island = islandAt(box.getLocation());
+        Optional<Island> island = islandAt(at);
         Optional<ProfileId> profile = activeProfile.apply(player.getUniqueId());
         boolean member = island.isPresent()
-                && island.get().id().value().toString().equals(marked.get().owner())
+                && island.get().id().value().toString().equals(owner)
                 && profile.isPresent()
                 && island.get().isMember(profile.get());
         if (!member) {
             messages.send(player, "chunkblock.sign_not_yours");
             return;
         }
-        open.accept(player, marked.get().chunk());
+        open.accept(player, chunk);
     }
 
     /**
@@ -179,12 +181,11 @@ public final class ChunkSigns implements Listener {
 
     private record Side(ChunkPos beside, Spot spot) {}
 
-    /** The words over {@code chunk}, in the server's own language. */
-    Component text(IslandId islandId, ChunkTerritory territory, ChunkPos chunk) {
-        var console = Bukkit.getConsoleSender();
+    /** The words over {@code chunk}, as {@code viewer} reads them. */
+    Component text(Audience viewer, IslandId islandId, ChunkTerritory territory, ChunkPos chunk) {
         String tier = messages.words(
-                console, tiers.of(islandId, territory.origin(), chunk).name());
-        return messages.render(console, "chunkblock.sign", Placeholder.unparsed("tier", tier));
+                viewer, tiers.of(islandId, territory.origin(), chunk).name());
+        return messages.render(viewer, "chunkblock.sign", Placeholder.unparsed("tier", tier));
     }
 
     /**
@@ -202,8 +203,15 @@ public final class ChunkSigns implements Listener {
         if (territory.isEmpty() || territory.get().placeFor(chunk, place.bounds()) != ChunkTerritory.Unlock.UNLOCKED) {
             return;
         }
-        spot(chunk, territory.get(), place.y())
-                .ifPresent(spot -> painter.draw(world, owner, chunk, spot, text(islandId, territory.get(), chunk)));
+        ChunkTerritory held = territory.get();
+        spot(chunk, held, place.y())
+                .ifPresent(spot -> painter.draw(
+                        world,
+                        owner,
+                        chunk,
+                        spot,
+                        viewer -> text(viewer, islandId, held, chunk),
+                        player -> clicked(player, owner, chunk, new Location(world, spot.x(), spot.y(), spot.z()))));
     }
 
     /** Draws again the signs of {@code chunks} and their neighbours, once the island's place is known. */

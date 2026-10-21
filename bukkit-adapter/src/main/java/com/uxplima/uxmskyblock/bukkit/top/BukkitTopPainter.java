@@ -1,12 +1,13 @@
 package com.uxplima.uxmskyblock.bukkit.top;
 
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.concurrent.ConcurrentHashMap;
 
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
-import org.bukkit.NamespacedKey;
 import org.bukkit.World;
 import org.bukkit.block.Block;
 import org.bukkit.block.BlockState;
@@ -14,32 +15,63 @@ import org.bukkit.block.Sign;
 import org.bukkit.block.Skull;
 import org.bukkit.block.sign.Side;
 import org.bukkit.entity.Display;
+import org.bukkit.entity.Player;
 import org.bukkit.entity.TextDisplay;
-import org.bukkit.persistence.PersistentDataType;
 
 import net.kyori.adventure.audience.Audience;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.minimessage.tag.resolver.Placeholder;
 import net.kyori.adventure.text.minimessage.tag.resolver.TagResolver;
 
+import com.uxplima.uxmlib.packet.display.HologramAppearance;
+import com.uxplima.uxmlib.packet.display.HologramPackets;
+import com.uxplima.uxmlib.packet.display.PacketHologram;
+import com.uxplima.uxmlib.scheduler.Scheduler;
 import com.uxplima.uxmskyblock.bukkit.i18n.Messages;
+import org.jspecify.annotations.Nullable;
 
 /**
- * Draws a display in the world, in the server's own language since everyone reads it: a sign's four lines, a head
- * turned to the island owner's face, or a line of text above the block it stands on, marked so the next draw finds
- * it. It runs on the thread that owns the block.
+ * Draws a display: a sign's four lines and a head turned to the island owner's face, which are blocks everyone shares
+ * and so read in the server's own language, or a line of text above the block it stands on, sent to each reader in
+ * their own words and never spawned. It runs on the thread that owns the block.
  */
 public final class BukkitTopPainter implements TopPainter {
 
-    /** The mark on a text display, naming the block it stands for. */
-    static final NamespacedKey MARK = new NamespacedKey("uxmskyblock", "top-display");
-
     private static final double TEXT_RISE = 1.5;
 
-    private final Messages messages;
+    private static final HologramAppearance LOOK = HologramAppearance.defaults()
+            .withBillboard(Display.Billboard.CENTER)
+            .withAlignment(TextDisplay.TextAlignment.CENTER);
 
-    public BukkitTopPainter(Messages messages) {
+    private final Messages messages;
+    private final Scheduler scheduler;
+    private final HologramPackets packets;
+
+    /** Each text display up, by its place. */
+    private final Map<String, Line> lines = new ConcurrentHashMap<>();
+
+    /** A text display up: what it shows, which the next draw swaps and every frame reads, and the hologram. */
+    private static final class Line {
+
+        private volatile Optional<Shown> shown;
+        private @Nullable PacketHologram hologram;
+
+        private Line(Optional<Shown> shown) {
+            this.shown = shown;
+        }
+
+        private void takeDown() {
+            PacketHologram up = hologram;
+            if (up != null) {
+                up.remove();
+            }
+        }
+    }
+
+    public BukkitTopPainter(Messages messages, Scheduler scheduler, HologramPackets packets) {
         this.messages = Objects.requireNonNull(messages, "messages must not be null");
+        this.scheduler = Objects.requireNonNull(scheduler, "scheduler must not be null");
+        this.packets = Objects.requireNonNull(packets, "packets must not be null");
     }
 
     @Override
@@ -49,12 +81,7 @@ public final class BukkitTopPainter implements TopPainter {
             return;
         }
         Block block = world.getBlockAt(display.x(), display.y(), display.z());
-        TagResolver words = TagResolver.resolver(
-                Placeholder.unparsed("position", Integer.toString(display.rank())),
-                Placeholder.unparsed("board", shown.map(Shown::board).orElse(boardName(display))),
-                Placeholder.unparsed("island", shown.map(Shown::island).orElse("")),
-                Placeholder.unparsed("owner", shown.map(Shown::ownerName).orElse("")),
-                Placeholder.unparsed("score", shown.map(Shown::score).orElse("")));
+        TagResolver words = words(Audience.empty(), display, shown);
         switch (display.kind()) {
             case SIGN -> {
                 BlockState state = block.getState();
@@ -83,19 +110,19 @@ public final class BukkitTopPainter implements TopPainter {
                 }
             }
             case TEXT -> {
-                Component text = messages.render(
-                        Audience.empty(), shown.isPresent() ? "top_display.text" : "top_display.text_empty", words);
-                List<TextDisplay> lines = linesAt(world, display);
-                if (!lines.isEmpty()) {
-                    lines.get(0).text(text);
+                Line held = lines.get(display.place());
+                if (held != null) {
+                    held.shown = shown;
                     return;
                 }
-                world.spawn(textSpot(world, display), TextDisplay.class, line -> {
-                    line.text(text);
-                    line.setBillboard(Display.Billboard.CENTER);
-                    line.setAlignment(TextDisplay.TextAlignment.CENTER);
-                    line.getPersistentDataContainer().set(MARK, PersistentDataType.STRING, display.place());
-                });
+                Line line = new Line(shown);
+                line.hologram = PacketHologram.show(
+                        packets,
+                        scheduler,
+                        textSpot(world, display),
+                        LOOK,
+                        viewer -> List.of(text(viewer, display, line)));
+                lines.put(display.place(), line);
             }
         }
     }
@@ -119,25 +146,46 @@ public final class BukkitTopPainter implements TopPainter {
             case HEAD -> {
                 // A head keeps the face it last wore; it is the operator's block.
             }
-            case TEXT -> linesAt(world, display).forEach(TextDisplay::remove);
+            case TEXT -> {
+                Line gone = lines.remove(display.place());
+                if (gone != null) {
+                    gone.takeDown();
+                }
+            }
         }
     }
 
-    private String boardName(TopDisplay display) {
+    /** How many text displays are up, which a test reads. */
+    int textsUp() {
+        return lines.size();
+    }
+
+    private Component text(Player viewer, TopDisplay display, Line line) {
+        Optional<Shown> shown = line.shown;
+        return messages.render(
+                viewer,
+                shown.isPresent() ? "top_display.text" : "top_display.text_empty",
+                words(viewer, display, shown));
+    }
+
+    /** The words of {@code display} as {@code reader} reads them. */
+    private TagResolver words(Audience reader, TopDisplay display, Optional<Shown> shown) {
+        Optional<Words> said = shown.map(it -> it.in(reader));
+        return TagResolver.resolver(
+                Placeholder.unparsed("position", Integer.toString(display.rank())),
+                Placeholder.unparsed("board", said.map(Words::board).orElseGet(() -> boardName(reader, display))),
+                Placeholder.unparsed("island", said.map(Words::island).orElse("")),
+                Placeholder.unparsed("owner", shown.map(Shown::ownerName).orElse("")),
+                Placeholder.unparsed("score", said.map(Words::score).orElse("")));
+    }
+
+    private String boardName(Audience reader, TopDisplay display) {
         return net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer.plainText()
                 .serialize(messages.renderPlain(
-                        Audience.empty(),
-                        "leaderboard.category_" + display.board().name().toLowerCase(java.util.Locale.ROOT)));
+                        reader, "leaderboard.category_" + display.board().name().toLowerCase(java.util.Locale.ROOT)));
     }
 
     private static Location textSpot(World world, TopDisplay display) {
         return new Location(world, display.x() + 0.5, display.y() + TEXT_RISE, display.z() + 0.5);
-    }
-
-    private static List<TextDisplay> linesAt(World world, TopDisplay display) {
-        return world.getNearbyEntitiesByType(TextDisplay.class, textSpot(world, display), 0.5).stream()
-                .filter(line ->
-                        display.place().equals(line.getPersistentDataContainer().get(MARK, PersistentDataType.STRING)))
-                .toList();
     }
 }

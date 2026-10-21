@@ -1,12 +1,7 @@
 package com.uxplima.uxmskyblock.bukkit.chunkblock;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
 
 import java.time.Instant;
 import java.util.ArrayList;
@@ -17,22 +12,25 @@ import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
+import java.util.function.Function;
 
 import org.bukkit.Chunk;
 import org.bukkit.Location;
 import org.bukkit.World;
-import org.bukkit.entity.Display;
-import org.bukkit.entity.Entity;
 import org.bukkit.entity.Interaction;
+import org.bukkit.entity.Player;
 import org.bukkit.entity.TextDisplay;
-import org.bukkit.event.player.PlayerInteractEntityEvent;
 import org.bukkit.event.world.ChunkLoadEvent;
-import org.bukkit.persistence.PersistentDataContainer;
-import org.bukkit.persistence.PersistentDataType;
+import org.bukkit.event.world.ChunkUnloadEvent;
 
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer;
 
+import com.uxplima.uxmlib.packet.display.FakeHologramPackets;
+import com.uxplima.uxmlib.packet.display.FakeRegionScheduler;
+import com.uxplima.uxmlib.packet.display.HologramProbe;
+import com.uxplima.uxmlib.packet.display.PacketHologramClicks;
+import com.uxplima.uxmlib.packet.display.PacketLine;
 import com.uxplima.uxmskyblock.bukkit.i18n.Messages;
 import com.uxplima.uxmskyblock.bukkit.listener.IslandProtectionListener;
 import com.uxplima.uxmskyblock.bukkit.test.InlineSchedulerPort;
@@ -66,17 +64,28 @@ class AClosedChunkCarriesASignTest extends MockBukkitHarness {
     private static final ChunkTier RARE = new ChunkTier(
             "rare", "@chunkblock.tiers.rare", 1, 99, 1, List.of(new ChunkRequirement.Points(1)), List.of(), List.of());
 
-    /** What stands in each chunk: the owner and where, as the sign entities would. */
+    /** What stands in each chunk: the owner and where. */
     private final Map<ChunkPos, List<String>> standing = new HashMap<>();
 
-    private final List<String> texts = new ArrayList<>();
+    /** The words of every sign drawn, asked of a viewer the way a frame asks them. */
+    private final List<Function<Player, Component>> texts = new ArrayList<>();
+
+    /** What a click on each chunk's sign does. */
+    private final Map<ChunkPos, Consumer<Player>> clicks = new HashMap<>();
 
     private final SignPainter painter = new SignPainter() {
         @Override
-        public void draw(World world, String owner, ChunkPos chunk, ChunkSigns.Spot spot, Component text) {
+        public void draw(
+                World world,
+                String owner,
+                ChunkPos chunk,
+                ChunkSigns.Spot spot,
+                Function<Player, Component> text,
+                Consumer<Player> clicked) {
             standing.computeIfAbsent(chunk, at -> new ArrayList<>())
                     .add(owner + " " + spot.x() + "," + spot.y() + "," + spot.z());
-            texts.add(PlainTextComponentSerializer.plainText().serialize(text));
+            texts.add(text);
+            clicks.put(chunk, clicked);
         }
 
         @Override
@@ -85,6 +94,12 @@ class AClosedChunkCarriesASignTest extends MockBukkitHarness {
             int before = here.size();
             here.removeIf(sign -> sign.startsWith(owner + " "));
             return before - here.size();
+        }
+
+        @Override
+        public int unloaded(Chunk chunk) {
+            List<String> here = standing.remove(new ChunkPos(chunk.getX(), chunk.getZ()));
+            return here == null ? 0 : here.size();
         }
     };
 
@@ -165,7 +180,10 @@ class AClosedChunkCarriesASignTest extends MockBukkitHarness {
                 .describedAs("one sign, however often it loads")
                 .containsExactly(owner + " 17.0,100.0,8.0");
         assertThat(signsIn(0, 0)).describedAs("the open chunk carries none").isEmpty();
-        assertThat(texts.getFirst()).isEqualTo("Rare chunk\nClick to see its price");
+        assertThat(PlainTextComponentSerializer.plainText()
+                        .serialize(texts.getFirst().apply(this.owner)))
+                .describedAs("asked of each reader, in their language")
+                .isEqualTo("Rare chunk\nClick to see its price");
         assertThat(locationReads).describedAs("the island's place is read once").hasValue(1);
     }
 
@@ -236,13 +254,8 @@ class AClosedChunkCarriesASignTest extends MockBukkitHarness {
         load(1, 0);
         assertThat(signsIn(1, 0)).isEmpty();
 
-        PlayerInteractEntityEvent byOwner =
-                new PlayerInteractEntityEvent(owner, marked(island.id().value().toString(), "1,0"));
-        signs.onClick(byOwner);
-        assertThat(windows).isEmpty();
-        assertThat(byOwner.isCancelled())
-                .describedAs("left to the web that guards it")
-                .isFalse();
+        signs.clicked(owner, island.id().value().toString(), new ChunkPos(1, 0), new Location(world, 17, 100, 8));
+        assertThat(windows).describedAs("left to the web that guards it").isEmpty();
         assertThat(owner.nextComponentMessage()).isNull();
 
         signs.guarding("skyblock"::equals);
@@ -251,88 +264,81 @@ class AClosedChunkCarriesASignTest extends MockBukkitHarness {
     }
 
     @Test
-    @DisplayName("A member's click opens the chunk's window, a visitor's is told no, and other boxes are left alone")
+    @DisplayName(
+            "A member's click opens the chunk's window, a visitor's is told no, and another island's opens nothing")
     void aClickOpensTheWindow() {
-        Interaction sign = marked(island.id().value().toString(), "1,0");
-        PlayerInteractEntityEvent byOwner = new PlayerInteractEntityEvent(owner, sign);
-        signs.onClick(byOwner);
-        assertThat(windows).containsExactly(new ChunkPos(1, 0));
-        assertThat(byOwner.isCancelled()).isTrue();
+        load(1, 0);
+        Consumer<Player> sign = java.util.Objects.requireNonNull(clicks.get(new ChunkPos(1, 0)));
 
-        signs.onClick(new PlayerInteractEntityEvent(visitor, sign));
+        sign.accept(owner);
+        assertThat(windows).containsExactly(new ChunkPos(1, 0));
+
+        sign.accept(visitor);
         assertThat(windows).hasSize(1);
         assertThat(PlainTextComponentSerializer.plainText()
                         .serialize(java.util.Objects.requireNonNull(visitor.nextComponentMessage())))
                 .contains("Only this island's members");
 
-        signs.onClick(
-                new PlayerInteractEntityEvent(owner, marked(UUID.randomUUID().toString(), "1,0")));
+        signs.clicked(owner, UUID.randomUUID().toString(), new ChunkPos(1, 0), new Location(world, 17, 100, 8));
         assertThat(windows)
                 .describedAs("a sign of another island opens nothing")
                 .hasSize(1);
-
-        PlayerInteractEntityEvent plain = new PlayerInteractEntityEvent(owner, marked(null, null));
-        signs.onClick(plain);
-        assertThat(plain.isCancelled()).isFalse();
     }
 
     @Test
-    @DisplayName("A sign is a text that faces its reader over a box a click lands on, both never saved and marked")
-    @SuppressWarnings("unchecked")
-    void theEntities() {
-        World mocked = mock(World.class);
-        List<Entity> spawned = new ArrayList<>();
-        for (Class<? extends Entity> kind : List.of(TextDisplay.class, Interaction.class)) {
-            when(mocked.spawn(any(Location.class), eq(kind), any(Consumer.class)))
-                    .thenAnswer(call -> {
-                        Entity entity = mock(kind);
-                        PersistentDataContainer data = mock(PersistentDataContainer.class);
-                        when(entity.getPersistentDataContainer()).thenReturn(data);
-                        call.getArgument(2, Consumer.class).accept(entity);
-                        spawned.add(entity);
-                        return entity;
-                    });
-        }
+    @DisplayName("A chunk that unloads takes its sign down, and stands it again when it loads")
+    void anUnloadTakesTheSignDown() {
+        load(1, 0);
+        assertThat(signsIn(1, 0)).hasSize(1);
 
-        new ChunkSignEntities()
-                .draw(mocked, "island-1", new ChunkPos(1, 0), new ChunkSigns.Spot(17, 100, 8), Component.text("x"));
+        signs.onChunkUnload(new ChunkUnloadEvent(world.getChunkAt(1, 0)));
+        assertThat(signsIn(1, 0)).isEmpty();
 
-        assertThat(spawned).hasSize(2);
-        TextDisplay text = (TextDisplay) spawned.get(0);
-        Interaction box = (Interaction) spawned.get(1);
-        verify(text).setBillboard(Display.Billboard.CENTER);
-        verify(text).setSeeThrough(true);
-        verify(text).setPersistent(false);
-        verify(text.getPersistentDataContainer()).set(ChunkSignEntities.OWNER, PersistentDataType.STRING, "island-1");
-        verify(box).setPersistent(false);
-        verify(box).setInteractionWidth(ChunkSignEntities.BOX_WIDTH);
-        verify(box.getPersistentDataContainer()).set(ChunkSignEntities.CHUNK, PersistentDataType.STRING, "1,0");
-        org.mockito.ArgumentCaptor<Location> at = org.mockito.ArgumentCaptor.forClass(Location.class);
-        verify(mocked).spawn(at.capture(), eq(TextDisplay.class), any(Consumer.class));
-        assertThat(at.getValue().getY()).isEqualTo(100 + ChunkSignEntities.TEXT_RISE);
-
-        Entity mine = marked("island-1", "1,0");
-        Entity theirs = marked("island-2", "1,0");
-        Chunk chunk = mock(Chunk.class);
-        when(chunk.getEntities()).thenReturn(new Entity[] {mine, theirs});
-        assertThat(new ChunkSignEntities().clear(chunk, "island-1")).isEqualTo(1);
-        verify(mine).remove();
-        verify(theirs, never()).remove();
-
-        assertThat(ChunkSignEntities.marked(marked("island-1", "-3,7")))
-                .contains(new ChunkSignEntities.Marked("island-1", new ChunkPos(-3, 7)));
-        assertThat(ChunkSignEntities.marked(marked("island-1", "three"))).isEmpty();
-        assertThat(ChunkSignEntities.marked(marked("island-1", null))).isEmpty();
+        load(1, 0);
+        assertThat(signsIn(1, 0)).hasSize(1);
     }
 
-    private Interaction marked(
-            @org.jspecify.annotations.Nullable String owner, @org.jspecify.annotations.Nullable String at) {
-        Interaction entity = mock(Interaction.class);
-        PersistentDataContainer data = mock(PersistentDataContainer.class);
-        when(data.get(ChunkSignEntities.OWNER, PersistentDataType.STRING)).thenReturn(owner);
-        when(data.get(ChunkSignEntities.CHUNK, PersistentDataType.STRING)).thenReturn(at);
-        when(entity.getPersistentDataContainer()).thenReturn(data);
-        when(entity.getLocation()).thenReturn(new Location(world, 17, 100, 8));
-        return entity;
+    @Test
+    @DisplayName("A sign is sent to whoever is near, in their words, over a box a click lands on, and never spawned")
+    void theSignIsSentNeverSpawned() {
+        FakeHologramPackets packets = new FakeHologramPackets();
+        FakeRegionScheduler frames = new FakeRegionScheduler();
+        ChunkSignHolograms holograms = new ChunkSignHolograms(frames, packets, new PacketHologramClicks(frames));
+        owner.teleport(new Location(world, 17, 100, 10));
+        visitor.teleport(new Location(world, 17, 100, 6));
+
+        holograms.draw(
+                world,
+                "island-1",
+                new ChunkPos(1, 0),
+                new ChunkSigns.Spot(17, 100, 8),
+                viewer -> Component.text("for " + viewer.getName()),
+                player -> {});
+        frames.firstFrame();
+
+        HologramProbe probe = new HologramProbe(packets);
+        assertThat(probe.heldBy(owner)).containsExactly(PacketLine.text(Component.text("for Owner")));
+        assertThat(probe.heldBy(visitor)).containsExactly(PacketLine.text(Component.text("for Visitor")));
+        assertThat(packets.packetsFor(owner).toString())
+                .describedAs("with a box a click lands on")
+                .contains("InteractionSize");
+        assertThat(world.getEntitiesByClass(TextDisplay.class)).isEmpty();
+        assertThat(world.getEntitiesByClass(Interaction.class)).isEmpty();
+
+        assertThat(holograms.clear(world.getChunkAt(1, 0), "island-2"))
+                .describedAs("another island's sign is not this one's to take down")
+                .isZero();
+        assertThat(holograms.clear(world.getChunkAt(1, 0), "island-1")).isEqualTo(1);
+        assertThat(probe.heldBy(owner)).isEmpty();
+
+        holograms.draw(
+                world,
+                "island-1",
+                new ChunkPos(1, 0),
+                new ChunkSigns.Spot(17, 100, 8),
+                viewer -> Component.text("x"),
+                player -> {});
+        assertThat(holograms.unloaded(world.getChunkAt(1, 0))).isEqualTo(1);
+        assertThat(holograms.standing()).isZero();
     }
 }

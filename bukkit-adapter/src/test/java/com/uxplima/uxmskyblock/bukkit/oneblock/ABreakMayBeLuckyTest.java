@@ -157,7 +157,7 @@ class ABreakMayBeLuckyTest extends MockBukkitHarness {
                 java.time.Clock.systemUTC(),
                 (where, at, line) -> new OneBlockPauses.Shown() {
                     @Override
-                    public void say(Component again) {}
+                    public void say(java.util.function.Function<org.bukkit.entity.Player, Component> again) {}
 
                     @Override
                     public void remove() {}

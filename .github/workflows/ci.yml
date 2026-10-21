@@ -65,7 +65,7 @@ jobs:
 
       - name: Run Tests (SQLite)
         if: matrix.database == 'sqlite'
-        run: ./gradlew check --no-build-cache
+        run: ./gradlew check :bukkit-adapter:redisIntegrationTest --no-build-cache
 
       - name: Run Tests & Database Integration (MySQL / MariaDB)
         if: matrix.database == 'mysql'

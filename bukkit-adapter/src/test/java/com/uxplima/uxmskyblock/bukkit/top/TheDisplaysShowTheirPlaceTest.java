@@ -60,8 +60,14 @@ class TheDisplaysShowTheirPlaceTest {
                     @Override
                     public void paint(TopDisplay display, Optional<Shown> shown) {
                         painted.add(display.rank() + " " + display.board() + ": "
-                                + shown.map(it -> it.island() + " / " + it.ownerName() + " / " + it.score() + " / "
-                                                + it.board() + " / " + it.owner())
+                                + shown.map(it -> it.in(net.kyori.adventure.audience.Audience.empty())
+                                                        .island()
+                                                + " / " + it.ownerName() + " / "
+                                                + it.in(net.kyori.adventure.audience.Audience.empty())
+                                                        .score() + " / "
+                                                + it.in(net.kyori.adventure.audience.Audience.empty())
+                                                        .board() + " / "
+                                                + it.owner())
                                         .orElse("nobody"));
                     }
 
@@ -111,8 +117,10 @@ class TheDisplaysShowTheirPlaceTest {
                 new TopPainter() {
                     @Override
                     public void paint(TopDisplay display, Optional<Shown> shown) {
-                        painted.add(
-                                display.rank() + ": " + shown.map(Shown::island).orElse("nobody"));
+                        painted.add(display.rank() + ": "
+                                + shown.map(it -> it.in(net.kyori.adventure.audience.Audience.empty())
+                                                .island())
+                                        .orElse("nobody"));
                     }
 
                     @Override

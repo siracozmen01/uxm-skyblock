@@ -4,16 +4,14 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.ThreadLocalRandom;
+import java.util.function.Function;
 import java.util.function.Predicate;
 import java.util.function.Supplier;
 
 import org.bukkit.Location;
 import org.bukkit.World;
 import org.bukkit.block.Block;
-import org.bukkit.entity.Display;
-import org.bukkit.entity.Entity;
 import org.bukkit.entity.Player;
-import org.bukkit.entity.TextDisplay;
 
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.minimessage.MiniMessage;
@@ -38,32 +36,18 @@ public final class OneBlockMoments {
     /** How far above the block's top its line hangs. */
     static final double TEXT_RISE = 0.6;
 
-    /** How a line is put over a block: the entity that shows it, gone with its {@link Entity#remove()}. */
-    @FunctionalInterface
-    public interface Lines {
-        Entity show(World world, Location at, Component line);
-    }
-
     private final Supplier<OneBlockConfiguration> config;
     private final SchedulerPort scheduler;
     private final Messages messages;
     private final Predicate<Player> bedrock;
-    private final Lines lines;
-
-    public OneBlockMoments(
-            Supplier<OneBlockConfiguration> config,
-            SchedulerPort scheduler,
-            Messages messages,
-            Predicate<Player> bedrock) {
-        this(config, scheduler, messages, bedrock, OneBlockMoments::textOver);
-    }
+    private final OneBlockPauses.Lines lines;
 
     public OneBlockMoments(
             Supplier<OneBlockConfiguration> config,
             SchedulerPort scheduler,
             Messages messages,
             Predicate<Player> bedrock,
-            Lines lines) {
+            OneBlockPauses.Lines lines) {
         this.lines = Objects.requireNonNull(lines, "lines must not be null");
         this.config = Objects.requireNonNull(config, "config must not be null");
         this.scheduler = Objects.requireNonNull(scheduler, "scheduler must not be null");
@@ -95,26 +79,21 @@ public final class OneBlockMoments {
         if (text == null) {
             return;
         }
-        Component line = text.startsWith("@")
-                ? messages.renderPlain(breaker, text.substring(1))
-                : MiniMessage.miniMessage().deserialize(text);
-        Entity shown = lines.show(world, new Location(world, x + 0.5, y + 1 + TEXT_RISE, z + 0.5), line);
+        // A catalogue key is read in each viewer's language; written text reads the same to all.
+        Function<Player, Component> line;
+        if (text.startsWith("@")) {
+            String key = text.substring(1);
+            line = viewer -> messages.renderPlain(viewer, key);
+        } else {
+            Component written = MiniMessage.miniMessage().deserialize(text);
+            line = viewer -> written;
+        }
+        OneBlockPauses.Shown shown = lines.show(world, new Location(world, x + 0.5, y + 1 + TEXT_RISE, z + 0.5), line);
         scheduler.asyncAfter(
                 moment.textTime(), () -> scheduler.onRegion(world.getName(), x >> 4, z >> 4, shown::remove));
         if (bedrock.test(breaker)) {
-            breaker.sendActionBar(line);
+            breaker.sendActionBar(line.apply(breaker));
         }
-    }
-
-    /** A line over a block: a text that faces its reader, gone with the restart if not before. */
-    static Entity textOver(World world, Location at, Component line) {
-        return world.spawn(at, TextDisplay.class, display -> {
-            display.text(line);
-            display.setBillboard(Display.Billboard.CENTER);
-            display.setAlignment(TextDisplay.TextAlignment.CENTER);
-            // A line is a moment's, never the world's.
-            display.setPersistent(false);
-        });
     }
 
     /** Runs the lists of the moment for the breaker, on the breaker's thread: every moment's, then its own. */

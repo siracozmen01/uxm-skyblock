@@ -218,6 +218,10 @@ class ZeroFootprintModuleWiringTest {
             when(protectionListener.spatialIndex()).thenReturn(spatialIndex);
 
             JavaPlugin plugin = mock(JavaPlugin.class);
+
+            // A real plugin always has a logger; the hologram fallback writes to it on a test server.
+
+            when(plugin.getSLF4JLogger()).thenReturn(org.slf4j.LoggerFactory.getLogger("uxmSkyblock"));
             when(plugin.getDataFolder()).thenReturn(tempDir.toFile());
 
             GameplayWiring gameplay = new GameplayWiring(
@@ -283,6 +287,10 @@ class ZeroFootprintModuleWiringTest {
             when(protectionListener.spatialIndex()).thenReturn(spatialIndex);
 
             JavaPlugin plugin = mock(JavaPlugin.class);
+
+            // A real plugin always has a logger; the hologram fallback writes to it on a test server.
+
+            when(plugin.getSLF4JLogger()).thenReturn(org.slf4j.LoggerFactory.getLogger("uxmSkyblock"));
             when(plugin.getDataFolder()).thenReturn(tempDir.toFile());
 
             GameplayWiring gameplay = new GameplayWiring(

@@ -54,7 +54,17 @@ class OneBlockCountsAreWrittenTest {
                     persistence,
                     scheduler,
                     mock(com.uxplima.uxmskyblock.bukkit.listener.IslandProtectionListener.class),
-                    uuid -> java.util.Optional.empty());
+                    uuid -> java.util.Optional.empty(),
+                    (where, at, line) -> new com.uxplima.uxmskyblock.bukkit.oneblock.OneBlockPauses.Shown() {
+                        @Override
+                        public void say(
+                                java.util.function.Function<
+                                                org.bukkit.entity.Player, net.kyori.adventure.text.Component>
+                                        again) {}
+
+                        @Override
+                        public void remove() {}
+                    });
             wiring.service().start(island, 0, 100, 0);
 
             wiring.service().onBreak(island);

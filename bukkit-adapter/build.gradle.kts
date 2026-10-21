@@ -28,6 +28,8 @@ dependencies {
     implementation(libs.uxmlib.integration)
     implementation(libs.uxmlib.redis)
     implementation(libs.uxmlib.schematic)
+    // Holograms a player reads are sent per viewer and never spawned.
+    implementation(libs.uxmlib.packet)
     implementation(libs.lettuce.core)
     implementation(libs.bstats.bukkit)
 
@@ -41,6 +43,23 @@ dependencies {
     testImplementation(libs.uxmlib.storage)
     testImplementation(libs.archunit.junit)
     testImplementation(libs.jqwik)
+    // The packet hologram's test kit: a recording packet sink and a probe that reads back what a client holds.
+    testImplementation(testFixtures(libs.uxmlib.packet)) {
+        exclude(group = "org.spongepowered")
+    }
+    // A real Redis, for the test that Lettuce runs on the server's netty.
+    testImplementation(libs.testcontainers)
+    testImplementation(libs.testcontainers.junit)
+}
+
+// The server's netty is the only one this plugin runs on, so the tests run on the same version.
+configurations.testRuntimeClasspath {
+    resolutionStrategy.eachDependency {
+        if (requested.group == "io.netty") {
+            useVersion(libs.versions.netty.get())
+            because("the jar bundles no netty, and the server carries this one")
+        }
+    }
 }
 
 tasks.processResources {
@@ -63,12 +82,18 @@ tasks.shadowJar {
         exclude(dependency("org.checkerframework:.*:.*"))
         exclude(dependency("org.jspecify:.*:.*"))
         exclude(dependency("org.jetbrains:annotations:.*"))
+        exclude(dependency("io.netty:.*:.*"))
     }
+    // uxmlib-packet is compiled against the Mojang mapped server. This attribute tells Paper's runtime
+    // not to remap the jar, so its references to the server's own classes resolve as written.
+    manifest { attributes("paperweight-mappings-namespace" to "mojang") }
     // Everything bundled carries this plugin's namespace, so two plugins that shade the same library
     // never share a class, and a copy the server has on its own class path never stands in for ours.
-    // uxmLib shipped un-relocated here while every other plugin of the family relocated it. Netty is
-    // the plain case: Paper carries its own, and Lettuce was built against a different one.
+    // uxmLib shipped un-relocated here while every other plugin of the family relocated it.
     // org.sqlite is never relocated: the driver finds its native library by its own package name.
+    // Netty is not bundled at all. The library's packet pipeline speaks to the server's own channels,
+    // and relocating a bundled copy would rewrite those references with the rest. Lettuce 7 is built on
+    // the same 4.2 line the server carries, and redisIntegrationTest runs it on the server's version.
     for (pkg in listOf(
         "com.uxplima.uxmlib" to "uxmlib",
         "org.bstats" to "bstats",
@@ -81,7 +106,6 @@ tasks.shadowJar {
         "io.lettuce" to "lettuce",
         "reactor" to "reactor",
         "org.reactivestreams" to "reactivestreams",
-        "io.netty" to "netty",
         "redis.clients" to "jedis",
         "io.javalin" to "javalin",
         "org.eclipse.jetty" to "jetty",
@@ -107,6 +131,24 @@ tasks.test {
     // The tests run bStats unshaded, and its relocation check would refuse every enabled plugin.
     // The shaded jar is still relocated and a real server still runs the check.
     systemProperty("bstats.relocatecheck", "false")
+    useJUnitPlatform {
+        excludeTags("redis-integration")
+    }
+}
+
+// Needs Docker. Lettuce against a real Redis, on the server's netty.
+val redisIntegrationTest by tasks.registering(Test::class) {
+    description = "Runs the tests that need a real Redis."
+    group = "verification"
+    testClassesDirs =
+        sourceSets.test
+            .get()
+            .output.classesDirs
+    classpath = sourceSets.test.get().runtimeClasspath
+    useJUnitPlatform {
+        includeTags("redis-integration")
+    }
+    shouldRunAfter(tasks.test)
 }
 
 /**

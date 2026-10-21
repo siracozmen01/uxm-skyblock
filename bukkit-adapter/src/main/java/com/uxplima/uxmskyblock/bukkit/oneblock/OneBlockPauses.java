@@ -13,9 +13,7 @@ import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.World;
-import org.bukkit.entity.Display;
 import org.bukkit.entity.Player;
-import org.bukkit.entity.TextDisplay;
 
 import net.kyori.adventure.audience.Audience;
 import net.kyori.adventure.text.Component;
@@ -45,7 +43,8 @@ public final class OneBlockPauses {
 
     /** A line over a block: a countdown, or a OneBlock island's progress. */
     public interface Shown {
-        void say(Component line);
+        /** Says {@code line} from now on, as each viewer reads it. */
+        void say(Function<Player, Component> line);
 
         void remove();
 
@@ -55,10 +54,10 @@ public final class OneBlockPauses {
         }
     }
 
-    /** How a countdown line is put over a block. */
+    /** How a line is put over a block, in the words each viewer reads. */
     @FunctionalInterface
     public interface Lines {
-        Shown show(World world, Location at, Component line);
+        Shown show(World world, Location at, Function<Player, Component> line);
     }
 
     private final java.util.function.Supplier<com.uxplima.uxmskyblock.bukkit.config.OneBlockConfiguration> config;
@@ -93,15 +92,16 @@ public final class OneBlockPauses {
         this.lines = Objects.requireNonNull(lines, "lines must not be null");
     }
 
-    /** As on a server: the system clock and a text display over the block. */
+    /** As on a server: the system clock. */
     public OneBlockPauses(
             java.util.function.Supplier<com.uxplima.uxmskyblock.bukkit.config.OneBlockConfiguration> config,
             OneBlockService service,
             SchedulerPort scheduler,
             Messages messages,
             OneBlockDraws draws,
-            Predicate<Player> bedrock) {
-        this(config, service, scheduler, messages, draws, bedrock, Clock.systemUTC(), OneBlockPauses::countdownOver);
+            Predicate<Player> bedrock,
+            Lines lines) {
+        this(config, service, scheduler, messages, draws, bedrock, Clock.systemUTC(), lines);
     }
 
     /** How long the phase's block stays bedrock once it begins, nothing when its file sets no wait. */
@@ -175,7 +175,7 @@ public final class OneBlockPauses {
 
     private void run(OneBlockWaitPort.Waiting waiting, World world, int x, int y, int z) {
         Location over = new Location(world, x + 0.5, y + 1 + OneBlockMoments.TEXT_RISE, z + 0.5);
-        Shown shown = lines.show(world, over, line(waiting));
+        Shown shown = lines.show(world, over, viewer -> line(viewer, waiting));
         tick(waiting, shown, world, x, y, z);
     }
 
@@ -197,12 +197,11 @@ public final class OneBlockPauses {
             }
             return;
         }
-        Component line = line(waiting);
-        shown.say(line);
+        shown.say(viewer -> line(viewer, waiting));
         Location block = new Location(world, x + 0.5, y + 0.5, z + 0.5);
         for (Player near : world.getNearbyPlayers(block, HEARD_WITHIN)) {
             if (bedrock.test(near)) {
-                near.sendActionBar(line);
+                near.sendActionBar(line(near, waiting));
             }
         }
         scheduler.asyncAfter(
@@ -210,12 +209,12 @@ public final class OneBlockPauses {
                 () -> scheduler.onRegion(world.getName(), x >> 4, z >> 4, () -> tick(waiting, shown, world, x, y, z)));
     }
 
-    /** The countdown, in the server's language: the phase and the time left. */
-    private Component line(OneBlockWaitPort.Waiting waiting) {
+    /** The countdown, as {@code viewer} reads it: the phase and the time left. */
+    private Component line(Audience viewer, OneBlockWaitPort.Waiting waiting) {
         Duration left = Duration.between(clock.instant(), Objects.requireNonNull(waiting.until()));
-        String phase = messages.named(Audience.empty(), "oneblock.phases", waiting.phase(), waiting.phase());
+        String phase = messages.named(viewer, "oneblock.phases", waiting.phase(), waiting.phase());
         return messages.renderPlain(
-                Audience.empty(),
+                viewer,
                 "oneblock.pause_line",
                 Placeholder.unparsed("phase", phase),
                 Placeholder.unparsed("time", clockFace(left)));
@@ -230,31 +229,5 @@ public final class OneBlockPauses {
         return hours > 0
                 ? String.format(java.util.Locale.ROOT, "%d:%02d:%02d", hours, minutes, rest)
                 : String.format(java.util.Locale.ROOT, "%d:%02d", minutes, rest);
-    }
-
-    /** A countdown over a block: a text facing its reader, never saved, so a restart draws it anew. */
-    static Shown countdownOver(World world, Location at, Component line) {
-        TextDisplay display = world.spawn(at, TextDisplay.class, made -> {
-            made.text(line);
-            made.setBillboard(Display.Billboard.CENTER);
-            made.setAlignment(TextDisplay.TextAlignment.CENTER);
-            made.setPersistent(false);
-        });
-        return new Shown() {
-            @Override
-            public void say(Component said) {
-                display.text(said);
-            }
-
-            @Override
-            public void remove() {
-                display.remove();
-            }
-
-            @Override
-            public boolean showing() {
-                return display.isValid();
-            }
-        };
     }
 }

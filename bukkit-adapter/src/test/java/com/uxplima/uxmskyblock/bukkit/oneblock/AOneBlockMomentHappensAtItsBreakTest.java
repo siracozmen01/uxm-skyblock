@@ -21,7 +21,6 @@ import java.util.UUID;
 import org.bukkit.Material;
 import org.bukkit.World;
 import org.bukkit.block.Block;
-import org.bukkit.entity.TextDisplay;
 import org.bukkit.entity.Zombie;
 import org.bukkit.event.block.BlockBreakEvent;
 
@@ -62,7 +61,7 @@ class AOneBlockMomentHappensAtItsBreakTest extends MockBukkitHarness {
     private final List<String> fired = new ArrayList<>();
     private final Set<UUID> bedrock = new HashSet<>();
     private final List<String> lines = new ArrayList<>();
-    private final List<org.bukkit.entity.Entity> shown = new ArrayList<>();
+    private final List<OneBlockPauses.Shown> shown = new ArrayList<>();
     private World world;
     private PlayerMock player;
     private OneBlockListener listener;
@@ -147,8 +146,8 @@ class AOneBlockMomentHappensAtItsBreakTest extends MockBukkitHarness {
                 who -> bedrock.contains(who.getUniqueId()),
                 (where, at, line) -> {
                     lines.add(at.getX() + " " + at.getY() + " " + at.getZ() + " "
-                            + PlainTextComponentSerializer.plainText().serialize(line));
-                    org.bukkit.entity.Entity entity = mock(org.bukkit.entity.Entity.class);
+                            + PlainTextComponentSerializer.plainText().serialize(line.apply(player)));
+                    OneBlockPauses.Shown entity = mock(OneBlockPauses.Shown.class);
                     shown.add(entity);
                     return entity;
                 }));
@@ -235,32 +234,6 @@ class AOneBlockMomentHappensAtItsBreakTest extends MockBukkitHarness {
         breakIt(block);
 
         assertThat(player.nextActionBar()).isNotNull();
-    }
-
-    @Test
-    @DisplayName("A line is a text that faces its reader, centred over the block, and never saved")
-    @SuppressWarnings("unchecked")
-    void theLine() {
-        World mocked = mock(World.class);
-        TextDisplay display = mock(TextDisplay.class);
-        org.mockito.Mockito.when(mocked.spawn(
-                        any(org.bukkit.Location.class),
-                        org.mockito.ArgumentMatchers.eq(TextDisplay.class),
-                        any(java.util.function.Consumer.class)))
-                .thenAnswer(call -> {
-                    call.getArgument(2, java.util.function.Consumer.class).accept(display);
-                    return display;
-                });
-
-        assertThat(OneBlockMoments.textOver(
-                        mocked,
-                        new org.bukkit.Location(mocked, 0.5, 101.6, 0.5),
-                        net.kyori.adventure.text.Component.text("x")))
-                .isSameAs(display);
-
-        org.mockito.Mockito.verify(display).text(net.kyori.adventure.text.Component.text("x"));
-        org.mockito.Mockito.verify(display).setBillboard(org.bukkit.entity.Display.Billboard.CENTER);
-        org.mockito.Mockito.verify(display).setPersistent(false);
     }
 
     private OneBlockProgressPort memory() {

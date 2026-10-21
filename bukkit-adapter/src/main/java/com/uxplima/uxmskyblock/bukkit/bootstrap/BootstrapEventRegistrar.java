@@ -219,14 +219,22 @@ public final class BootstrapEventRegistrar {
                         configWiring.messages(),
                         com.uxplima.uxmskyblock.bukkit.visitor.VisitorCommandGuard::serverNamesOf),
                 plugin);
+        // A click on a sent hologram, such as the sign over a closed chunk, reaches its hologram through this.
+        pm.registerEvents(gameplayWiring.sentHolograms().clicks(), plugin);
         if (featureModuleWiring.moduleRegistry().isModuleEnabled("worth")) {
             // A block placed on one of its kind joins its stack, and each block of a stack counts toward worth.
+            // Its size is sent to whoever is near it, in their language, as a line drawn from the chunk's own data.
+            var stackLines = new com.uxplima.uxmskyblock.bukkit.stack.PacketStackWorld(
+                    configWiring.messages(),
+                    gameplayWiring.sentHolograms().regions(),
+                    gameplayWiring.sentHolograms().packets());
+            pm.registerEvents(stackLines, plugin);
             pm.registerEvents(
                     new com.uxplima.uxmskyblock.bukkit.stack.BlockStackListener(
                             configWiring::stackingConfig,
                             gameplayWiring.protectionListener(),
                             gameplayWiring.worthService(),
-                            new com.uxplima.uxmskyblock.bukkit.stack.TextDisplayStackWorld(configWiring.messages())),
+                            stackLines),
                     plugin);
         }
         if (featureModuleWiring.moduleRegistry().isModuleEnabled("dimensions")

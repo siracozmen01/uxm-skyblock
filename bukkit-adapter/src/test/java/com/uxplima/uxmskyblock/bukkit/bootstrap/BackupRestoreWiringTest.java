@@ -143,6 +143,8 @@ class BackupRestoreWiringTest {
     @DisplayName("GameplayWiring wires ObjectStoragePort, BackupService, and IslandRestoreService")
     void gameplayWiringWiresBackupAndRestoreServices(@TempDir Path tempDir) throws Exception {
         JavaPlugin plugin = mock(JavaPlugin.class);
+        // A real plugin always has a logger; the hologram fallback writes to it on a test server.
+        when(plugin.getSLF4JLogger()).thenReturn(org.slf4j.LoggerFactory.getLogger("uxmSkyblock"));
         when(plugin.getDataFolder()).thenReturn(tempDir.toFile());
 
         String hocon = """

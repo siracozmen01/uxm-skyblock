@@ -76,8 +76,10 @@ public final class ChunkBlockWiring implements AutoCloseable {
             com.uxplima.uxmskyblock.bukkit.listener.IslandProtectionListener islands,
             java.util.function.Function<
                             java.util.UUID, java.util.Optional<com.uxplima.uxmskyblock.core.domain.identity.ProfileId>>
-                    activeProfile) {
+                    activeProfile,
+            com.uxplima.uxmskyblock.bukkit.chunkblock.SignPainter painter) {
         this.config = Objects.requireNonNull(configuration.chunkBlockConfig(), "chunkBlockConfig must not be null");
+        Objects.requireNonNull(painter, "painter must not be null");
         // The worlds of the island's Nether and End, while dimensions are on: each holds a web of its own.
         java.util.Map<String, String> dimensionWorlds = new java.util.LinkedHashMap<>();
         var dimensionConfig = configuration.dimensionConfig();
@@ -106,7 +108,8 @@ public final class ChunkBlockWiring implements AutoCloseable {
                 world -> !elsewhere.contains(world),
                 homes,
                 homes,
-                new SignWindow((player, chunk) -> openWindow.accept(player, chunk)));
+                new SignWindow((player, chunk) -> openWindow.accept(player, chunk)),
+                painter);
         this.listener = overworld.listener();
         this.walls = overworld.walls();
         this.signs = overworld.signs();
@@ -135,7 +138,8 @@ public final class ChunkBlockWiring implements AutoCloseable {
                                     home.spawnZ(),
                                     home.spawnYaw(),
                                     home.spawnPitch())),
-                    new SignWindow((player, chunk) -> {})));
+                    new SignWindow((player, chunk) -> {}),
+                    painter));
         });
         this.dimensions = List.copyOf(webs);
         // Every territory into memory before anybody steps near a closed chunk, so no step is a query.
@@ -171,7 +175,8 @@ public final class ChunkBlockWiring implements AutoCloseable {
                             com.uxplima.uxmskyblock.core.domain.identity.IslandId,
                             java.util.Optional<com.uxplima.uxmskyblock.core.domain.island.IslandLocation>>
                     locations,
-            SignWindow window) {
+            SignWindow window,
+            com.uxplima.uxmskyblock.bukkit.chunkblock.SignPainter painter) {
         var edge = new com.uxplima.uxmskyblock.bukkit.chunkblock.ChunkBlockListener(
                 own,
                 islands,
@@ -209,7 +214,7 @@ public final class ChunkBlockWiring implements AutoCloseable {
                         config.tiers(),
                         islands,
                         scheduler,
-                        new com.uxplima.uxmskyblock.bukkit.chunkblock.ChunkSignEntities(),
+                        painter,
                         configuration.messages(),
                         locations,
                         activeProfile,

@@ -146,7 +146,8 @@ final class GameplayLinks {
             ConfigurationWiring config,
             com.uxplima.uxmskyblock.core.application.leaderboard.IslandLeaderboardService boards,
             com.uxplima.uxmskyblock.core.application.island.IslandLocationService locations,
-            com.uxplima.uxmskyblock.core.application.scheduler.SchedulerPort scheduler) {
+            com.uxplima.uxmskyblock.core.application.scheduler.SchedulerPort scheduler,
+            SentHolograms sent) {
         return new com.uxplima.uxmskyblock.bukkit.top.TopDisplayBeat(
                 com.uxplima.uxmskyblock.bukkit.top.TopDisplays.read(
                         config.dataDir().resolve("data").resolve("top-displays.conf")),
@@ -158,6 +159,7 @@ final class GameplayLinks {
                         org.bukkit.Bukkit.getOfflinePlayer(player).getName()),
                 config.messages(),
                 scheduler,
-                new com.uxplima.uxmskyblock.bukkit.top.BukkitTopPainter(config.messages()));
+                new com.uxplima.uxmskyblock.bukkit.top.BukkitTopPainter(
+                        config.messages(), sent.regions(), sent.packets()));
     }
 }

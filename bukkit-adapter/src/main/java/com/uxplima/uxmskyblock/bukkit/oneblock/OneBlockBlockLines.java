@@ -3,6 +3,7 @@ package com.uxplima.uxmskyblock.bukkit.oneblock;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.Function;
 import java.util.function.Predicate;
 import java.util.function.Supplier;
 
@@ -10,7 +11,6 @@ import org.bukkit.Location;
 import org.bukkit.World;
 import org.bukkit.entity.Player;
 
-import net.kyori.adventure.audience.Audience;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.minimessage.tag.resolver.Placeholder;
 
@@ -46,11 +46,6 @@ public final class OneBlockBlockLines {
         this.lines = Objects.requireNonNull(lines, "lines must not be null");
     }
 
-    /** As on a server: a text display over the block. */
-    public OneBlockBlockLines(Supplier<OneBlockConfiguration> config, Messages messages, Predicate<Player> bedrock) {
-        this(config, messages, bedrock, OneBlockPauses::countdownOver);
-    }
-
     /** Tells the island's line again after a break, on the block's region, and the breaker if they play on Bedrock. */
     public void show(IslandId islandId, World world, int x, int y, int z, OneBlockPhases.Position at, Player breaker) {
         if (!config.get().display().line()) {
@@ -58,10 +53,10 @@ public final class OneBlockBlockLines {
             return;
         }
         String phase = at.phase().key();
-        Component line = messages.renderPlain(
-                Audience.empty(),
+        Function<Player, Component> line = viewer -> messages.renderPlain(
+                viewer,
                 "oneblock.bar.over_block",
-                Placeholder.unparsed("phase", messages.named(Audience.empty(), "oneblock.phases", phase, phase)),
+                Placeholder.unparsed("phase", messages.named(viewer, "oneblock.phases", phase, phase)),
                 Placeholder.unparsed("broken", Long.toString(at.intoPhase())),
                 Placeholder.unparsed("length", Long.toString(at.phaseLength())));
         OneBlockPauses.Shown now = shown.get(islandId);
@@ -71,12 +66,7 @@ public final class OneBlockBlockLines {
             shown.put(islandId, lines.show(world, new Location(world, x + 0.5, y + 1 + RISE, z + 0.5), line));
         }
         if (bedrock.test(breaker)) {
-            breaker.sendActionBar(messages.renderPlain(
-                    breaker,
-                    "oneblock.bar.over_block",
-                    Placeholder.unparsed("phase", messages.named(breaker, "oneblock.phases", phase, phase)),
-                    Placeholder.unparsed("broken", Long.toString(at.intoPhase())),
-                    Placeholder.unparsed("length", Long.toString(at.phaseLength()))));
+            breaker.sendActionBar(line.apply(breaker));
         }
     }
 
