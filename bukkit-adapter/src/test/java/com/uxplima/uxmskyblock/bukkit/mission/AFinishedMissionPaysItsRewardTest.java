@@ -163,5 +163,10 @@ class AFinishedMissionPaysItsRewardTest {
         name = ".Pocket_Ann";
         payout().pay(island.id(), profile, paying(new MissionReward(0, 0, 0, List.of("give %player% dirt"))));
         assertThat(ran).describedAs("a Bedrock name with its mark").containsExactly("give .Pocket_Ann dirt");
+
+        ran.clear();
+        name = "-op";
+        payout().pay(island.id(), profile, paying(new MissionReward(0, 0, 0, List.of("give %player% dirt"))));
+        assertThat(ran).describedAs("a leading dash reads as a flag").isEmpty();
     }
 }

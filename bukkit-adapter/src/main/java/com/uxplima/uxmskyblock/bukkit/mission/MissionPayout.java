@@ -37,8 +37,11 @@ public final class MissionPayout implements IslandMissionRewardPort {
 
     private static final Logger LOGGER = Logger.getLogger(MissionPayout.class.getName());
 
-    /** A player name as a command reads it: letters, digits and the marks Java and Bedrock names carry. */
-    static final java.util.regex.Pattern SAFE_NAME = java.util.regex.Pattern.compile("[A-Za-z0-9_.*-]{1,32}");
+    /**
+     * A player name as a command reads it: letters, digits and underscores, up to sixteen, after at most the dot or
+     * the star a Bedrock bridge puts in front. A dash anywhere in front would read as a flag.
+     */
+    static final java.util.regex.Pattern SAFE_NAME = java.util.regex.Pattern.compile("[.*]?[A-Za-z0-9_]{1,16}");
 
     private final IslandBankService bank;
     private final IslandStoragePort islands;
