@@ -23,7 +23,7 @@ import com.uxplima.uxmlib.common.Log;
 import com.uxplima.uxmlib.gui.GuiText;
 import com.uxplima.uxmlib.gui.anvil.AnvilInput;
 import com.uxplima.uxmlib.gui.input.TextInputInstaller;
-import com.uxplima.uxmlib.gui.style.MenuSounds;
+import com.uxplima.uxmlib.gui.style.MenuSoundsFile;
 import com.uxplima.uxmlib.menu.MenuBasics;
 import com.uxplima.uxmlib.menu.Menus;
 import com.uxplima.uxmlib.menu.binding.MenuBindings;
@@ -58,6 +58,10 @@ public final class SkyblockMenuEngine implements AutoCloseable {
     private final MenuBindings bindings = new MenuBindings();
     private final Menus menus;
     private final MenuListener listener;
+
+    /** The click, page and refusal sounds every window plays, read from config.conf under menu.sounds. */
+    private final MenuSoundsFile sounds;
+
     private final Path menusDir;
     private final AnvilInput anvilInput;
     private final TextInputInstaller.Installed textInput;
@@ -115,11 +119,12 @@ public final class SkyblockMenuEngine implements AutoCloseable {
                 LateBedrockDetector.forServer(Bukkit.getServer()),
                 LateBedrockScreen.forServer(Bukkit.getServer()));
 
+        this.sounds = MenuSoundsFile.read(dataDir.resolve("config.conf"), "menu.sounds");
         this.listener = MenuListener.builder(renderer, bindings.actions(), bindings.conditions(), scheduler, plugin)
                 .pagedLists(bindings.pagedLists())
                 .textPrompt(this.textInput.textInput()::promptResolved)
                 .contents(bindings.contents())
-                .feedback(MenuSounds.defaults(), refs -> false)
+                .feedback(sounds)
                 .build();
 
         // close, open, command, message and sound mean the same in every plugin, so they come from
@@ -223,6 +228,11 @@ public final class SkyblockMenuEngine implements AutoCloseable {
                 ctx -> lastLists
                         .getOrDefault(ctx.viewer().getUniqueId(), Map.of())
                         .getOrDefault(id, List.of()));
+    }
+
+    /** Reads the menu sounds in config.conf again. */
+    public void reloadSounds() {
+        sounds.reload();
     }
 
     /**

@@ -179,9 +179,10 @@ class TheChunksAreWindowsTest extends MockBukkitHarness {
                 .describedAs("nearest first, then west before east")
                 .isEqualTo(new ChunkPos(-1, 0));
         assertThat(loreAt(19)).contains("Rare chunk").contains("Lines paid").contains("0/2");
-        assertThat(top().getItem(23))
+        // A list cell with no entry takes the window's fill item, so a fifth chunk would show here as anything else.
+        assertThat(Objects.requireNonNull(top().getItem(23)).getType())
                 .describedAs("four chunks beside the first, no more")
-                .isNull();
+                .isEqualTo(Material.GRAY_STAINED_GLASS_PANE);
 
         click(ChunkWindow.OPEN, first);
         settle(() -> titleOf().equals("Rare chunk"));

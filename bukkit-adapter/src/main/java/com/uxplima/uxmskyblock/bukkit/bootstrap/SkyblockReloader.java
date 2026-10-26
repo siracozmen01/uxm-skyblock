@@ -124,11 +124,15 @@ public final class SkyblockReloader {
         return read;
     }
 
-    /** Reads the menu files again. The engine reports and skips one it cannot parse. */
+    /**
+     * Reads the menu files and the menu sounds in config.conf again. The engine reports and skips a file it cannot
+     * parse.
+     */
     private int reloadMenus() {
         if (menuEngine == null) {
             return 0;
         }
+        menuEngine.reloadSounds();
         menuEngine.loadSpecs();
         return menuEngine.loadedSpecs().size();
     }

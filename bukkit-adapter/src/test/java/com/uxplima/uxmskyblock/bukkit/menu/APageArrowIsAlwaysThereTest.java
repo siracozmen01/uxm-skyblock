@@ -39,6 +39,10 @@ import org.mockbukkit.mockbukkit.entity.PlayerMock;
  * A window that turns pages shows both arrows on every page, one that turns nothing drawn dim.
  *
  * <p>A window with one page drew no arrows, and the two slots they stood in were holes in the bottom row.
+ *
+ * <p>uxmLib draws an arrow on every page now, whether or not it has a page to turn to, so an arrow that is not gated
+ * on {@code has-previous} or {@code has-next} covers the dim arrow under it and says "Previous page" where there is
+ * none.
  */
 class APageArrowIsAlwaysThereTest extends MockBukkitHarness {
 
@@ -96,6 +100,15 @@ class APageArrowIsAlwaysThereTest extends MockBukkitHarness {
                         continue;
                     }
                     arrows.add(file.getFileName() + " " + arrow.type());
+                    String gate = arrow.type() == ItemType.PREVIOUS ? "has-previous" : "has-next";
+                    assertThat(arrow.view().requirements())
+                            .describedAs(
+                                    "the %s arrow of %s gives way when it has no page",
+                                    arrow.type(), file.getFileName())
+                            .anySatisfy(gated -> {
+                                assertThat(gated.condition().id()).isEqualTo(gate);
+                                assertThat(gated.inverted()).isFalse();
+                            });
                     assertThat(spec.items().values())
                             .describedAs("under the %s arrow of %s", arrow.type(), file.getFileName())
                             .anySatisfy(under -> {
